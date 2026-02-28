@@ -1,0 +1,17 @@
+fastapi[standard]
+uvicorn[standard]
+sqlalchemy
+psycopg2-binary
+python-jose[cryptography]
+bcrypt
+python-multipart
+pydantic-settings
+alembic
+tqdm
+boto3
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
+pillow
+pillow-heif

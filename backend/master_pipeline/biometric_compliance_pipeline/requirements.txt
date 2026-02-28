@@ -1,0 +1,25 @@
+# Biometric Compliance Pipeline - Production Requirements
+# ========================================================
+
+# Core Dependencies
+opencv-python>=4.8.0
+numpy>=1.24.0
+pillow>=10.0.0
+pillow-heif>=0.13.0  # HEIC/HEIF format support
+
+# Face Detection & Recognition
+insightface>=0.7.0
+onnxruntime>=1.15.0
+
+# Animal Detection
+ultralytics>=8.0.0
+
+# Progress & UI
+tqdm>=4.65.0
+
+# Excel QA Workflow
+openpyxl>=3.1.0
+
+# Optional: For enhanced performance
+# scikit-image>=0.21.0
+# scipy>=1.11.0

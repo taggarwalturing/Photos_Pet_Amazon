@@ -1,0 +1,6031 @@
+{
+  "pipeline_version": "2.1",
+  "anonymization_method": "egoblur",
+  "total_images": 696,
+  "statistics": {
+    "obfuscated": 22,
+    "no_face": 547,
+    "verification_failed": 127,
+    "qa_required": 127,
+    "clean": 547,
+    "failed": 0,
+    "skipped": 0
+  },
+  "results": [
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "617148612_858147450425566_1077550906800880960_n.jpg",
+      "image": "617148612_858147450425566_1077550906800880960_n.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "619337090_10163415490428153_2934793839827802895_n.jpg",
+      "image": "619337090_10163415490428153_2934793839827802895_n.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "Screenshot 2026-02-02 124926.png",
+      "image": "Screenshot 2026-02-02 124926.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741308.jpg",
+      "image": "cats_with_humans_1741308.jpg"
+    },
+    {
+      "action": "obfuscated",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "passed",
+      "max_confidence_after": 0.0,
+      "output_name": "dogs_only_4587970.jpg",
+      "image": "dogs_only_4587970.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4587964.jpg",
+      "image": "dogs_only_4587964.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498134.jpg",
+      "image": "dogs_with_humans_4498134.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4587958.jpg",
+      "image": "dogs_only_4587958.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_1458925.jpg",
+      "image": "dogs_only_1458925.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 114359.png",
+      "image": "Screenshot 2026-02-02 114359.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_2558703.jpg",
+      "image": "cats_only_2558703.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_2558688.jpg",
+      "image": "cats_only_2558688.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 165359.png",
+      "image": "Screenshot 2026-02-02 165359.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 120611.png",
+      "image": "Screenshot 2026-02-02 120611.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741283.jpg",
+      "image": "cats_with_humans_1741283.jpg"
+    },
+    {
+      "action": "obfuscated",
+      "face_count": 3,
+      "faces_obfuscated": 3,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "passed",
+      "max_confidence_after": 0.0,
+      "output_name": "dogs_with_humans_4498083.jpg",
+      "image": "dogs_with_humans_4498083.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741268.jpg",
+      "image": "cats_with_humans_1741268.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741240.jpg",
+      "image": "cats_with_humans_1741240.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 133447.png",
+      "image": "Screenshot 2026-02-02 133447.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741254.jpg",
+      "image": "cats_with_humans_1741254.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.7340818643569946,
+      "output_name": "dogs_with_humans_4498054.jpg",
+      "image": "dogs_with_humans_4498054.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.6530894637107849,
+      "output_name": "dogs_with_humans_4498055.jpg",
+      "image": "dogs_with_humans_4498055.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741255.jpg",
+      "image": "cats_with_humans_1741255.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 123127.png",
+      "image": "Screenshot 2026-02-02 123127.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741241.jpg",
+      "image": "cats_with_humans_1741241.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 133320.png",
+      "image": "Screenshot 2026-02-02 133320.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498041.jpg",
+      "image": "dogs_with_humans_4498041.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "2_Souffle\u0301 & Sorbet.jpg",
+      "image": "2_Souffle\u0301 & Sorbet.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741269.jpg",
+      "image": "cats_with_humans_1741269.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498096.jpg",
+      "image": "dogs_with_humans_4498096.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.6268791556358337,
+      "output_name": "dogs_with_humans_4498082.jpg",
+      "image": "dogs_with_humans_4498082.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 145513.png",
+      "image": "Screenshot 2026-02-02 145513.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "611440507_10225182856558544_5423868952497625687_n.jpg",
+      "image": "611440507_10225182856558544_5423868952497625687_n.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "20210314_084002.jpg",
+      "image": "20210314_084002.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "20230711_202049.jpg",
+      "image": "20230711_202049.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.791242778301239,
+      "output_name": "20251011_150437.jpg",
+      "image": "20251011_150437.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 171715.png",
+      "image": "Screenshot 2026-02-02 171715.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4587959.jpg",
+      "image": "dogs_only_4587959.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "temp_4588021.jpg",
+      "image": "temp_4588021.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498121.jpg",
+      "image": "dogs_with_humans_4498121.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498135.jpg",
+      "image": "dogs_with_humans_4498135.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 170437.png",
+      "image": "Screenshot 2026-02-02 170437.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5231240391731262,
+      "output_name": "dogs_only_4587965.jpg",
+      "image": "dogs_only_4587965.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "3db6345c-3612-4db2-9028-993ef4eef649.jpg",
+      "image": "3db6345c-3612-4db2-9028-993ef4eef649.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_only_4587971.jpg",
+      "image": "dogs_only_4587971.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_6568468.jpg",
+      "image": "dogs_with_humans_6568468.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 151348.png",
+      "image": "Screenshot 2026-02-02 151348.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_only_4587998.jpg",
+      "image": "dogs_only_4587998.jpg"
+    },
+    {
+      "action": "obfuscated",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "passed",
+      "max_confidence_after": 0.0,
+      "output_name": "dogs_only_4587967.jpg",
+      "image": "dogs_only_4587967.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4587973.jpg",
+      "image": "dogs_only_4587973.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498123.jpg",
+      "image": "dogs_with_humans_4498123.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 3,
+      "output_name": "cats_only_6853515.jpg",
+      "image": "cats_only_6853515.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 141818.png",
+      "image": "Screenshot 2026-02-02 141818.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498137.jpg",
+      "image": "dogs_with_humans_4498137.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "621468375_4413022478844433_2015860639912972340_n.jpg",
+      "image": "621468375_4413022478844433_2015860639912972340_n.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_5900838.jpg",
+      "image": "cats_only_5900838.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 144545.png",
+      "image": "Screenshot 2026-02-02 144545.png"
+    },
+    {
+      "action": "obfuscated",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "passed",
+      "max_confidence_after": 0.0,
+      "output_name": "Screenshot 2026-02-02 181631.png",
+      "image": "Screenshot 2026-02-02 181631.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5982953310012817,
+      "output_name": "4356a8e7-0d43-4101-a521-465cd3add0c1.jpg",
+      "image": "4356a8e7-0d43-4101-a521-465cd3add0c1.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.5533810257911682,
+      "output_name": "dogs_only_4588077.jpg",
+      "image": "dogs_only_4588077.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.7800871133804321,
+      "output_name": "Screenshot 2026-02-02 125030.png",
+      "image": "Screenshot 2026-02-02 125030.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498094.jpg",
+      "image": "dogs_with_humans_4498094.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 165819.png",
+      "image": "Screenshot 2026-02-02 165819.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498080.jpg",
+      "image": "dogs_with_humans_4498080.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "Screenshot 2026-02-02 122207.png",
+      "image": "Screenshot 2026-02-02 122207.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 124104.png",
+      "image": "Screenshot 2026-02-02 124104.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741257.jpg",
+      "image": "cats_with_humans_1741257.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741242.jpg",
+      "image": "cats_with_humans_1741242.jpg"
+    },
+    {
+      "action": "obfuscated",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "passed",
+      "max_confidence_after": 0.0,
+      "output_name": "dogs_with_humans_4498042.jpg",
+      "image": "dogs_with_humans_4498042.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498056.jpg",
+      "image": "dogs_with_humans_4498056.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741256.jpg",
+      "image": "cats_with_humans_1741256.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 2,
+      "faces_obfuscated": 2,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.7584192752838135,
+      "output_name": "dogs_with_humans_4498081.jpg",
+      "image": "dogs_with_humans_4498081.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741295.jpg",
+      "image": "cats_with_humans_1741295.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498095.jpg",
+      "image": "dogs_with_humans_4498095.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 121243.png",
+      "image": "Screenshot 2026-02-02 121243.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_only_6816860.jpg",
+      "image": "dogs_only_6816860.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "618492863_10162923591719611_8839241167026178116_n.jpg",
+      "image": "618492863_10162923591719611_8839241167026178116_n.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5378729104995728,
+      "output_name": "622661439_10241570272616115_2664508040047390959_n.jpg",
+      "image": "622661439_10241570272616115_2664508040047390959_n.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_2558701.jpg",
+      "image": "cats_only_2558701.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5304340124130249,
+      "output_name": "Screenshot 2026-02-02 122831.png",
+      "image": "Screenshot 2026-02-02 122831.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 122819.png",
+      "image": "Screenshot 2026-02-02 122819.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "IMG_9581.JPG",
+      "image": "IMG_9581.JPG"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498136.jpg",
+      "image": "dogs_with_humans_4498136.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-01 143219.png",
+      "image": "Screenshot 2026-02-01 143219.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498122.jpg",
+      "image": "dogs_with_humans_4498122.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_only_4587972.jpg",
+      "image": "dogs_only_4587972.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.6165121793746948,
+      "output_name": "dogs_only_4587966.jpg",
+      "image": "dogs_only_4587966.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 144949.png",
+      "image": "Screenshot 2026-02-02 144949.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4587999.jpg",
+      "image": "dogs_only_4587999.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 140252.png",
+      "image": "Screenshot 2026-02-02 140252.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 115243.png",
+      "image": "Screenshot 2026-02-02 115243.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.7066686153411865,
+      "output_name": "dogs_only_4587989.jpg",
+      "image": "dogs_only_4587989.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.6117681860923767,
+      "output_name": "cats_with_humans_1741326.jpg",
+      "image": "cats_with_humans_1741326.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498126.jpg",
+      "image": "dogs_with_humans_4498126.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4587962.jpg",
+      "image": "dogs_only_4587962.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4587976.jpg",
+      "image": "dogs_only_4587976.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 142125.png",
+      "image": "Screenshot 2026-02-02 142125.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 210156.png",
+      "image": "Screenshot 2026-02-02 210156.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_2558711.jpg",
+      "image": "cats_only_2558711.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_2558705.jpg",
+      "image": "cats_only_2558705.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.7068208456039429,
+      "output_name": "Screenshot 2026-02-01 142507.png",
+      "image": "Screenshot 2026-02-01 142507.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "Screenshot 2026-02-02 125009.png",
+      "image": "Screenshot 2026-02-02 125009.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498091.jpg",
+      "image": "dogs_with_humans_4498091.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741285.jpg",
+      "image": "cats_with_humans_1741285.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498085.jpg",
+      "image": "dogs_with_humans_4498085.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 2,
+      "verification": "failed",
+      "max_confidence_after": 0.5189387202262878,
+      "output_name": "Screenshot 2026-02-02 150125.png",
+      "image": "Screenshot 2026-02-02 150125.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741252.jpg",
+      "image": "cats_with_humans_1741252.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741246.jpg",
+      "image": "cats_with_humans_1741246.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_6001574.jpg",
+      "image": "cats_only_6001574.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 2,
+      "faces_obfuscated": 2,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.715131402015686,
+      "output_name": "cats_with_humans_1741247.jpg",
+      "image": "cats_with_humans_1741247.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 134449.png",
+      "image": "Screenshot 2026-02-02 134449.png"
+    },
+    {
+      "action": "obfuscated",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "passed",
+      "max_confidence_after": 0.0,
+      "output_name": "cats_only_6803520.jpg",
+      "image": "cats_only_6803520.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741253.jpg",
+      "image": "cats_with_humans_1741253.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741284.jpg",
+      "image": "cats_with_humans_1741284.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_4588052.jpg",
+      "image": "cats_only_4588052.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741290.jpg",
+      "image": "cats_with_humans_1741290.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498090.jpg",
+      "image": "dogs_with_humans_4498090.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_4625234.jpg",
+      "image": "cats_only_4625234.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "Screenshot 2026-02-02 122954.png",
+      "image": "Screenshot 2026-02-02 122954.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "b8011ed4-556c-4f06-b97e-df7c04a6d212.jpg",
+      "image": "b8011ed4-556c-4f06-b97e-df7c04a6d212.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_2558704.jpg",
+      "image": "cats_only_2558704.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 165558.png",
+      "image": "Screenshot 2026-02-02 165558.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5042625665664673,
+      "output_name": "Screenshot 2026-02-02 140900.png",
+      "image": "Screenshot 2026-02-02 140900.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "cats_with_humans_2558605.jpg",
+      "image": "cats_with_humans_2558605.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 144227.png",
+      "image": "Screenshot 2026-02-02 144227.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "Screenshot 2026-02-02 185453.png",
+      "image": "Screenshot 2026-02-02 185453.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_only_4588113.jpg",
+      "image": "dogs_only_4588113.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4587977.jpg",
+      "image": "dogs_only_4587977.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4587963.jpg",
+      "image": "dogs_only_4587963.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.508413553237915,
+      "output_name": "619968342_25757636347189433_8750059887845750667_n.jpg",
+      "image": "619968342_25757636347189433_8750059887845750667_n.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498127.jpg",
+      "image": "dogs_with_humans_4498127.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 121642.png",
+      "image": "Screenshot 2026-02-02 121642.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.6725918650627136,
+      "output_name": "cats_with_humans_1741327.jpg",
+      "image": "cats_with_humans_1741327.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 173851.png",
+      "image": "Screenshot 2026-02-02 173851.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4587988.jpg",
+      "image": "dogs_only_4587988.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 2,
+      "verification": "failed",
+      "max_confidence_after": 0.6302765607833862,
+      "output_name": "Screenshot 2026-02-02 121859.png",
+      "image": "Screenshot 2026-02-02 121859.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 121654.png",
+      "image": "Screenshot 2026-02-02 121654.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741325.jpg",
+      "image": "cats_with_humans_1741325.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498125.jpg",
+      "image": "dogs_with_humans_4498125.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_only_4587975.jpg",
+      "image": "dogs_only_4587975.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_with_humans_5732507.jpg",
+      "image": "dogs_with_humans_5732507.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 170355.png",
+      "image": "Screenshot 2026-02-02 170355.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.6387913823127747,
+      "output_name": "dogs_with_humans_4587993.jpg",
+      "image": "dogs_with_humans_4587993.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.5003175735473633,
+      "output_name": "cats_with_humans_1741319.jpg",
+      "image": "cats_with_humans_1741319.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_only_6568461.jpg",
+      "image": "dogs_only_6568461.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4587961.jpg",
+      "image": "dogs_only_4587961.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 115056.png",
+      "image": "Screenshot 2026-02-02 115056.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 151614.png",
+      "image": "Screenshot 2026-02-02 151614.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 181804.png",
+      "image": "Screenshot 2026-02-02 181804.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_2558706.jpg",
+      "image": "cats_only_2558706.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 211511.png",
+      "image": "Screenshot 2026-02-02 211511.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_2558699.jpg",
+      "image": "cats_only_2558699.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4588059.jpg",
+      "image": "dogs_only_4588059.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "IMG_1544.jpg",
+      "image": "IMG_1544.HEIC"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "624240378_26104413359182973_4335650489289836363_n.jpg",
+      "image": "624240378_26104413359182973_4335650489289836363_n.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.6387041211128235,
+      "output_name": "Screenshot 2026-02-02 122759.png",
+      "image": "Screenshot 2026-02-02 122759.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741286.jpg",
+      "image": "cats_with_humans_1741286.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.5520777702331543,
+      "output_name": "dogs_with_humans_4498086.jpg",
+      "image": "dogs_with_humans_4498086.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498092.jpg",
+      "image": "dogs_with_humans_4498092.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "20210821_191145.jpg",
+      "image": "20210821_191145.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 115334.png",
+      "image": "Screenshot 2026-02-02 115334.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "Screenshot 2026-02-02 144635.png",
+      "image": "Screenshot 2026-02-02 144635.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.6508800983428955,
+      "output_name": "618857424_2433591263727760_7137328923383751533_n.jpg",
+      "image": "618857424_2433591263727760_7137328923383751533_n.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741251.jpg",
+      "image": "cats_with_humans_1741251.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-01 142712.png",
+      "image": "Screenshot 2026-02-01 142712.png"
+    },
+    {
+      "action": "obfuscated",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "passed",
+      "max_confidence_after": 0.0,
+      "output_name": "cats_with_humans_7282377.jpg",
+      "image": "cats_with_humans_7282377.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498079.jpg",
+      "image": "dogs_with_humans_4498079.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "621801158_1545593210059011_4347789438637399218_n.jpg",
+      "image": "621801158_1545593210059011_4347789438637399218_n.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498078.jpg",
+      "image": "dogs_with_humans_4498078.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 114956.png",
+      "image": "Screenshot 2026-02-02 114956.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.7352760434150696,
+      "output_name": "cats_with_humans_1741244.jpg",
+      "image": "cats_with_humans_1741244.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498093.jpg",
+      "image": "dogs_with_humans_4498093.jpg"
+    },
+    {
+      "action": "obfuscated",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "passed",
+      "max_confidence_after": 0.0,
+      "output_name": "dogs_with_humans_4498087.jpg",
+      "image": "dogs_with_humans_4498087.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741287.jpg",
+      "image": "cats_with_humans_1741287.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 171328.png",
+      "image": "Screenshot 2026-02-02 171328.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_2558698.jpg",
+      "image": "cats_only_2558698.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "622453164_25859704103695039_6863345479367393733_n.jpg",
+      "image": "622453164_25859704103695039_6863345479367393733_n.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "620079739_10164449710044095_4316780271860710722_n.jpg",
+      "image": "620079739_10164449710044095_4316780271860710722_n.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_2558707.jpg",
+      "image": "cats_only_2558707.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 140917.png",
+      "image": "Screenshot 2026-02-02 140917.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_5255232.jpg",
+      "image": "dogs_with_humans_5255232.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "WhatsApp Image 2026-02-02 at 6.44.58 PM.jpeg",
+      "image": "WhatsApp Image 2026-02-02 at 6.44.58 PM.jpeg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 145106.png",
+      "image": "Screenshot 2026-02-02 145106.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_only_4588104.jpg",
+      "image": "dogs_only_4588104.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498118.jpg",
+      "image": "dogs_with_humans_4498118.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4587960.jpg",
+      "image": "dogs_only_4587960.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5391572117805481,
+      "output_name": "69690044-3c95-4530-a960-cb1b907482cd.jpg",
+      "image": "69690044-3c95-4530-a960-cb1b907482cd.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4587974.jpg",
+      "image": "dogs_only_4587974.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498124.jpg",
+      "image": "dogs_with_humans_4498124.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5661395192146301,
+      "output_name": "Screenshot 2026-02-02 171923.png",
+      "image": "Screenshot 2026-02-02 171923.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_5749110.jpg",
+      "image": "dogs_with_humans_5749110.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 124951.png",
+      "image": "Screenshot 2026-02-02 124951.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 170333.png",
+      "image": "Screenshot 2026-02-02 170333.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_5749135.jpg",
+      "image": "dogs_only_5749135.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 144900.png",
+      "image": "Screenshot 2026-02-02 144900.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498143.jpg",
+      "image": "dogs_with_humans_4498143.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 123031.png",
+      "image": "Screenshot 2026-02-02 123031.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 124038.png",
+      "image": "Screenshot 2026-02-02 124038.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 145029.png",
+      "image": "Screenshot 2026-02-02 145029.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 133815.png",
+      "image": "Screenshot 2026-02-02 133815.png"
+    },
+    {
+      "action": "obfuscated",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "passed",
+      "max_confidence_after": 0.0,
+      "output_name": "dogs_only_4588017.jpg",
+      "image": "dogs_only_4588017.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 115144.png",
+      "image": "Screenshot 2026-02-02 115144.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 122930.png",
+      "image": "Screenshot 2026-02-02 122930.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4588003.jpg",
+      "image": "dogs_only_4588003.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5810774564743042,
+      "output_name": "Copy of IMG_3269.jpg",
+      "image": "Copy of IMG_3269.HEIC"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_2558600.jpg",
+      "image": "cats_only_2558600.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "IMG_6072.jpg",
+      "image": "IMG_6072.HEIC"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 105155.png",
+      "image": "Screenshot 2026-02-02 105155.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 133342.png",
+      "image": "Screenshot 2026-02-02 133342.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 4,
+      "faces_obfuscated": 4,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.8615393042564392,
+      "output_name": "cats_with_humans_1741223.jpg",
+      "image": "cats_with_humans_1741223.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_2253275.jpg",
+      "image": "dogs_only_2253275.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498023.jpg",
+      "image": "dogs_with_humans_4498023.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498037.jpg",
+      "image": "dogs_with_humans_4498037.jpg"
+    },
+    {
+      "action": "obfuscated",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "passed",
+      "max_confidence_after": 0.0,
+      "output_name": "cats_with_humans_1741237.jpg",
+      "image": "cats_with_humans_1741237.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498036.jpg",
+      "image": "dogs_with_humans_4498036.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498022.jpg",
+      "image": "dogs_with_humans_4498022.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 114924.png",
+      "image": "Screenshot 2026-02-02 114924.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.6645147204399109,
+      "output_name": "cats_with_humans_1741222.jpg",
+      "image": "cats_with_humans_1741222.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_2558629.jpg",
+      "image": "cats_only_2558629.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 140839.png",
+      "image": "Screenshot 2026-02-02 140839.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_2558601.jpg",
+      "image": "cats_only_2558601.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "20260124_114419.jpg",
+      "image": "20260124_114419.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 181917.png",
+      "image": "Screenshot 2026-02-02 181917.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_2558615.jpg",
+      "image": "cats_only_2558615.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4588002.jpg",
+      "image": "dogs_only_4588002.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4588016.jpg",
+      "image": "dogs_only_4588016.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 143459.png",
+      "image": "Screenshot 2026-02-02 143459.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 104712.png",
+      "image": "Screenshot 2026-02-02 104712.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 150425.png",
+      "image": "Screenshot 2026-02-02 150425.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 133753.png",
+      "image": "Screenshot 2026-02-02 133753.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 110613.png",
+      "image": "Screenshot 2026-02-02 110613.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498142.jpg",
+      "image": "dogs_with_humans_4498142.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "Screenshot 2026-02-02 185608.png",
+      "image": "Screenshot 2026-02-02 185608.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "bb2cb920-e179-4a72-b29e-37d8409d8518.jpg",
+      "image": "bb2cb920-e179-4a72-b29e-37d8409d8518.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "fb.jpg",
+      "image": "fb.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 134228.png",
+      "image": "Screenshot 2026-02-02 134228.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498140.jpg",
+      "image": "dogs_with_humans_4498140.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498154.jpg",
+      "image": "dogs_with_humans_4498154.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 165715.png",
+      "image": "Screenshot 2026-02-02 165715.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 105234.png",
+      "image": "Screenshot 2026-02-02 105234.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 143513.png",
+      "image": "Screenshot 2026-02-02 143513.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_4587925.jpg",
+      "image": "cats_only_4587925.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "618204662_880594684712670_5864522543327450180_n.jpg",
+      "image": "618204662_880594684712670_5864522543327450180_n.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_only_4588028.jpg",
+      "image": "dogs_only_4588028.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 2,
+      "verification": "failed",
+      "max_confidence_after": 0.6341975331306458,
+      "output_name": "VideoCapture_20230721-082524.jpg",
+      "image": "VideoCapture_20230721-082524.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4588000.jpg",
+      "image": "dogs_only_4588000.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4490129.jpg",
+      "image": "dogs_only_4490129.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.7911256551742554,
+      "output_name": "dogs_only_4588014.jpg",
+      "image": "dogs_only_4588014.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 171358.png",
+      "image": "Screenshot 2026-02-02 171358.png"
+    },
+    {
+      "action": "obfuscated",
+      "face_count": 2,
+      "faces_obfuscated": 2,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "passed",
+      "max_confidence_after": 0.0,
+      "output_name": "cats_only_2558603.jpg",
+      "image": "cats_only_2558603.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.7026646137237549,
+      "output_name": "Souffle\u0301.jpg",
+      "image": "Souffle\u0301.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_9360289.jpg",
+      "image": "cats_only_9360289.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 144644.png",
+      "image": "Screenshot 2026-02-02 144644.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "Screenshot 2026-02-02 211819.png",
+      "image": "Screenshot 2026-02-02 211819.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "Screenshot 2026-02-02 115345.png",
+      "image": "Screenshot 2026-02-02 115345.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.5625306367874146,
+      "output_name": "cats_with_humans_1741208.jpg",
+      "image": "cats_with_humans_1741208.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498034.jpg",
+      "image": "dogs_with_humans_4498034.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498020.jpg",
+      "image": "dogs_with_humans_4498020.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-01 144312.png",
+      "image": "Screenshot 2026-02-01 144312.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498021.jpg",
+      "image": "dogs_with_humans_4498021.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741221.jpg",
+      "image": "cats_with_humans_1741221.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.53085857629776,
+      "output_name": "cats_with_humans_1741235.jpg",
+      "image": "cats_with_humans_1741235.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 2,
+      "faces_obfuscated": 2,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.72267746925354,
+      "output_name": "dogs_with_humans_4498035.jpg",
+      "image": "dogs_with_humans_4498035.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5643512010574341,
+      "output_name": "souffle\u0301 (1).jpg",
+      "image": "souffle\u0301 (1).jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.6915748119354248,
+      "output_name": "cats_with_humans_1741209.jpg",
+      "image": "cats_with_humans_1741209.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5003108382225037,
+      "output_name": "615274457_122153664848653093_4157238520000025571_n.jpg",
+      "image": "615274457_122153664848653093_4157238520000025571_n.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 141715.png",
+      "image": "Screenshot 2026-02-02 141715.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 114700.png",
+      "image": "Screenshot 2026-02-02 114700.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5704332590103149,
+      "output_name": "corgis.jpg",
+      "image": "corgis.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "Screenshot 2026-02-02 121552.png",
+      "image": "Screenshot 2026-02-02 121552.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.6146558523178101,
+      "output_name": "dogs_with_humans_4490125.jpg",
+      "image": "dogs_with_humans_4490125.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 145942.png",
+      "image": "Screenshot 2026-02-02 145942.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_2558602.jpg",
+      "image": "cats_only_2558602.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.8029651641845703,
+      "output_name": "dogs_only_4588015.jpg",
+      "image": "dogs_only_4588015.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 120843.png",
+      "image": "Screenshot 2026-02-02 120843.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4588001.jpg",
+      "image": "dogs_only_4588001.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "617151600_10162784763057379_8327205768932844103_n.jpg",
+      "image": "617151600_10162784763057379_8327205768932844103_n.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_only_4588029.jpg",
+      "image": "dogs_only_4588029.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "Screenshot 2026-02-02 145822.png",
+      "image": "Screenshot 2026-02-02 145822.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 141339.png",
+      "image": "Screenshot 2026-02-02 141339.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-01 143508.png",
+      "image": "Screenshot 2026-02-01 143508.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5344470739364624,
+      "output_name": "Screenshot 2026-02-02 123755.png",
+      "image": "Screenshot 2026-02-02 123755.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498141.jpg",
+      "image": "dogs_with_humans_4498141.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "WhatsApp Image 2026-02-01 at 2.58.56 PM (1).jpeg",
+      "image": "WhatsApp Image 2026-02-01 at 2.58.56 PM (1).jpeg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_3361739.jpg",
+      "image": "dogs_only_3361739.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 141103.png",
+      "image": "Screenshot 2026-02-02 141103.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 110416.png",
+      "image": "Screenshot 2026-02-02 110416.png"
+    },
+    {
+      "action": "obfuscated",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "passed",
+      "max_confidence_after": 0.0,
+      "output_name": "dogs_with_humans_4498145.jpg",
+      "image": "dogs_with_humans_4498145.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "WhatsApp Image 2026-02-02 at 7.15.32 PM.jpeg",
+      "image": "WhatsApp Image 2026-02-02 at 7.15.32 PM.jpeg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-01 143915.png",
+      "image": "Screenshot 2026-02-01 143915.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.67317795753479,
+      "output_name": "Screenshot 2026-02-02 140037.png",
+      "image": "Screenshot 2026-02-02 140037.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 105219.png",
+      "image": "Screenshot 2026-02-02 105219.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5376983284950256,
+      "output_name": "Copy of IMG_1286.JPG",
+      "image": "Copy of IMG_1286.JPG"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "6efc5023-a07c-4ebc-912c-0668b166a025.jpg",
+      "image": "6efc5023-a07c-4ebc-912c-0668b166a025.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 2,
+      "verification": "failed",
+      "max_confidence_after": 0.5230857729911804,
+      "output_name": "dogs_only_4588005.jpg",
+      "image": "dogs_only_4588005.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.8033328056335449,
+      "output_name": "dogs_only_4588011.jpg",
+      "image": "dogs_only_4588011.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5618510246276855,
+      "output_name": "616843434_10240326717368645_7373536850229609217_n.jpg",
+      "image": "616843434_10240326717368645_7373536850229609217_n.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 181938.png",
+      "image": "Screenshot 2026-02-02 181938.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 124837.png",
+      "image": "Screenshot 2026-02-02 124837.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "Screenshot 2026-02-02 144127.png",
+      "image": "Screenshot 2026-02-02 144127.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498031.jpg",
+      "image": "dogs_with_humans_4498031.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741231.jpg",
+      "image": "cats_with_humans_1741231.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.7945351600646973,
+      "output_name": "cats_with_humans_1741225.jpg",
+      "image": "cats_with_humans_1741225.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.7895057201385498,
+      "output_name": "cats_with_humans_1741219.jpg",
+      "image": "cats_with_humans_1741219.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741224.jpg",
+      "image": "cats_with_humans_1741224.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741230.jpg",
+      "image": "cats_with_humans_1741230.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498030.jpg",
+      "image": "dogs_with_humans_4498030.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 150609.png",
+      "image": "Screenshot 2026-02-02 150609.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 211410.png",
+      "image": "Screenshot 2026-02-02 211410.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "show-me-your-fav-photo-of-your-dog-v0-a1dh9v4agrzc1.webp",
+      "image": "show-me-your-fav-photo-of-your-dog-v0-a1dh9v4agrzc1.webp"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "dogs_only_4588010.jpg",
+      "image": "dogs_only_4588010.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 145012.png",
+      "image": "Screenshot 2026-02-02 145012.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 104728.png",
+      "image": "Screenshot 2026-02-02 104728.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 141512.png",
+      "image": "Screenshot 2026-02-02 141512.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 143311.png",
+      "image": "Screenshot 2026-02-02 143311.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_only_4588004.jpg",
+      "image": "dogs_only_4588004.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Tori Gemok.png",
+      "image": "Tori Gemok.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 104847.png",
+      "image": "Screenshot 2026-02-02 104847.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 3,
+      "output_name": "Screenshot 2026-02-02 210646.png",
+      "image": "Screenshot 2026-02-02 210646.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_7210608.jpg",
+      "image": "dogs_only_7210608.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 134238.png",
+      "image": "Screenshot 2026-02-02 134238.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498144.jpg",
+      "image": "dogs_with_humans_4498144.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 114103.png",
+      "image": "Screenshot 2026-02-02 114103.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_1564506.jpg",
+      "image": "dogs_only_1564506.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_with_humans_4498185.jpg",
+      "image": "dogs_with_humans_4498185.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "Screenshot 2026-02-02 121623.png",
+      "image": "Screenshot 2026-02-02 121623.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498146.jpg",
+      "image": "dogs_with_humans_4498146.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 144939.png",
+      "image": "Screenshot 2026-02-02 144939.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5416911840438843,
+      "output_name": "Screenshot 2026-02-02 124001.png",
+      "image": "Screenshot 2026-02-02 124001.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5791234374046326,
+      "output_name": "dogs_only_4588012.jpg",
+      "image": "dogs_only_4588012.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4588006.jpg",
+      "image": "dogs_only_4588006.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 145004.png",
+      "image": "Screenshot 2026-02-02 145004.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "619186792_10164154350539430_3662961127590889092_n.jpg",
+      "image": "619186792_10164154350539430_3662961127590889092_n.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 142025.png",
+      "image": "Screenshot 2026-02-02 142025.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_2558639.jpg",
+      "image": "cats_only_2558639.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "99099804_3086740481383838_7529638635566530560_n.jpg",
+      "image": "99099804_3086740481383838_7529638635566530560_n.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.7180607318878174,
+      "output_name": "cats_with_humans_1741226.jpg",
+      "image": "cats_with_humans_1741226.jpg"
+    },
+    {
+      "action": "obfuscated",
+      "face_count": 2,
+      "faces_obfuscated": 2,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "passed",
+      "max_confidence_after": 0.0,
+      "output_name": "IMG_2270.jpg",
+      "image": "IMG_2270.HEIC"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "622115040_10231309293691148_2999033550460352162_n.jpg",
+      "image": "622115040_10231309293691148_2999033550460352162_n.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498027.jpg",
+      "image": "dogs_with_humans_4498027.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 3,
+      "faces_obfuscated": 3,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.6041818261146545,
+      "output_name": "cats_only_4623355.jpg",
+      "image": "cats_only_4623355.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 115430.png",
+      "image": "Screenshot 2026-02-02 115430.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 124821.png",
+      "image": "Screenshot 2026-02-02 124821.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "dogs_only_4588007.jpg",
+      "image": "dogs_only_4588007.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.7155592441558838,
+      "output_name": "dogs_only_4588013.jpg",
+      "image": "dogs_only_4588013.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 171559.png",
+      "image": "Screenshot 2026-02-02 171559.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 151138.png",
+      "image": "Screenshot 2026-02-02 151138.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.6128259301185608,
+      "output_name": "622972268_18555570847006058_1938130613249728644_n.jpg",
+      "image": "622972268_18555570847006058_1938130613249728644_n.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 120925.png",
+      "image": "Screenshot 2026-02-02 120925.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5843119621276855,
+      "output_name": "de1ff3b9-d83e-4b32-9180-da91b7456e70.jpg",
+      "image": "de1ff3b9-d83e-4b32-9180-da91b7456e70.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "614398313_861436003335241_7931910137977054376_n.jpg",
+      "image": "614398313_861436003335241_7931910137977054376_n.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5204252004623413,
+      "output_name": "623782601_25871799485764402_8919243646772562034_n.jpg",
+      "image": "623782601_25871799485764402_8919243646772562034_n.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 134207.png",
+      "image": "Screenshot 2026-02-02 134207.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 135855.png",
+      "image": "Screenshot 2026-02-02 135855.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5551055669784546,
+      "output_name": "IMG_1330.jpg",
+      "image": "IMG_1330.HEIC"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 2,
+      "verification": "failed",
+      "max_confidence_after": 0.6316826343536377,
+      "output_name": "Screenshot 2026-02-02 121820.png",
+      "image": "Screenshot 2026-02-02 121820.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 134222.png",
+      "image": "Screenshot 2026-02-02 134222.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 150940.png",
+      "image": "Screenshot 2026-02-02 150940.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_only_4588022.jpg",
+      "image": "dogs_only_4588022.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-01 150147.png",
+      "image": "Screenshot 2026-02-01 150147.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "IMG_2251 (1).jpg",
+      "image": "IMG_2251 (1).HEIC"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 172317.png",
+      "image": "Screenshot 2026-02-02 172317.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "IMG_6962.PNG",
+      "image": "IMG_6962.PNG"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 121001.png",
+      "image": "Screenshot 2026-02-02 121001.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-01 144456.png",
+      "image": "Screenshot 2026-02-01 144456.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.597459614276886,
+      "output_name": "dogs_with_humans_4498002.jpg",
+      "image": "dogs_with_humans_4498002.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741202.jpg",
+      "image": "cats_with_humans_1741202.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741216.jpg",
+      "image": "cats_with_humans_1741216.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 171622.png",
+      "image": "Screenshot 2026-02-02 171622.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 165657.png",
+      "image": "Screenshot 2026-02-02 165657.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741203.jpg",
+      "image": "cats_with_humans_1741203.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498003.jpg",
+      "image": "dogs_with_humans_4498003.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Souffle\u0301 & Sorbet - carrier.jpg",
+      "image": "Souffle\u0301 & Sorbet - carrier.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_2558634.jpg",
+      "image": "cats_only_2558634.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 134155.png",
+      "image": "Screenshot 2026-02-02 134155.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_only_4588023.jpg",
+      "image": "dogs_only_4588023.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "8f356ee0-8b1d-4cd9-87a2-408fc49b3276.jpg",
+      "image": "8f356ee0-8b1d-4cd9-87a2-408fc49b3276.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.7511852979660034,
+      "output_name": "cats_only_5749134.jpg",
+      "image": "cats_only_5749134.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "WhatsApp Image 2026-02-01 at 2.58.56 PM.jpeg",
+      "image": "WhatsApp Image 2026-02-01 at 2.58.56 PM.jpeg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "20220807_131504.jpg",
+      "image": "20220807_131504.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 143929.png",
+      "image": "Screenshot 2026-02-02 143929.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 123950.png",
+      "image": "Screenshot 2026-02-02 123950.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 144713.png",
+      "image": "Screenshot 2026-02-02 144713.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.7350032925605774,
+      "output_name": "Screenshot 2026-02-02 123944.png",
+      "image": "Screenshot 2026-02-02 123944.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5162790417671204,
+      "output_name": "Screenshot 2026-02-02 141119.png",
+      "image": "Screenshot 2026-02-02 141119.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 150014.png",
+      "image": "Screenshot 2026-02-02 150014.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "70620f39-6a5f-4a12-8c92-e9ef6588da58.jpg",
+      "image": "70620f39-6a5f-4a12-8c92-e9ef6588da58.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 141655.png",
+      "image": "Screenshot 2026-02-02 141655.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 172506.png",
+      "image": "Screenshot 2026-02-02 172506.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 3,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 3,
+      "animals_detected": 3,
+      "verification": "failed",
+      "max_confidence_after": 0.6893576979637146,
+      "output_name": "Screenshot 2026-02-02 211019.png",
+      "image": "Screenshot 2026-02-02 211019.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5768092274665833,
+      "output_name": "Screenshot 2026-02-02 114330.png",
+      "image": "Screenshot 2026-02-02 114330.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.5074411034584045,
+      "output_name": "cats_only_2558742.jpg",
+      "image": "cats_only_2558742.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 114244.png",
+      "image": "Screenshot 2026-02-02 114244.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4588009.jpg",
+      "image": "dogs_only_4588009.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4588035.jpg",
+      "image": "dogs_only_4588035.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "dogs_with_humans_7210754.jpg",
+      "image": "dogs_with_humans_7210754.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 142943.png",
+      "image": "Screenshot 2026-02-02 142943.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "616081775_122307044378208720_8966631856722011134_n.jpg",
+      "image": "616081775_122307044378208720_8966631856722011134_n.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 151532.png",
+      "image": "Screenshot 2026-02-02 151532.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 141735.png",
+      "image": "Screenshot 2026-02-02 141735.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498029.jpg",
+      "image": "dogs_with_humans_4498029.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741229.jpg",
+      "image": "cats_with_humans_1741229.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.6594065427780151,
+      "output_name": "cats_with_humans_1741215.jpg",
+      "image": "cats_with_humans_1741215.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.649834156036377,
+      "output_name": "dogs_with_humans_4498001.jpg",
+      "image": "dogs_with_humans_4498001.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741201.jpg",
+      "image": "cats_with_humans_1741201.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741200.jpg",
+      "image": "cats_with_humans_1741200.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498000.jpg",
+      "image": "dogs_with_humans_4498000.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.6935808062553406,
+      "output_name": "cats_with_humans_1741214.jpg",
+      "image": "cats_with_humans_1741214.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "615443074_122291109728225456_9029486972802904186_n.jpg",
+      "image": "615443074_122291109728225456_9029486972802904186_n.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 173553.png",
+      "image": "Screenshot 2026-02-02 173553.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.7037956118583679,
+      "output_name": "cats_only_2558623.jpg",
+      "image": "cats_only_2558623.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_only_4588034.jpg",
+      "image": "dogs_only_4588034.jpg"
+    },
+    {
+      "action": "obfuscated",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "passed",
+      "max_confidence_after": 0.0,
+      "output_name": "dogs_only_4588020.jpg",
+      "image": "dogs_only_4588020.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "snoww.jpg",
+      "image": "snoww.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4588008.jpg",
+      "image": "dogs_only_4588008.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 140953.png",
+      "image": "Screenshot 2026-02-02 140953.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.7410855889320374,
+      "output_name": "cats_only_2558743.jpg",
+      "image": "cats_only_2558743.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "Screenshot 2026-02-02 165735.png",
+      "image": "Screenshot 2026-02-02 165735.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 2,
+      "verification": "failed",
+      "max_confidence_after": 0.6425005793571472,
+      "output_name": "Screenshot 2026-02-02 121615.png",
+      "image": "Screenshot 2026-02-02 121615.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5831617116928101,
+      "output_name": "Screenshot 2026-02-02 124023.png",
+      "image": "Screenshot 2026-02-02 124023.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.6835901737213135,
+      "output_name": "Screenshot 2026-02-02 120709.png",
+      "image": "Screenshot 2026-02-02 120709.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 171220.png",
+      "image": "Screenshot 2026-02-02 171220.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_only_4588024.jpg",
+      "image": "dogs_only_4588024.jpg"
+    },
+    {
+      "action": "obfuscated",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "passed",
+      "max_confidence_after": 0.0,
+      "output_name": "dogs_only_4588030.jpg",
+      "image": "dogs_only_4588030.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4588018.jpg",
+      "image": "dogs_only_4588018.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 173231.png",
+      "image": "Screenshot 2026-02-02 173231.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5244134068489075,
+      "output_name": "Screenshot 2026-02-02 110225.png",
+      "image": "Screenshot 2026-02-02 110225.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.7259330153465271,
+      "output_name": "cats_with_humans_1741210.jpg",
+      "image": "cats_with_humans_1741210.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.6879907846450806,
+      "output_name": "dogs_with_humans_4498004.jpg",
+      "image": "dogs_with_humans_4498004.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741204.jpg",
+      "image": "cats_with_humans_1741204.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 2,
+      "verification": "failed",
+      "max_confidence_after": 0.555357813835144,
+      "output_name": "Screenshot 2026-02-02 211140.png",
+      "image": "Screenshot 2026-02-02 211140.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741238.jpg",
+      "image": "cats_with_humans_1741238.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 133359.png",
+      "image": "Screenshot 2026-02-02 133359.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498038.jpg",
+      "image": "dogs_with_humans_4498038.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498039.jpg",
+      "image": "dogs_with_humans_4498039.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.6908750534057617,
+      "output_name": "cats_with_humans_1741239.jpg",
+      "image": "cats_with_humans_1741239.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "cats_with_humans_1741205.jpg",
+      "image": "cats_with_humans_1741205.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498005.jpg",
+      "image": "dogs_with_humans_4498005.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 5,
+      "faces_obfuscated": 5,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.7772446870803833,
+      "output_name": "cats_with_humans_1741211.jpg",
+      "image": "cats_with_humans_1741211.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 181501.png",
+      "image": "Screenshot 2026-02-02 181501.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.8637207746505737,
+      "output_name": "cats_only_2558626.jpg",
+      "image": "cats_only_2558626.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "624288730_2769937913398478_6398306185187773738_n.jpg",
+      "image": "624288730_2769937913398478_6398306185187773738_n.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_5255307.jpg",
+      "image": "dogs_with_humans_5255307.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5815206170082092,
+      "output_name": "75516dbd-b521-486d-a92e-a6eb9fe450c4.jpg",
+      "image": "75516dbd-b521-486d-a92e-a6eb9fe450c4.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4588019.jpg",
+      "image": "dogs_only_4588019.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4588031.jpg",
+      "image": "dogs_only_4588031.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_only_4588025.jpg",
+      "image": "dogs_only_4588025.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 181844.png",
+      "image": "Screenshot 2026-02-02 181844.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 211551.png",
+      "image": "Screenshot 2026-02-02 211551.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.7604252099990845,
+      "output_name": "cats_only_2558746.jpg",
+      "image": "cats_only_2558746.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "Screenshot 2026-02-02 121416.png",
+      "image": "Screenshot 2026-02-02 121416.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "cats_only_3777622.jpg",
+      "image": "cats_only_3777622.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "622560541_10238444665197369_4855446554641451882_n.jpg",
+      "image": "622560541_10238444665197369_4855446554641451882_n.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 144932.png",
+      "image": "Screenshot 2026-02-02 144932.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "IMG_8394.jpg",
+      "image": "IMG_8394.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 144703.png",
+      "image": "Screenshot 2026-02-02 144703.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 145409.png",
+      "image": "Screenshot 2026-02-02 145409.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 133212.png",
+      "image": "Screenshot 2026-02-02 133212.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 140940.png",
+      "image": "Screenshot 2026-02-02 140940.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_2558744.jpg",
+      "image": "cats_only_2558744.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "Screenshot 2026-02-02 142819.png",
+      "image": "Screenshot 2026-02-02 142819.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.6240638494491577,
+      "output_name": "Screenshot 2026-02-02 122914.png",
+      "image": "Screenshot 2026-02-02 122914.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_only_4588033.jpg",
+      "image": "dogs_only_4588033.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 181715.png",
+      "image": "Screenshot 2026-02-02 181715.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 172851.png",
+      "image": "Screenshot 2026-02-02 172851.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4588027.jpg",
+      "image": "dogs_only_4588027.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 104737.png",
+      "image": "Screenshot 2026-02-02 104737.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 120859.png",
+      "image": "Screenshot 2026-02-02 120859.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_3214212.jpg",
+      "image": "cats_only_3214212.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "618408296_10235356421236906_4921065952717671560_n.jpg",
+      "image": "618408296_10235356421236906_4921065952717671560_n.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5785853266716003,
+      "output_name": "Screenshot 2026-02-02 115404.png",
+      "image": "Screenshot 2026-02-02 115404.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.5665530562400818,
+      "output_name": "cats_with_humans_1741207.jpg",
+      "image": "cats_with_humans_1741207.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "cats_with_humans_1741213.jpg",
+      "image": "cats_with_humans_1741213.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 173031.png",
+      "image": "Screenshot 2026-02-02 173031.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "cats_with_humans_1741206.jpg",
+      "image": "cats_with_humans_1741206.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5245314836502075,
+      "output_name": "Screenshot 2026-02-02 134408.png",
+      "image": "Screenshot 2026-02-02 134408.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 120657.png",
+      "image": "Screenshot 2026-02-02 120657.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "619585411_1598289804833847_5128767974024468862_n.jpg",
+      "image": "619585411_1598289804833847_5128767974024468862_n.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.8243179321289062,
+      "output_name": "cats_only_2558625.jpg",
+      "image": "cats_only_2558625.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5460986495018005,
+      "output_name": "Screenshot 2026-02-02 120643.png",
+      "image": "Screenshot 2026-02-02 120643.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_2558619.jpg",
+      "image": "cats_only_2558619.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 133617.png",
+      "image": "Screenshot 2026-02-02 133617.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5991232991218567,
+      "output_name": "7c3a5e98-20a0-4de1-af4a-e10f2a265b4d.jpg",
+      "image": "7c3a5e98-20a0-4de1-af4a-e10f2a265b4d.jpg"
+    },
+    {
+      "action": "obfuscated",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "passed",
+      "max_confidence_after": 0.0,
+      "output_name": "dogs_only_4588026.jpg",
+      "image": "dogs_only_4588026.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4588032.jpg",
+      "image": "dogs_only_4588032.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 120910.png",
+      "image": "Screenshot 2026-02-02 120910.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4587992.jpg",
+      "image": "dogs_only_4587992.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5755751132965088,
+      "output_name": "Screenshot 2026-02-02 123932.png",
+      "image": "Screenshot 2026-02-02 123932.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4587986.jpg",
+      "image": "dogs_only_4587986.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 144759.png",
+      "image": "Screenshot 2026-02-02 144759.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498129.jpg",
+      "image": "dogs_with_humans_4498129.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_1254140.jpg",
+      "image": "dogs_only_1254140.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "Screenshot 2026-02-02 170417.png",
+      "image": "Screenshot 2026-02-02 170417.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "IMG_3307.jpg",
+      "image": "IMG_3307.HEIC"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741315.jpg",
+      "image": "cats_with_humans_1741315.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498115.jpg",
+      "image": "dogs_with_humans_4498115.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 165754.png",
+      "image": "Screenshot 2026-02-02 165754.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4587979.jpg",
+      "image": "dogs_only_4587979.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "WhatsApp Image 2026-02-02 at 6.51.43 PM.jpeg",
+      "image": "WhatsApp Image 2026-02-02 at 6.51.43 PM.jpeg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "oolong.png",
+      "image": "oolong.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "IMG_4723.JPG",
+      "image": "IMG_4723.JPG"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_2558736.jpg",
+      "image": "cats_only_2558736.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_2558695.jpg",
+      "image": "cats_only_2558695.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.8663706183433533,
+      "output_name": "cats_only_2558681.jpg",
+      "image": "cats_only_2558681.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_only_4588041.jpg",
+      "image": "dogs_only_4588041.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 143432.png",
+      "image": "Screenshot 2026-02-02 143432.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 134137.png",
+      "image": "Screenshot 2026-02-02 134137.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 2,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.7996311187744141,
+      "output_name": "dogs_only_4056535.jpg",
+      "image": "dogs_only_4056535.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "WhatsApp Image 2026-02-02 at 6.40.17 PM.jpeg",
+      "image": "WhatsApp Image 2026-02-02 at 6.40.17 PM.jpeg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.5965999364852905,
+      "output_name": "20220125_194109.jpg",
+      "image": "20220125_194109.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.8142054677009583,
+      "output_name": "cats_only_2558642.jpg",
+      "image": "cats_only_2558642.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 114026.png",
+      "image": "Screenshot 2026-02-02 114026.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.6478362679481506,
+      "output_name": "Screenshot 2026-02-02 123852.png",
+      "image": "Screenshot 2026-02-02 123852.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "619998347_10165000968665449_1664355135244465982_n.jpg",
+      "image": "619998347_10165000968665449_1664355135244465982_n.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-01 143400.png",
+      "image": "Screenshot 2026-02-01 143400.png"
+    },
+    {
+      "action": "obfuscated",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "passed",
+      "max_confidence_after": 0.0,
+      "output_name": "cats_with_humans_1741249.jpg",
+      "image": "cats_with_humans_1741249.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741261.jpg",
+      "image": "cats_with_humans_1741261.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498061.jpg",
+      "image": "dogs_with_humans_4498061.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "20230809_171229.jpg",
+      "image": "20230809_171229.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 171133.png",
+      "image": "Screenshot 2026-02-02 171133.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498075.jpg",
+      "image": "dogs_with_humans_4498075.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741275.jpg",
+      "image": "cats_with_humans_1741275.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741274.jpg",
+      "image": "cats_with_humans_1741274.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498074.jpg",
+      "image": "dogs_with_humans_4498074.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "615411036_122276363180222671_1123939844714871067_n.jpg",
+      "image": "615411036_122276363180222671_1123939844714871067_n.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498060.jpg",
+      "image": "dogs_with_humans_4498060.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741260.jpg",
+      "image": "cats_with_humans_1741260.jpg"
+    },
+    {
+      "action": "obfuscated",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "passed",
+      "max_confidence_after": 0.0,
+      "output_name": "cats_with_humans_1741248.jpg",
+      "image": "cats_with_humans_1741248.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.8653010129928589,
+      "output_name": "cats_only_2558643.jpg",
+      "image": "cats_only_2558643.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.8542758226394653,
+      "output_name": "cats_only_2558680.jpg",
+      "image": "cats_only_2558680.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_2558694.jpg",
+      "image": "cats_only_2558694.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.5109681487083435,
+      "output_name": "dogs_only_4588068.jpg",
+      "image": "dogs_only_4588068.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.6478371620178223,
+      "output_name": "Screenshot 2026-02-02 171536.png",
+      "image": "Screenshot 2026-02-02 171536.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 181612.png",
+      "image": "Screenshot 2026-02-02 181612.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 143547.png",
+      "image": "Screenshot 2026-02-02 143547.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "IMG_0911.jpg",
+      "image": "IMG_0911.HEIC"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-01 144232.png",
+      "image": "Screenshot 2026-02-01 144232.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4587978.jpg",
+      "image": "dogs_only_4587978.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498114.jpg",
+      "image": "dogs_with_humans_4498114.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741314.jpg",
+      "image": "cats_with_humans_1741314.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498128.jpg",
+      "image": "dogs_with_humans_4498128.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 150739.png",
+      "image": "Screenshot 2026-02-02 150739.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "WhatsApp Image 2026-02-02 at 6.52.02 PM.jpeg",
+      "image": "WhatsApp Image 2026-02-02 at 6.52.02 PM.jpeg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4587987.jpg",
+      "image": "dogs_only_4587987.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 110321.png",
+      "image": "Screenshot 2026-02-02 110321.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 124938.png",
+      "image": "Screenshot 2026-02-02 124938.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_only_4587985.jpg",
+      "image": "dogs_only_4587985.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_only_4587991.jpg",
+      "image": "dogs_only_4587991.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 123925.png",
+      "image": "Screenshot 2026-02-02 123925.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_8467763.jpg",
+      "image": "cats_only_8467763.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_only_4587952.jpg",
+      "image": "dogs_only_4587952.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.6406351327896118,
+      "output_name": "Screenshot 2026-02-02 123058.png",
+      "image": "Screenshot 2026-02-02 123058.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741302.jpg",
+      "image": "cats_with_humans_1741302.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741316.jpg",
+      "image": "cats_with_humans_1741316.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498116.jpg",
+      "image": "dogs_with_humans_4498116.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "4493948b-461c-4a7b-8307-d423d4401e4b.jpg",
+      "image": "4493948b-461c-4a7b-8307-d423d4401e4b.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_only_4588122.jpg",
+      "image": "dogs_only_4588122.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5211080312728882,
+      "output_name": "Screenshot 2026-02-02 142840.png",
+      "image": "Screenshot 2026-02-02 142840.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 104801.png",
+      "image": "Screenshot 2026-02-02 104801.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.8616417646408081,
+      "output_name": "cats_only_2558682.jpg",
+      "image": "cats_only_2558682.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_only_5748861.jpg",
+      "image": "dogs_only_5748861.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_2558696.jpg",
+      "image": "cats_only_2558696.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.612400233745575,
+      "output_name": "Screenshot 2026-02-02 122742.png",
+      "image": "Screenshot 2026-02-02 122742.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.8920069932937622,
+      "output_name": "cats_only_2558641.jpg",
+      "image": "cats_only_2558641.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 211324.png",
+      "image": "Screenshot 2026-02-02 211324.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 120627.png",
+      "image": "Screenshot 2026-02-02 120627.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "Screenshot 2026-02-02 121511.png",
+      "image": "Screenshot 2026-02-02 121511.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_only_4588095.jpg",
+      "image": "dogs_only_4588095.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498089.jpg",
+      "image": "dogs_with_humans_4498089.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 2,
+      "verification": "failed",
+      "max_confidence_after": 0.5826413631439209,
+      "output_name": "Screenshot 2026-02-02 115449.png",
+      "image": "Screenshot 2026-02-02 115449.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 135955.png",
+      "image": "Screenshot 2026-02-02 135955.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "619673189_10164682308655439_6192350219472417881_n.jpg",
+      "image": "619673189_10164682308655439_6192350219472417881_n.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498076.jpg",
+      "image": "dogs_with_humans_4498076.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741276.jpg",
+      "image": "cats_with_humans_1741276.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741262.jpg",
+      "image": "cats_with_humans_1741262.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498062.jpg",
+      "image": "dogs_with_humans_4498062.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498063.jpg",
+      "image": "dogs_with_humans_4498063.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 123111.png",
+      "image": "Screenshot 2026-02-02 123111.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741263.jpg",
+      "image": "cats_with_humans_1741263.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498077.jpg",
+      "image": "dogs_with_humans_4498077.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741288.jpg",
+      "image": "cats_with_humans_1741288.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498088.jpg",
+      "image": "dogs_with_humans_4498088.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 171441.png",
+      "image": "Screenshot 2026-02-02 171441.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "WhatsApp Image 2026-02-01 at 2.58.55 PM.jpeg",
+      "image": "WhatsApp Image 2026-02-01 at 2.58.55 PM.jpeg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 3,
+      "verification": "failed",
+      "max_confidence_after": 0.522233784198761,
+      "output_name": "Screenshot 2026-02-02 205422.png",
+      "image": "Screenshot 2026-02-02 205422.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.8083096742630005,
+      "output_name": "cats_only_2558640.jpg",
+      "image": "cats_only_2558640.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 145733.png",
+      "image": "Screenshot 2026-02-02 145733.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_2558697.jpg",
+      "image": "cats_only_2558697.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.8180915117263794,
+      "output_name": "cats_only_2558683.jpg",
+      "image": "cats_only_2558683.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 104747.png",
+      "image": "Screenshot 2026-02-02 104747.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "Screenshot 2026-02-02 104814.png",
+      "image": "Screenshot 2026-02-02 104814.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "619750139_26942964458627144_536025188782628529_n.jpg",
+      "image": "619750139_26942964458627144_536025188782628529_n.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 105505.png",
+      "image": "Screenshot 2026-02-02 105505.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 182456.png",
+      "image": "Screenshot 2026-02-02 182456.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498117.jpg",
+      "image": "dogs_with_humans_4498117.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741317.jpg",
+      "image": "cats_with_humans_1741317.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.6852066516876221,
+      "output_name": "cats_with_humans_1741303.jpg",
+      "image": "cats_with_humans_1741303.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 172558.png",
+      "image": "Screenshot 2026-02-02 172558.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4587953.jpg",
+      "image": "dogs_only_4587953.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "Screenshot 2026-02-02 122421.png",
+      "image": "Screenshot 2026-02-02 122421.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 141637.png",
+      "image": "Screenshot 2026-02-02 141637.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4587990.jpg",
+      "image": "dogs_only_4587990.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 140501.png",
+      "image": "Screenshot 2026-02-02 140501.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4587984.jpg",
+      "image": "dogs_only_4587984.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 114140.png",
+      "image": "Screenshot 2026-02-02 114140.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "615837085_10239800729585569_5280161642549421519_n.jpg",
+      "image": "615837085_10239800729585569_5280161642549421519_n.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5439168214797974,
+      "output_name": "dogs_only_4587994.jpg",
+      "image": "dogs_only_4587994.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 211719.png",
+      "image": "Screenshot 2026-02-02 211719.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741313.jpg",
+      "image": "cats_with_humans_1741313.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498113.jpg",
+      "image": "dogs_with_humans_4498113.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 134253.png",
+      "image": "Screenshot 2026-02-02 134253.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.7576287388801575,
+      "output_name": "dogs_only_4587957.jpg",
+      "image": "dogs_only_4587957.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5844006538391113,
+      "output_name": "Screenshot 2026-02-02 110118.png",
+      "image": "Screenshot 2026-02-02 110118.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 145858.png",
+      "image": "Screenshot 2026-02-02 145858.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.8294097185134888,
+      "output_name": "cats_only_2558687.jpg",
+      "image": "cats_only_2558687.jpg"
+    },
+    {
+      "action": "obfuscated",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "passed",
+      "max_confidence_after": 0.0,
+      "output_name": "cats_only_2558693.jpg",
+      "image": "cats_only_2558693.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_2558644.jpg",
+      "image": "cats_only_2558644.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 141021.png",
+      "image": "Screenshot 2026-02-02 141021.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 151232.png",
+      "image": "Screenshot 2026-02-02 151232.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.6792166233062744,
+      "output_name": "dogs_only_5732474.jpg",
+      "image": "dogs_only_5732474.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Copy of IMG_5300.jpg",
+      "image": "Copy of IMG_5300.HEIC"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 135944.png",
+      "image": "Screenshot 2026-02-02 135944.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498073.jpg",
+      "image": "dogs_with_humans_4498073.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741273.jpg",
+      "image": "cats_with_humans_1741273.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741267.jpg",
+      "image": "cats_with_humans_1741267.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741266.jpg",
+      "image": "cats_with_humans_1741266.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741272.jpg",
+      "image": "cats_with_humans_1741272.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "616602202_26533281676261151_7567586142837400819_n.jpg",
+      "image": "616602202_26533281676261151_7567586142837400819_n.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 145252.png",
+      "image": "Screenshot 2026-02-02 145252.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 115317.png",
+      "image": "Screenshot 2026-02-02 115317.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_2558651.jpg",
+      "image": "cats_only_2558651.jpg"
+    },
+    {
+      "action": "obfuscated",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 1,
+      "verification": "passed",
+      "max_confidence_after": 0.0,
+      "output_name": "dogs_with_humans_6816849.jpg",
+      "image": "dogs_with_humans_6816849.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.6952881217002869,
+      "output_name": "cats_only_2558645.jpg",
+      "image": "cats_only_2558645.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_only_2558679.jpg",
+      "image": "cats_only_2558679.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "618151832_3856624394469588_3665109677249276464_n.jpg",
+      "image": "618151832_3856624394469588_3665109677249276464_n.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 143347.png",
+      "image": "Screenshot 2026-02-02 143347.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 145118.png",
+      "image": "Screenshot 2026-02-02 145118.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "615818646_2423846148035605_7164611259336594863_n.jpg",
+      "image": "615818646_2423846148035605_7164611259336594863_n.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_5749196.jpg",
+      "image": "dogs_with_humans_5749196.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4587956.jpg",
+      "image": "dogs_only_4587956.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741306.jpg",
+      "image": "cats_with_humans_1741306.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 143958.png",
+      "image": "Screenshot 2026-02-02 143958.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "IMG_5837.JPG",
+      "image": "IMG_5837.JPG"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 181358.png",
+      "image": "Screenshot 2026-02-02 181358.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5630428791046143,
+      "output_name": "dogs_only_4587995.jpg",
+      "image": "dogs_only_4587995.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_only_4587981.jpg",
+      "image": "dogs_only_4587981.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 135831.png",
+      "image": "Screenshot 2026-02-02 135831.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 105702.png",
+      "image": "Screenshot 2026-02-02 105702.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 151421.png",
+      "image": "Screenshot 2026-02-02 151421.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 141156.png",
+      "image": "Screenshot 2026-02-02 141156.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 141618.png",
+      "image": "Screenshot 2026-02-02 141618.png"
+    },
+    {
+      "action": "obfuscated",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "passed",
+      "max_confidence_after": 0.0,
+      "output_name": "dogs_only_4587997.jpg",
+      "image": "dogs_only_4587997.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 182135.png",
+      "image": "Screenshot 2026-02-02 182135.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4587983.jpg",
+      "image": "dogs_only_4587983.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4587968.jpg",
+      "image": "dogs_only_4587968.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498110.jpg",
+      "image": "dogs_with_humans_4498110.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.7445598840713501,
+      "output_name": "cats_with_humans_1741304.jpg",
+      "image": "cats_with_humans_1741304.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4587954.jpg",
+      "image": "dogs_only_4587954.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 2,
+      "output_name": "Screenshot 2026-02-02 133259.png",
+      "image": "Screenshot 2026-02-02 133259.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498138.jpg",
+      "image": "dogs_with_humans_4498138.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "621455105_10242999145893830_1413271628969773023_n.jpg",
+      "image": "621455105_10242999145893830_1413271628969773023_n.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "IMG_0906.jpg",
+      "image": "IMG_0906.HEIC"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_only_4588050.jpg",
+      "image": "dogs_only_4588050.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 145046.png",
+      "image": "Screenshot 2026-02-02 145046.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.5480824112892151,
+      "output_name": "Screenshot 2026-02-02 133846.png",
+      "image": "Screenshot 2026-02-02 133846.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 134126.png",
+      "image": "Screenshot 2026-02-02 134126.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 110523.png",
+      "image": "Screenshot 2026-02-02 110523.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741264.jpg",
+      "image": "cats_with_humans_1741264.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498064.jpg",
+      "image": "dogs_with_humans_4498064.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741270.jpg",
+      "image": "cats_with_humans_1741270.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498058.jpg",
+      "image": "dogs_with_humans_4498058.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741258.jpg",
+      "image": "cats_with_humans_1741258.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.7279099822044373,
+      "output_name": "cats_only_6001557.jpg",
+      "image": "cats_only_6001557.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741259.jpg",
+      "image": "cats_with_humans_1741259.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498059.jpg",
+      "image": "dogs_with_humans_4498059.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741271.jpg",
+      "image": "cats_with_humans_1741271.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 1,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.513800859451294,
+      "output_name": "dogs_with_humans_4498071.jpg",
+      "image": "dogs_with_humans_4498071.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498065.jpg",
+      "image": "dogs_with_humans_4498065.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741265.jpg",
+      "image": "cats_with_humans_1741265.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-02 211848.png",
+      "image": "Screenshot 2026-02-02 211848.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 141751.png",
+      "image": "Screenshot 2026-02-02 141751.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "Screenshot 2026-02-02 172614.png",
+      "image": "Screenshot 2026-02-02 172614.png"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_only_4588086.jpg",
+      "image": "dogs_only_4588086.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_only_4588131.jpg",
+      "image": "dogs_only_4588131.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "IMG_2239.jpg",
+      "image": "IMG_2239.HEIC"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "dogs_with_humans_4498139.jpg",
+      "image": "dogs_with_humans_4498139.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4587955.jpg",
+      "image": "dogs_only_4587955.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "IMG_0757.JPG",
+      "image": "IMG_0757.JPG"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "cats_with_humans_1741305.jpg",
+      "image": "cats_with_humans_1741305.jpg"
+    },
+    {
+      "action": "obfuscated",
+      "face_count": 2,
+      "faces_obfuscated": 2,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "passed",
+      "max_confidence_after": 0.0,
+      "output_name": "IMG_1307.JPG",
+      "image": "IMG_1307.JPG"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 2,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 2,
+      "animals_detected": 3,
+      "verification": "failed",
+      "max_confidence_after": 0.6132166385650635,
+      "output_name": "Screenshot 2026-02-02 210405.png",
+      "image": "Screenshot 2026-02-02 210405.png"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 1,
+      "faces_obfuscated": 0,
+      "faces_skipped_animal": 1,
+      "animals_detected": 1,
+      "verification": "failed",
+      "max_confidence_after": 0.6712082624435425,
+      "output_name": "dogs_only_4587969.jpg",
+      "image": "dogs_only_4587969.jpg"
+    },
+    {
+      "action": "qa_required",
+      "face_count": 2,
+      "faces_obfuscated": 2,
+      "faces_skipped_animal": 0,
+      "animals_detected": 0,
+      "verification": "failed",
+      "max_confidence_after": 0.6363462209701538,
+      "output_name": "cats_with_humans_1741311.jpg",
+      "image": "cats_with_humans_1741311.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4587982.jpg",
+      "image": "dogs_only_4587982.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "dogs_only_4587996.jpg",
+      "image": "dogs_only_4587996.jpg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "Screenshot 2026-02-01 142849.png",
+      "image": "Screenshot 2026-02-01 142849.png"
+    }
+  ]
+}

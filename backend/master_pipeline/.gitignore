@@ -1,0 +1,67 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Virtual Environment
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+*.env
+!.env.example
+
+# Pipeline Workspace (keep structure, ignore contents)
+pipeline_workspace/01_downloaded_from_drive/*
+pipeline_workspace/02_unique_images/*
+pipeline_workspace/02_duplicate_clusters/*
+pipeline_workspace/03_biometric_processed/*
+pipeline_workspace/04_final_output/*
+!pipeline_workspace/**/.gitkeep
+
+# Biometric Pipeline Data (keep structure, ignore contents)
+biometric_compliance_pipeline/data/clean/*
+biometric_compliance_pipeline/data/obfuscated/*
+biometric_compliance_pipeline/data/qa_review/*
+!biometric_compliance_pipeline/data/**/.gitkeep
+
+# Results (keep structure, ignore contents)
+biometric_compliance_pipeline/results/*
+!biometric_compliance_pipeline/results/.gitkeep
+
+# Models (large files, download separately)
+*.caffemodel
+yolov8*.pt
+
+# Credentials
+*.json
+!biometric_compliance_pipeline/results/*.json
+!package*.json
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
