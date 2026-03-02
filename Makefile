@@ -71,7 +71,7 @@ help: ## Display this help message
 	@echo ""
 	@echo "  $(BOLD)Add More Images:$(NC)"
 	@echo "    1. Upload to Google Drive"
-	@echo "    2. make celery-trigger"
+	@echo "    2. make run-pipeline"
 	@echo ""
 	@echo "$(BOLD)$(CYAN)═══════════════════════════════════════════════════════════════$(NC)"
 	@echo ""

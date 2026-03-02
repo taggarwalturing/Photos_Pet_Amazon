@@ -21,7 +21,7 @@ from app.models.image import Image
 
 router = APIRouter(prefix="/admin/pipeline", tags=["Master Pipeline"])
 
-# Pipeline status storage (in-memory for now, could be Redis in production)
+# Pipeline status storage (in-memory for now)
 pipeline_status = {
     "is_running": False,
     "current_step": None,
