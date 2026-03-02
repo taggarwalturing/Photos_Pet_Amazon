@@ -9,7 +9,7 @@ import shutil
 from app.database import get_db
 from app.models.user import User
 from app.models.image import Image
-from app.auth import get_current_user
+from app.dependencies import get_current_user
 from app.utils.blur import blur_image_regions
 import requests
 
