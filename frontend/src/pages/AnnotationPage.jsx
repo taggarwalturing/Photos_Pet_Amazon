@@ -321,33 +321,38 @@ export default function AnnotationPage() {
           </div>
 
           {/* Right: Options form — fixed width sidebar */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200/80 p-5 flex flex-col overflow-y-auto min-h-0">
-            <h2 className="text-base font-bold text-gray-900 mb-0.5">{task?.category_name}</h2>
-            <p className="text-xs text-gray-500 mb-4">Select all that apply</p>
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200/80 flex flex-col overflow-hidden min-h-0">
+            {/* Fixed Header Section */}
+            <div className="p-5 pb-3 shrink-0 border-b border-gray-100">
+              <h2 className="text-base font-bold text-gray-900 mb-0.5">{task?.category_name}</h2>
+              <p className="text-xs text-gray-500">Select all that apply</p>
+            </div>
 
-            {/* Blur Tool */}
-            {task?.image_id && (
-              <div className="mb-4">
-                <BlurTool 
-                  imageId={task.image_id} 
-                  imageUrl={getImageUrl(task.image_id)}
-                  onBlurApplied={() => {
-                    // Optionally reload the image or show a success message
-                    console.log('Blur applied successfully');
-                  }}
-                />
-              </div>
-            )}
+            {/* Scrollable Content Section */}
+            <div className="flex-1 overflow-y-auto p-5 pt-3">
+              {/* Blur Tool */}
+              {task?.image_id && (
+                <div className="mb-4">
+                  <BlurTool 
+                    imageId={task.image_id} 
+                    imageUrl={getImageUrl(task.image_id)}
+                    onBlurApplied={() => {
+                      // Optionally reload the image or show a success message
+                      console.log('Blur applied successfully');
+                    }}
+                  />
+                </div>
+              )}
 
-            {error && (
-              <div className="bg-red-50 text-red-700 px-4 py-2 rounded-lg text-sm mb-4">
-                {error}
-              </div>
-            )}
+              {error && (
+                <div className="bg-red-50 text-red-700 px-4 py-2 rounded-lg text-sm mb-4">
+                  {error}
+                </div>
+              )}
 
-            {/* Options as pill-like checkboxes */}
-            <div className="flex-1 space-y-2">
-              {task?.options.map((opt) => {
+              {/* Options as pill-like checkboxes */}
+              <div className="space-y-2 mb-4">
+                {task?.options.map((opt) => {
                 const isSelected = selectedOptions.includes(opt.id);
                 return (
                   <label
@@ -387,11 +392,14 @@ export default function AnnotationPage() {
                   </label>
                 );
               })}
+              </div>
             </div>
 
-            {/* Is Duplicate */}
-            <div className="mt-5 pt-4 border-t border-gray-100">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Is Duplicate?</p>
+            {/* Fixed Footer Section with Controls */}
+            <div className="shrink-0 border-t border-gray-200 p-5 pt-4 bg-gray-50">
+              {/* Is Duplicate */}
+              <div className="mb-4">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Is Duplicate?</p>
               <div className="flex gap-2">
                 {[
                   { value: null, label: 'Not set', color: 'gray' },
@@ -419,9 +427,9 @@ export default function AnnotationPage() {
               </div>
             </div>
 
-            {/* Is AI-Generated */}
-            <div className="mt-4 pt-4 border-t border-gray-100">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">🤖 AI-Generated Image?</p>
+              {/* Is AI-Generated */}
+              <div className="mb-4">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">🤖 AI-Generated Image?</p>
               <div className="flex gap-2">
                 {[
                   { value: null, label: 'Not set', color: 'gray' },
@@ -447,27 +455,26 @@ export default function AnnotationPage() {
                   </button>
                 ))}
               </div>
-            </div>
+              
+              {/* Already annotated indicator */}
+              {task?.current_annotation?.status === 'completed' && (
+                <div className="mb-4 flex items-center gap-2 px-3 py-2.5 bg-green-50/80 border border-green-200 rounded-xl text-xs text-green-700 font-medium">
+                  <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  Already completed. Changes will update your annotation.
+                </div>
+              )}
 
-            {/* Already annotated indicator */}
-            {task?.current_annotation?.status === 'completed' && (
-              <div className="mt-4 flex items-center gap-2 px-3 py-2.5 bg-green-50/80 border border-green-200 rounded-xl text-xs text-green-700 font-medium">
-                <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
-                Already completed. Changes will update your annotation.
-              </div>
-            )}
-
-            {/* Navigation buttons */}
-            <div className="mt-5 pt-4 border-t border-gray-100 flex items-center gap-2.5">
-              <button
-                onClick={handleBack}
-                disabled={queueIndex === 0 || saving}
-                className="px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition disabled:opacity-25 disabled:cursor-not-allowed cursor-pointer text-sm font-medium"
-              >
-                &larr;
-              </button>
+              {/* Navigation buttons */}
+              <div className="flex items-center gap-2.5 mb-2">
+                <button
+                  onClick={handleBack}
+                  disabled={queueIndex === 0 || saving}
+                  className="px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition disabled:opacity-25 disabled:cursor-not-allowed cursor-pointer text-sm font-medium"
+                >
+                  &larr;
+                </button>
               <button
                 onClick={handleSkip}
                 disabled={saving}
@@ -492,11 +499,12 @@ export default function AnnotationPage() {
               </button>
             </div>
 
-            {/* Keyboard shortcut hints */}
-            <div className="mt-2.5 flex items-center justify-center gap-4 text-[10px] text-gray-400">
-              <span><kbd className="px-1.5 py-0.5 bg-gray-50 border border-gray-200 rounded text-gray-500 font-mono">&larr;</kbd> Back</span>
-              <span><kbd className="px-1.5 py-0.5 bg-gray-50 border border-gray-200 rounded text-gray-500 font-mono">S</kbd> Skip</span>
-              <span><kbd className="px-1.5 py-0.5 bg-gray-50 border border-gray-200 rounded text-gray-500 font-mono">&rarr;</kbd> Save</span>
+              {/* Keyboard shortcut hints */}
+              <div className="flex items-center justify-center gap-4 text-[10px] text-gray-400">
+                <span><kbd className="px-1.5 py-0.5 bg-gray-50 border border-gray-200 rounded text-gray-500 font-mono">&larr;</kbd> Back</span>
+                <span><kbd className="px-1.5 py-0.5 bg-gray-50 border border-gray-200 rounded text-gray-500 font-mono">S</kbd> Skip</span>
+                <span><kbd className="px-1.5 py-0.5 bg-gray-50 border border-gray-200 rounded text-gray-500 font-mono">&rarr;</kbd> Save</span>
+              </div>
             </div>
           </div>
         </div>
