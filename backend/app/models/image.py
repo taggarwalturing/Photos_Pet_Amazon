@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, ForeignKey, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -13,14 +13,14 @@ class Image(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     
     # Improper image tracking
-    is_improper = Column(Boolean, default=False, nullable=False)
+    is_improper = Column(Boolean, default=False, nullable=False, index=True)  # Added index
     improper_reason = Column(Text, nullable=True)
     marked_improper_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     marked_improper_at = Column(DateTime(timezone=True), nullable=True)
     
     # Biometric compliance tracking
-    compliance_processed = Column(Boolean, default=False, nullable=False)
-    compliance_status = Column(String(50), nullable=True)  # 'clean', 'processed', 'needs_reprocess', 'flagged'
+    compliance_processed = Column(Boolean, default=False, nullable=False, index=True)  # Added index
+    compliance_status = Column(String(50), nullable=True, index=True)  # Added index
     human_faces_detected = Column(Integer, default=0, nullable=False)
     processing_log = Column(Text, nullable=True)
     
@@ -42,3 +42,9 @@ class Image(Base):
     ai_marker = relationship("User", foreign_keys=[marked_ai_by])
     edit_requests = relationship("EditRequest", back_populates="image")
     blur_regions = relationship("BlurRegion", back_populates="image", cascade="all, delete-orphan")
+    
+    # Composite indexes for common query patterns
+    __table_args__ = (
+        Index('idx_compliance_status', 'compliance_processed', 'compliance_status'),
+        Index('idx_improper_created', 'is_improper', 'created_at'),
+    )

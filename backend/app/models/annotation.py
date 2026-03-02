@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, Boolean, String, Text, ForeignKey, DateTime, UniqueConstraint
+from sqlalchemy import Column, Integer, Boolean, String, Text, ForeignKey, DateTime, UniqueConstraint, Index
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -8,27 +8,31 @@ class Annotation(Base):
     __tablename__ = "annotations"
 
     id = Column(Integer, primary_key=True, index=True)
-    image_id = Column(Integer, ForeignKey("images.id", ondelete="CASCADE"), nullable=False)
-    annotator_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
-    category_id = Column(Integer, ForeignKey("categories.id", ondelete="CASCADE"), nullable=False)
+    image_id = Column(Integer, ForeignKey("images.id", ondelete="CASCADE"), nullable=False, index=True)  # Added index
+    annotator_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)  # Added index
+    category_id = Column(Integer, ForeignKey("categories.id", ondelete="CASCADE"), nullable=False, index=True)  # Added index
     is_duplicate = Column(Boolean, nullable=True)  # NULL = not answered
-    status = Column(String(20), nullable=False, default="in_progress")  # in_progress, completed, skipped
+    status = Column(String(20), nullable=False, default="in_progress", index=True)  # Added index
     time_spent_seconds = Column(Integer, nullable=False, default=0)  # cumulative time spent annotating
     human_validated = Column(Boolean, nullable=False, default=False)  # True after human validates/submits (model predictions start as False)
     is_rework = Column(Boolean, nullable=False, default=False)  # True if this is a rework submission
     rework_time_seconds = Column(Integer, nullable=False, default=0)  # time spent on rework
-    review_status = Column(String(20), nullable=True)  # NULL=not reviewed, approved, rejected
+    review_status = Column(String(20), nullable=True, index=True)  # Added index - NULL=not reviewed, approved, rejected
     review_note = Column(Text, nullable=True)
     reviewed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), index=True)  # Added index
 
     __table_args__ = (
         UniqueConstraint(
             "image_id", "annotator_id", "category_id",
             name="uq_image_annotator_category"
         ),
+        # Composite indexes for common query patterns
+        Index('idx_image_annotator', 'image_id', 'annotator_id'),
+        Index('idx_status_review', 'status', 'review_status'),
+        Index('idx_annotator_status', 'annotator_id', 'status'),
     )
 
     # Relationships
@@ -46,9 +50,9 @@ class AnnotationSelection(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     annotation_id = Column(
-        Integer, ForeignKey("annotations.id", ondelete="CASCADE"), nullable=False
+        Integer, ForeignKey("annotations.id", ondelete="CASCADE"), nullable=False, index=True  # Added index
     )
-    option_id = Column(Integer, ForeignKey("options.id"), nullable=False)
+    option_id = Column(Integer, ForeignKey("options.id"), nullable=False, index=True)  # Added index
 
     __table_args__ = (
         UniqueConstraint("annotation_id", "option_id", name="uq_annotation_option"),

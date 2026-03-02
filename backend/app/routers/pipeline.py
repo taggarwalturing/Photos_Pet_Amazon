@@ -224,6 +224,78 @@ def get_pipeline_summary(
     }
 
 
+@router.get("/stats")
+def get_pipeline_stats(
+    db: Session = Depends(get_db)
+):
+    """Get detailed pipeline statistics for UI display."""
+    
+    # Get image stats from database
+    stats = db.execute(text("""
+        SELECT 
+            COUNT(*) as total,
+            SUM(CASE WHEN compliance_processed = TRUE THEN 1 ELSE 0 END) as processed,
+            SUM(CASE WHEN compliance_processed = FALSE OR compliance_processed IS NULL THEN 1 ELSE 0 END) as pending,
+            SUM(CASE WHEN compliance_status IN ('failed', 'error') THEN 1 ELSE 0 END) as failed,
+            SUM(CASE WHEN human_faces_detected > 0 OR compliance_status IN ('blurred', 'processed', 'obfuscated') THEN 1 ELSE 0 END) as with_faces,
+            SUM(CASE WHEN (human_faces_detected = 0 OR human_faces_detected IS NULL) AND compliance_status = 'clean' THEN 1 ELSE 0 END) as without_faces,
+            SUM(CASE WHEN compliance_status LIKE '%screenshot%' OR processing_log LIKE '%screenshot%' THEN 1 ELSE 0 END) as screenshots
+        FROM images
+    """)).fetchone()
+    
+    # Try to get deduplication stats from workspace if available
+    try:
+        backend_dir = Path(__file__).parent.parent.parent
+        workspace = backend_dir / "master_pipeline" / "pipeline_workspace"
+        
+        # Count unique images folder
+        unique_dir = workspace / "02_unique_images"
+        unique_count = 0
+        if unique_dir.exists():
+            extensions = {'.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif', '.avif'}
+            unique_count = len([f for f in unique_dir.iterdir() if f.is_file() and f.suffix.lower() in extensions])
+        
+        # Count duplicate clusters
+        clusters_dir = workspace / "02_duplicate_clusters"
+        duplicate_count = 0
+        cluster_count = 0
+        if clusters_dir.exists():
+            cluster_count = len([d for d in clusters_dir.iterdir() if d.is_dir()])
+            # Count total duplicates across all clusters
+            for cluster_dir in clusters_dir.iterdir():
+                if cluster_dir.is_dir():
+                    dup_files = [f for f in cluster_dir.iterdir() if f.is_file() and f.name != '.gitkeep']
+                    # Subtract 1 for the original, rest are duplicates
+                    if dup_files:
+                        duplicate_count += len(dup_files) - 1
+        
+    except Exception as e:
+        print(f"Error reading deduplication stats: {e}")
+        unique_count = 0
+        duplicate_count = 0
+        cluster_count = 0
+    
+    total = stats[0] or 0
+    processed = stats[1] or 0
+    pending = stats[2] or 0
+    failed = stats[3] or 0
+    
+    return {
+        "total_images": total,
+        "processed": processed,
+        "pending": pending,
+        "failed": failed,
+        "unique_images": unique_count if unique_count > 0 else total - duplicate_count,
+        "duplicate_images": duplicate_count,
+        "duplicate_clusters": cluster_count,
+        "images_with_faces": stats[4] or 0,
+        "images_without_faces": stats[5] or 0,
+        "screenshots_skipped": stats[6] or 0,
+        "status": "idle" if not pipeline_status["is_running"] else pipeline_status["current_step"],
+        "last_run": pipeline_status.get("completed_at")
+    }
+
+
 # Background task functions
 
 def run_pipeline_background(

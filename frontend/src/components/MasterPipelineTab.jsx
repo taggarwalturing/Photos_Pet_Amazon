@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
+import PipelineStatistics from './PipelineStatistics';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
@@ -457,34 +458,8 @@ export default function MasterPipelineTab() {
         </div>
       )}
 
-      {/* Summary Statistics */}
-      {summary && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">Pipeline Statistics</h2>
-          
-          <div className="grid grid-cols-4 gap-4">
-            <div className="p-4 bg-blue-50 rounded-lg">
-              <p className="text-sm text-blue-600 font-medium">Total Images</p>
-              <p className="text-2xl font-bold text-blue-900 mt-1">{summary.total_images || 0}</p>
-            </div>
-            
-            <div className="p-4 bg-green-50 rounded-lg">
-              <p className="text-sm text-green-600 font-medium">Processed</p>
-              <p className="text-2xl font-bold text-green-900 mt-1">{summary.processed || 0}</p>
-            </div>
-            
-            <div className="p-4 bg-yellow-50 rounded-lg">
-              <p className="text-sm text-yellow-600 font-medium">Pending</p>
-              <p className="text-2xl font-bold text-yellow-900 mt-1">{summary.pending || 0}</p>
-            </div>
-            
-            <div className="p-4 bg-red-50 rounded-lg">
-              <p className="text-sm text-red-600 font-medium">Failed</p>
-              <p className="text-2xl font-bold text-red-900 mt-1">{summary.failed || 0}</p>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Pipeline Statistics Component */}
+      <PipelineStatistics />
 
       {/* Failed Images */}
       {errors.length > 0 && (

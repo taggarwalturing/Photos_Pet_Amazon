@@ -69,11 +69,5 @@ class Settings(BaseSettings):
             "client_x509_cert_url": f"https://www.googleapis.com/robot/v1/metadata/x509/{self.GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL}"
         }
 
-    class Config:
-        env_file = ".env"
-        extra = "allow"
-        # Allow reading from system environment variables
-        case_sensitive = False
-
 
 settings = Settings()

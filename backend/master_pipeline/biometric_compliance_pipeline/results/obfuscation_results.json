@@ -5,10 +5,10 @@
   "statistics": {
     "obfuscated": 22,
     "no_face": 547,
-    "verification_failed": 127,
-    "qa_required": 127,
+    "verification_failed": 126,
+    "qa_required": 126,
     "clean": 547,
-    "failed": 0,
+    "failed": 1,
     "skipped": 0
   },
   "results": [
@@ -803,14 +803,9 @@
       "image": "dogs_only_4587989.jpg"
     },
     {
-      "action": "qa_required",
-      "face_count": 1,
-      "faces_obfuscated": 1,
-      "faces_skipped_animal": 0,
-      "animals_detected": 0,
-      "verification": "failed",
-      "max_confidence_after": 0.6117681860923767,
-      "output_name": "cats_with_humans_1741326.jpg",
+      "action": "failed",
+      "error": "Failed to load image: cannot identify image file '/Users/tusharaggarwal/Desktop/Turing/photo_artifact/GIT_2/Photos_Pet_Amazon/backend/master_pipeline/pipeline_workspace/02_unique_images/cats_with_humans_1741326.jpg'",
+      "face_count": 0,
       "image": "cats_with_humans_1741326.jpg"
     },
     {

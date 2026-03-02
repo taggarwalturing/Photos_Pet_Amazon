@@ -7,8 +7,8 @@
 # ═══════════════════════════════════════════════════════════════════════════
 #
 # 🚀 Quick Start Commands:
-#   make run-all            - Start EVERYTHING (Backend + Frontend) in background
-#   make run-complete       - Complete workflow: setup + start app
+#   make run-all            - Start EVERYTHING (Redis + Celery + App) in background
+#   make run-complete       - Complete workflow: setup + start + process images
 #   make first-time-setup   - Interactive wizard for first-time users
 #   make help               - Show all available commands
 #
@@ -532,3 +532,188 @@ version: ## Show version information
 	@node --version
 	@npm --version
 
+##@ Celery (Background Task Processing)
+
+redis-start: ## Start Redis server locally
+	@echo "$(CYAN)🚀 Starting Redis...$(NC)"
+	@if ! command -v redis-server > /dev/null 2>&1; then \
+		echo "$(RED)❌ Redis not installed!$(NC)"; \
+		echo ""; \
+		echo "$(YELLOW)📦 Install Redis:$(NC)"; \
+		echo "   macOS:  brew install redis"; \
+		echo "   Linux:  sudo apt-get install redis-server"; \
+		echo ""; \
+		exit 1; \
+	fi
+	@if pgrep -x "redis-server" > /dev/null; then \
+		echo "$(GREEN)✅ Redis is already running$(NC)"; \
+	else \
+		redis-server --daemonize yes; \
+		sleep 1; \
+		echo "$(GREEN)✅ Redis started on localhost:6379$(NC)"; \
+	fi
+
+redis-stop: ## Stop Redis server
+	@echo "$(CYAN)🛑 Stopping Redis...$(NC)"
+	@redis-cli shutdown 2>/dev/null || echo "Redis was not running"
+	@echo "$(GREEN)✅ Redis stopped$(NC)"
+
+redis-status: ## Check if Redis is running
+	@echo "$(CYAN)📊 Redis Status:$(NC)"
+	@if pgrep -x "redis-server" > /dev/null; then \
+		echo "$(GREEN)✅ Redis is running$(NC)"; \
+		redis-cli ping 2>/dev/null || echo "$(YELLOW)⚠️  Redis running but not responding$(NC)"; \
+	else \
+		echo "$(RED)❌ Redis is not running$(NC)"; \
+	fi
+
+celery-worker: ## Start Celery worker (foreground)
+	@echo "$(CYAN)👷 Starting Celery worker...$(NC)"
+	@if [ ! -d "$(BACKEND_DIR)/.venv" ]; then \
+		echo "$(YELLOW)⚠️  Virtual environment not found, creating...$(NC)"; \
+		cd $(BACKEND_DIR) && python3 -m venv .venv; \
+		$(PIP) install --upgrade pip; \
+		$(PIP) install -r requirements.txt; \
+		echo "$(GREEN)✅ Virtual environment created$(NC)"; \
+	fi
+	@cd $(BACKEND_DIR) && \
+		source .venv/bin/activate && \
+		celery -A app.celery_app worker --loglevel=info --concurrency=4
+
+celery-worker-bg: ## Start Celery worker (background)
+	@echo "$(CYAN)👷 Starting Celery worker in background...$(NC)"
+	@if [ ! -d "$(BACKEND_DIR)/.venv" ]; then \
+		echo "$(YELLOW)⚠️  Virtual environment not found, creating...$(NC)"; \
+		cd $(BACKEND_DIR) && python3 -m venv .venv; \
+		$(PIP) install --upgrade pip; \
+		$(PIP) install -r requirements.txt; \
+		echo "$(GREEN)✅ Virtual environment created$(NC)"; \
+	fi
+	@cd $(BACKEND_DIR) && \
+		source .venv/bin/activate && \
+		nohup celery -A app.celery_app worker --loglevel=info --concurrency=4 > celery_worker.log 2>&1 & \
+		echo $$! > celery_worker.pid
+	@sleep 2
+	@echo "$(GREEN)✅ Celery worker started (PID: $$(cat $(BACKEND_DIR)/celery_worker.pid))$(NC)"
+	@echo "$(YELLOW)   Logs: $(BACKEND_DIR)/celery_worker.log$(NC)"
+
+celery-stop: ## Stop Celery worker
+	@echo "$(CYAN)🛑 Stopping Celery worker...$(NC)"
+	@if [ -f "$(BACKEND_DIR)/celery_worker.pid" ]; then \
+		kill $$(cat $(BACKEND_DIR)/celery_worker.pid) 2>/dev/null || true; \
+		rm $(BACKEND_DIR)/celery_worker.pid; \
+		echo "$(GREEN)✅ Celery worker stopped$(NC)"; \
+	else \
+		echo "$(YELLOW)⚠️  No worker PID file found$(NC)"; \
+	fi
+
+celery-flower: ## Start Flower monitoring (foreground)
+	@echo "$(CYAN)🌸 Starting Flower...$(NC)"
+	@if [ ! -d "$(BACKEND_DIR)/.venv" ]; then \
+		echo "$(YELLOW)⚠️  Virtual environment not found, creating...$(NC)"; \
+		cd $(BACKEND_DIR) && python3 -m venv .venv; \
+		$(PIP) install --upgrade pip; \
+		$(PIP) install -r requirements.txt; \
+		echo "$(GREEN)✅ Virtual environment created$(NC)"; \
+	fi
+	@cd $(BACKEND_DIR) && \
+		source .venv/bin/activate && \
+		celery -A app.celery_app flower
+	@echo "$(GREEN)✅ Flower running at http://localhost:5555$(NC)"
+
+celery-flower-bg: ## Start Flower monitoring (background)
+	@echo "$(CYAN)🌸 Starting Flower in background...$(NC)"
+	@if [ ! -d "$(BACKEND_DIR)/.venv" ]; then \
+		echo "$(YELLOW)⚠️  Virtual environment not found, creating...$(NC)"; \
+		cd $(BACKEND_DIR) && python3 -m venv .venv; \
+		$(PIP) install --upgrade pip; \
+		$(PIP) install -r requirements.txt; \
+		echo "$(GREEN)✅ Virtual environment created$(NC)"; \
+	fi
+	@cd $(BACKEND_DIR) && \
+		source .venv/bin/activate && \
+		nohup celery -A app.celery_app flower > celery_flower.log 2>&1 & \
+		echo $$! > celery_flower.pid
+	@sleep 2
+	@echo "$(GREEN)✅ Flower started (PID: $$(cat $(BACKEND_DIR)/celery_flower.pid))$(NC)"
+	@echo "$(GREEN)   URL: http://localhost:5555$(NC)"
+	@echo "$(YELLOW)   Logs: $(BACKEND_DIR)/celery_flower.log$(NC)"
+
+celery-flower-stop: ## Stop Flower monitoring
+	@echo "$(CYAN)🛑 Stopping Flower...$(NC)"
+	@if [ -f "$(BACKEND_DIR)/celery_flower.pid" ]; then \
+		kill $$(cat $(BACKEND_DIR)/celery_flower.pid) 2>/dev/null || true; \
+		rm $(BACKEND_DIR)/celery_flower.pid; \
+		echo "$(GREEN)✅ Flower stopped$(NC)"; \
+	else \
+		echo "$(YELLOW)⚠️  No Flower PID file found$(NC)"; \
+	fi
+
+celery-trigger: ## Trigger image processing with Celery
+	@echo "$(CYAN)🚀 Triggering image processing...$(NC)"
+	@cd $(BACKEND_DIR) && \
+		source .venv/bin/activate && \
+		python trigger_processing.py
+
+celery-check: ## Check how many images need processing
+	@echo "$(CYAN)🔍 Checking unprocessed images...$(NC)"
+	@cd $(BACKEND_DIR) && \
+		source .venv/bin/activate && \
+		python trigger_processing.py --check
+
+celery-status: ## Check Celery worker status
+	@echo "$(CYAN)📊 Celery Status:$(NC)"
+	@cd $(BACKEND_DIR) && \
+		source .venv/bin/activate && \
+		celery -A app.celery_app inspect active 2>/dev/null || echo "$(RED)❌ No workers running$(NC)"
+
+celery-purge: ## Purge all pending tasks from queue
+	@echo "$(CYAN)🗑️  Purging task queue...$(NC)"
+	@read -p "Are you sure? This will delete all pending tasks [y/N]: " confirm; \
+	if [ "$$confirm" = "y" ] || [ "$$confirm" = "Y" ]; then \
+		cd $(BACKEND_DIR) && \
+		source .venv/bin/activate && \
+		celery -A app.celery_app purge -f; \
+		echo "$(GREEN)✅ Queue purged$(NC)"; \
+	else \
+		echo "$(YELLOW)⚠️  Cancelled$(NC)"; \
+	fi
+
+start-celery-stack: redis-start ## Start complete Celery stack (Redis + Worker + Flower in background)
+	@echo "$(CYAN)🚀 Starting complete Celery stack...$(NC)"
+	@$(MAKE) celery-worker-bg
+	@$(MAKE) celery-flower-bg
+	@echo ""
+	@echo "$(GREEN)✅ Celery stack ready!$(NC)"
+	@echo "$(CYAN)Access points:$(NC)"
+	@echo "  Flower UI: $(YELLOW)http://localhost:5555$(NC)"
+	@echo ""
+	@echo "$(CYAN)Useful commands:$(NC)"
+	@echo "  $(YELLOW)make celery-trigger$(NC)  - Process images"
+	@echo "  $(YELLOW)make celery-check$(NC)    - Check status"
+	@echo "  $(YELLOW)make celery-logs$(NC)     - View logs"
+	@echo "  $(YELLOW)make stop-celery-stack$(NC) - Stop all"
+
+stop-celery-stack: ## Stop complete Celery stack
+	@echo "$(CYAN)🛑 Stopping Celery stack...$(NC)"
+	@$(MAKE) celery-stop
+	@$(MAKE) celery-flower-stop
+	@$(MAKE) redis-stop
+	@echo "$(GREEN)✅ Celery stack stopped$(NC)"
+
+celery-logs: ## View Celery worker logs
+	@if [ -f "$(BACKEND_DIR)/celery_worker.log" ]; then \
+		tail -f $(BACKEND_DIR)/celery_worker.log; \
+	else \
+		echo "$(RED)❌ No worker log file found$(NC)"; \
+		echo "$(YELLOW)   Worker might be running in foreground or not started$(NC)"; \
+	fi
+
+celery-install: ## Install Celery and Redis dependencies
+	@echo "$(CYAN)📦 Installing Celery dependencies...$(NC)"
+	@$(PIP) install celery[redis] redis flower
+	@echo "$(GREEN)✅ Celery dependencies installed$(NC)"
+	@echo ""
+	@echo "$(YELLOW)⚠️  Don't forget to install Redis:$(NC)"
+	@echo "   macOS: brew install redis"
+	@echo "   Ubuntu: sudo apt-get install redis-server"

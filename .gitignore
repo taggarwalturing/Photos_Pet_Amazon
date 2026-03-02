@@ -132,6 +132,7 @@ backend/master_pipeline/biometric_compliance_pipeline/results/*
 *.json
 !backend/master_pipeline/biometric_compliance_pipeline/results/*.json
 !package*.json
+turing-genai-ws-58339643dd3f
 
 # ===================================
 # Temporary Files
