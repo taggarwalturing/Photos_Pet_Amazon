@@ -9,7 +9,7 @@ import io
 from contextlib import asynccontextmanager
 from app.config import settings
 from app.database import engine, Base, SessionLocal, get_db
-from app.routers import auth, admin, annotator, compliance, compliance_management, pipeline
+from app.routers import auth, admin, annotator, compliance, compliance_management, pipeline, public_blur
 from app.seed import seed_database
 from app.models.image import Image
 
@@ -28,7 +28,7 @@ except ImportError:
     HEIF_SUPPORT = False
 
 # Import all models so Base knows about them
-from app.models import user, image, category, option, annotator_category, annotation, image_assignment, edit_request, notification  # noqa
+from app.models import user, image, category, option, annotator_category, annotation, image_assignment, edit_request, notification, blur_region  # noqa
 from app.models import settings as settings_model  # noqa - rename to avoid conflict with config.settings
 
 # Google Drive service account setup from settings
@@ -108,6 +108,13 @@ _migrate()
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage application lifespan events"""
+    # Seed database with admin users, categories, etc.
+    db = SessionLocal()
+    try:
+        seed_database(db)
+    finally:
+        db.close()
+
     # Startup: Start background tasks
     try:
         from app.background_tasks import start_background_tasks
@@ -115,10 +122,7 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         import logging
         logging.error(f"Failed to start background tasks: {e}")
-        # Continue anyway - don't block startup
     yield
-    # Shutdown: cleanup if needed
-    pass
 
 
 app = FastAPI(
@@ -144,15 +148,7 @@ app.include_router(annotator.router, prefix="/api")
 app.include_router(compliance.router, prefix="/api")
 app.include_router(compliance_management.router, prefix="/api")
 app.include_router(pipeline.router, prefix="/api")
-
-
-@app.on_event("startup")
-def on_startup():
-    db = SessionLocal()
-    try:
-        seed_database(db)
-    finally:
-        db.close()
+app.include_router(public_blur.router, prefix="/api")
 
 
 @app.get("/api/health")

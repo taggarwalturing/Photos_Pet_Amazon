@@ -5,6 +5,7 @@ import AdminDashboard from './pages/AdminDashboard';
 import AnnotatorHome from './pages/AnnotatorHome';
 import AnnotationPage from './pages/AnnotationPage';
 import ImageAnnotationPage from './pages/ImageAnnotationPage';
+import PublicBlurPage from './pages/PublicBlurPage';
 
 function ProtectedRoute({ children, role }) {
   const { user, loading } = useAuth();
@@ -35,6 +36,7 @@ export default function App() {
       <Routes>
         <Route path="/" element={<RootRedirect />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/blur" element={<PublicBlurPage />} />
         <Route
           path="/admin/*"
           element={

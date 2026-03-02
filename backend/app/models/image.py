@@ -41,3 +41,4 @@ class Image(Base):
     improper_marker = relationship("User", foreign_keys=[marked_improper_by])
     ai_marker = relationship("User", foreign_keys=[marked_ai_by])
     edit_requests = relationship("EditRequest", back_populates="image")
+    blur_regions = relationship("BlurRegion", back_populates="image", cascade="all, delete-orphan")

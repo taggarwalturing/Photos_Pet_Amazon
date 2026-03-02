@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
+import BoundingBoxCanvas from '../components/BoundingBoxCanvas';
 
 // Helper to get proxied image URL for Google Drive images
 const getImageUrl = (imageId) => {
@@ -223,6 +224,12 @@ export default function ImageAnnotationPage() {
   const [isAIGenerated, setIsAIGenerated] = useState(null); // null, true, or false
   const [savingAIStatus, setSavingAIStatus] = useState(false);
 
+  // Blur tool state
+  const [blurActive, setBlurActive] = useState(false);
+  const [blurBoxes, setBlurBoxes] = useState([]);
+  const [applyingBlur, setApplyingBlur] = useState(false);
+  const imageContainerRef = useRef(null);
+
   // Time limit settings (fetched from API)
   const [maxAnnotationTime, setMaxAnnotationTime] = useState(120);
   const [maxReworkTime, setMaxReworkTime] = useState(120);
@@ -339,6 +346,8 @@ export default function ImageAnnotationPage() {
     setLoading(true);
     setError('');
     setPendingChanges({});
+    setBlurBoxes([]);
+    setBlurActive(false);
     try {
       const res = await api.get(`/annotator/images/${id}`);
       setData(res.data);
@@ -487,6 +496,22 @@ export default function ImageAnnotationPage() {
       setError(err.response?.data?.detail || 'Failed to submit request');
     } finally {
       setRequestingEdit(false);
+    }
+  };
+
+  const handleApplyBlur = async () => {
+    if (!blurBoxes.length) return;
+    setApplyingBlur(true);
+    setError('');
+    try {
+      await api.post(`/annotator/images/${imageId}/blur-regions`, { regions: blurBoxes });
+      setBlurBoxes([]);
+      setBlurActive(false);
+      await loadImage(imageId);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to apply blur');
+    } finally {
+      setApplyingBlur(false);
     }
   };
 
@@ -650,7 +675,57 @@ export default function ImageAnnotationPage() {
               </button>
             )}
             
-            <img src={getImageUrl(data?.id)} alt={data?.filename} className={`max-w-full max-h-full object-contain rounded-lg ${isImproper ? 'opacity-50' : ''}`} />
+            {/* Blur tool floating toolbar */}
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2">
+              <button
+                onClick={() => setBlurActive(!blurActive)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold backdrop-blur-sm border transition cursor-pointer ${
+                  blurActive
+                    ? 'bg-red-500/90 text-white border-red-400'
+                    : 'bg-black/50 text-white border-white/20 hover:bg-black/70'
+                }`}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h16v16H4z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9h6v6H9z" /></svg>
+                {blurActive ? 'Drawing...' : 'Blur Tool'}
+              </button>
+              {blurBoxes.length > 0 && (
+                <>
+                  <span className="px-2 py-1 rounded-full bg-black/50 text-white text-xs backdrop-blur-sm border border-white/20">
+                    {blurBoxes.length} region{blurBoxes.length > 1 ? 's' : ''}
+                  </span>
+                  <button
+                    onClick={handleApplyBlur}
+                    disabled={applyingBlur}
+                    className="px-3 py-1.5 rounded-full bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition cursor-pointer disabled:opacity-50"
+                  >
+                    {applyingBlur ? 'Applying...' : 'Apply Blur'}
+                  </button>
+                  <button
+                    onClick={() => setBlurBoxes([])}
+                    className="px-2 py-1.5 rounded-full bg-black/50 text-white text-xs hover:bg-black/70 transition cursor-pointer backdrop-blur-sm border border-white/20"
+                  >
+                    Clear
+                  </button>
+                </>
+              )}
+            </div>
+
+            <div ref={imageContainerRef} className="relative inline-block">
+              <img
+                src={getImageUrl(data?.id)}
+                alt={data?.filename}
+                className={`max-w-full max-h-full object-contain rounded-lg ${isImproper ? 'opacity-50' : ''}`}
+                onLoad={() => window.dispatchEvent(new Event('resize'))}
+              />
+              {blurActive && (
+                <BoundingBoxCanvas
+                  containerRef={imageContainerRef}
+                  boxes={blurBoxes}
+                  setBoxes={setBlurBoxes}
+                  disabled={false}
+                />
+              )}
+            </div>
             
             {data?.next_image_id && (
               <button 

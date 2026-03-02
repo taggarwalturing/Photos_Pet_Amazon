@@ -15,6 +15,7 @@ from app.models.settings import SystemSettings
 from app.models.notification import Notification
 from app.schemas.category import CategoryWithProgress
 from app.schemas.annotation import AnnotationSave, AnnotationResponse, AnnotationTask
+from app.utils.blur import blur_image_regions
 
 
 def _get_available_image_ids(db: Session, user_id: int) -> set[int]:
@@ -1515,3 +1516,109 @@ def get_ai_detection(
         "marked_ai_by": image.marked_ai_by,
         "marked_ai_at": image.marked_ai_at.isoformat() if image.marked_ai_at else None
     }
+
+
+# ── Bounding Box Blur ────────────────────────────────────────────
+
+from pydantic import BaseModel
+import os
+import httpx as _httpx
+from app.models.blur_region import BlurRegion as BlurRegionModel
+
+
+class BlurRegionSchema(BaseModel):
+    x: float
+    y: float
+    width: float
+    height: float
+
+
+class BlurRegionsRequest(BaseModel):
+    regions: list[BlurRegionSchema]
+
+
+@router.post("/images/{image_id}/blur-regions")
+def blur_image_regions_endpoint(
+    image_id: int,
+    payload: BlurRegionsRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_annotator),
+):
+    """Draw bounding-box blur regions on an image and save the blurred copy."""
+    image = db.query(Image).filter(Image.id == image_id).first()
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    if not payload.regions:
+        raise HTTPException(status_code=400, detail="No regions provided")
+
+    cache_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "image_cache")
+    os.makedirs(cache_dir, exist_ok=True)
+
+    cached_path = os.path.join(cache_dir, f"{image_id}.jpg")
+    if os.path.exists(cached_path):
+        with open(cached_path, "rb") as f:
+            image_bytes = f.read()
+    else:
+        proxy_url = f"http://localhost:8000/api/images/proxy/{image_id}"
+        try:
+            resp = _httpx.get(proxy_url, timeout=30, follow_redirects=True)
+            resp.raise_for_status()
+            image_bytes = resp.content
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Failed to fetch image: {e}")
+
+    regions = [r.model_dump() for r in payload.regions]
+    blurred_bytes = blur_image_regions(image_bytes, regions)
+
+    blurred_filename = f"{image_id}_blurred.jpg"
+    blurred_path = os.path.join(cache_dir, blurred_filename)
+    with open(blurred_path, "wb") as f:
+        f.write(blurred_bytes)
+
+    with open(cached_path, "wb") as f:
+        f.write(blurred_bytes)
+
+    # Persist blur coordinates in the database
+    for r in payload.regions:
+        db.add(BlurRegionModel(
+            image_id=image_id,
+            created_by=user.id,
+            x=r.x,
+            y=r.y,
+            width=r.width,
+            height=r.height,
+        ))
+
+    image.processed_url = f"file://image_cache/{blurred_filename}"
+    image.is_using_processed = True
+    image.processing_method = "manual"
+    db.commit()
+
+    return {
+        "status": "ok",
+        "image_id": image_id,
+        "regions_applied": len(regions),
+    }
+
+
+@router.get("/images/{image_id}/blur-regions")
+def get_blur_regions(
+    image_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_annotator),
+):
+    """Return saved blur regions for an image."""
+    rows = db.query(BlurRegionModel).filter(BlurRegionModel.image_id == image_id).all()
+    return [
+        {
+            "id": r.id,
+            "x": r.x,
+            "y": r.y,
+            "width": r.width,
+            "height": r.height,
+            "created_by": r.created_by,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
