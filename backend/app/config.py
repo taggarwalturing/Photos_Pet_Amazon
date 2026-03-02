@@ -36,6 +36,7 @@ class Settings(BaseSettings):
     GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL: str = ""
     GOOGLE_SERVICE_ACCOUNT_CLIENT_ID: str = ""
     GOOGLE_DRIVE_FOLDER_ID: str = ""
+    GOOGLE_SERVICE_ACCOUNT_FILE: str = ""
     
     # OpenAI API Key
     OPENAI_API_KEY: str = ""

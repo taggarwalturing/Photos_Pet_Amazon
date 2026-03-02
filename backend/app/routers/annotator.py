@@ -17,6 +17,28 @@ from app.models.notification import Notification
 from app.schemas.category import CategoryWithProgress
 from app.schemas.annotation import AnnotationSave, AnnotationResponse, AnnotationTask
 from app.utils.blur import blur_image_regions
+import os
+
+
+def _check_original_exists(image: Image) -> bool:
+    """Check if the original (unblurred) image file actually exists on disk with content."""
+    backend_dir = os.path.join(os.path.dirname(__file__), "..", "..")
+    
+    # Check original_url
+    if image.original_url:
+        orig_path = image.original_url.replace("file://", "")
+        full_path = os.path.join(backend_dir, orig_path)
+        if os.path.exists(full_path) and os.path.getsize(full_path) > 0:
+            return True
+
+    # Check pipeline workspace folders for the filename
+    workspace = os.path.join(backend_dir, "master_pipeline", "pipeline_workspace")
+    for sub in ["01_downloaded_from_drive", "01_downloaded", "02_unique_images", "02_deduplicated", "03_biometric_processed/clean"]:
+        fpath = os.path.join(workspace, sub, image.filename)
+        if os.path.exists(fpath) and os.path.getsize(fpath) > 0:
+            return True
+
+    return False
 
 
 def _get_available_image_ids(db: Session, user_id: int) -> set[int]:
@@ -534,6 +556,16 @@ def get_image_for_annotation(
         "pending_edit_request": pending_edit_request,
         "approved_edit_request": approved_edit_request,
         "is_rework": is_rework,  # True if sent back for rework by admin
+        "is_ai_generated": image.is_ai_generated,
+        "human_visible": image.human_visible,
+        "manually_blurred": image.manually_blurred or False,
+        "is_blurred": (image.manually_blurred or False) or (
+            # Pipeline-blurred: only show as blurred if we're currently displaying the processed version
+            (image.is_using_processed is not False) and image.compliance_status in ('blurred', 'processed', 'obfuscated')
+        ),
+        "is_using_processed": image.is_using_processed if image.is_using_processed is not None else True,
+        "compliance_status": image.compliance_status or None,
+        "has_original": _check_original_exists(image),
     }
 
 
@@ -1014,6 +1046,12 @@ def save_annotation(
             image.marked_ai_by = user.id
             image.marked_ai_at = datetime.now(timezone.utc)
         
+        # Update human visibility status if provided
+        if payload.human_visible is not None:
+            image.human_visible = payload.human_visible
+            image.human_visible_marked_by = user.id
+            image.human_visible_marked_at = datetime.now(timezone.utc)
+        
         # Clear old selections
         db.query(AnnotationSelection).filter(
             AnnotationSelection.annotation_id == annotation.id
@@ -1035,6 +1073,12 @@ def save_annotation(
             image.is_ai_generated = payload.is_ai_generated
             image.marked_ai_by = user.id
             image.marked_ai_at = datetime.now(timezone.utc)
+        
+        # Update human visibility status if provided
+        if payload.human_visible is not None:
+            image.human_visible = payload.human_visible
+            image.human_visible_marked_by = user.id
+            image.human_visible_marked_at = datetime.now(timezone.utc)
 
     # Add selections
     for option_id in payload.selected_option_ids:
@@ -1529,6 +1573,58 @@ def get_ai_detection(
         "ai_detection_confidence": image.ai_detection_confidence,
         "marked_ai_by": image.marked_ai_by,
         "marked_ai_at": image.marked_ai_at.isoformat() if image.marked_ai_at else None
+    }
+
+
+# ── Human Visibility Detection ────────────────────────────────────
+
+class HumanVisibilityRequest(PydanticBaseModel):
+    human_visible: bool
+
+
+@router.put("/images/{image_id}/human-visibility")
+def mark_human_visibility(
+    image_id: int,
+    request: HumanVisibilityRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_annotator),
+):
+    """Mark whether a human is visible in the image."""
+    
+    image = db.query(Image).filter(Image.id == image_id).first()
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+    
+    image.human_visible = request.human_visible
+    image.human_visible_marked_by = user.id
+    image.human_visible_marked_at = dt.now()
+    
+    db.commit()
+    
+    return {
+        "message": "Human visibility status updated",
+        "image_id": image_id,
+        "human_visible": image.human_visible,
+    }
+
+
+@router.get("/images/{image_id}/human-visibility")
+def get_human_visibility(
+    image_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_annotator),
+):
+    """Get human visibility status for an image."""
+    
+    image = db.query(Image).filter(Image.id == image_id).first()
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+    
+    return {
+        "image_id": image_id,
+        "human_visible": image.human_visible,
+        "human_visible_marked_by": image.human_visible_marked_by,
+        "human_visible_marked_at": image.human_visible_marked_at.isoformat() if image.human_visible_marked_at else None
     }
 
 

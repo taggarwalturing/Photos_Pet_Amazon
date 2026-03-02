@@ -83,6 +83,8 @@ dist-ssr/
 .cache/
 *.cache
 backend/image_cache/
+**/image_cache/
+dump.rdb
 
 # ===================================
 # Large Model Files

@@ -271,6 +271,17 @@ db-migrate-blur: ## Run blur tracking migration (adds blur columns to images tab
 		$(PYTHON) migrations/add_blur_tracking.py
 	@echo "$(GREEN)✅ Blur tracking migration complete$(NC)"
 
+db-migrate-human-visible: ## Run human visibility migration (adds human_visible columns to images table)
+	@echo "$(CYAN)🔄 Running human visibility migration...$(NC)"
+	@cd $(BACKEND_DIR) && \
+		if [ ! -d ".venv" ]; then \
+			echo "$(YELLOW)Creating Python virtual environment...$(NC)"; \
+			python3 -m venv .venv; \
+		fi && \
+		source .venv/bin/activate && \
+		$(PYTHON) migrations/add_human_visible.py
+	@echo "$(GREEN)✅ Human visibility migration complete$(NC)"
+
 db-seed: ## Seed database with admin users
 	@echo "$(CYAN)🌱 Seeding database...$(NC)"
 	@echo "$(YELLOW)Admin users will be created from SEED_ADMINS env var$(NC)"

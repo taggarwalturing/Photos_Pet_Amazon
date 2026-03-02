@@ -221,13 +221,18 @@ export default function ImageAnnotationPage() {
   const [requestingEdit, setRequestingEdit] = useState(false);
   
   // AI-generated detection state
-  const [isAIGenerated, setIsAIGenerated] = useState(null); // null, true, or false
+  const [isAIGenerated, setIsAIGenerated] = useState(false); // default to Real (false)
   const [savingAIStatus, setSavingAIStatus] = useState(false);
+
+  // Human visibility state
+  const [humanVisible, setHumanVisible] = useState(null); // null=Unknown, true=Yes, false=No
+  const [savingHumanVisible, setSavingHumanVisible] = useState(false);
 
   // Blur tool state
   const [blurActive, setBlurActive] = useState(false);
   const [blurBoxes, setBlurBoxes] = useState([]);
   const [applyingBlur, setApplyingBlur] = useState(false);
+  const [imageVersion, setImageVersion] = useState(Date.now()); // cache-buster for image reload
   const imageContainerRef = useRef(null);
 
   // Time limit settings (fetched from API)
@@ -348,6 +353,7 @@ export default function ImageAnnotationPage() {
     setPendingChanges({});
     setBlurBoxes([]);
     setBlurActive(false);
+    setImageVersion(Date.now()); // fresh cache-buster for new image
     try {
       const res = await api.get(`/annotator/images/${id}`);
       setData(res.data);
@@ -367,12 +373,20 @@ export default function ImageAnnotationPage() {
       });
       setPendingChanges(initial);
       
-      // Load AI-generated status
+      // Load AI-generated status (default to Real)
       try {
         const aiRes = await api.get(`/annotator/images/${id}/ai-detection`);
-        setIsAIGenerated(aiRes.data.is_ai_generated);
+        setIsAIGenerated(aiRes.data.is_ai_generated ?? false); // default Real
       } catch (err) {
-        setIsAIGenerated(null); // Default to unknown
+        setIsAIGenerated(false); // Default to Real
+      }
+
+      // Load human visibility status
+      try {
+        const hvRes = await api.get(`/annotator/images/${id}/human-visibility`);
+        setHumanVisible(hvRes.data.human_visible);
+      } catch (err) {
+        setHumanVisible(null); // Default to Unknown
       }
       
       // Detect if this is a rework - check both top-level flag and category annotations
@@ -466,7 +480,12 @@ export default function ImageAnnotationPage() {
 
   const handleBack = () => {
     persistTime(imageId, elapsedSeconds);
-    navigate('/annotator');
+    // Use browser back to preserve the page number on the annotator home
+    if (window.history.length > 1) {
+      navigate(-1);
+    } else {
+      navigate('/annotator');
+    }
   };
 
   const handleMarkImproper = async (reason) => {
@@ -504,12 +523,53 @@ export default function ImageAnnotationPage() {
     setApplyingBlur(true);
     setError('');
     try {
-      await api.post(`/annotator/images/${imageId}/blur-regions`, { regions: blurBoxes });
+      await api.post(`/annotator/blur/apply/${imageId}`, { regions: blurBoxes });
       setBlurBoxes([]);
       setBlurActive(false);
-      await loadImage(imageId);
+      // Force image to reload with fresh cache-buster
+      setImageVersion(Date.now());
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to apply blur');
+    } finally {
+      setApplyingBlur(false);
+    }
+  };
+
+  const handleUndoBlur = async () => {
+    setApplyingBlur(true);
+    setError('');
+    try {
+      const res = await api.delete(`/annotator/blur/${imageId}/blur`);
+      if (res.data?.had_original) {
+        // Original was found and written to cache — reload image
+        setImageVersion(Date.now());
+      } else {
+        // No original found on disk — image will break. Warn user.
+        setError('Original unblurred image not found on disk. Cannot undo.');
+        setApplyingBlur(false);
+        return;
+      }
+      // Refresh task data so the blur flags update in the UI
+      const refreshed = await api.get(`/annotator/images/${imageId}`);
+      setData(refreshed.data);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to undo blur');
+    } finally {
+      setApplyingBlur(false);
+    }
+  };
+
+  const handleRestoreBlur = async () => {
+    setApplyingBlur(true);
+    setError('');
+    try {
+      await api.post(`/annotator/blur/${imageId}/restore-blur`);
+      setImageVersion(Date.now());
+      // Refresh task data so the blur flags update in the UI
+      const refreshed = await api.get(`/annotator/images/${imageId}`);
+      setData(refreshed.data);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to restore blur');
     } finally {
       setApplyingBlur(false);
     }
@@ -526,6 +586,20 @@ export default function ImageAnnotationPage() {
       setError(err.response?.data?.detail || 'Failed to update AI status');
     } finally {
       setSavingAIStatus(false);
+    }
+  };
+
+  const handleHumanVisibleChange = async (value) => {
+    setSavingHumanVisible(true);
+    try {
+      await api.put(`/annotator/images/${imageId}/human-visibility`, {
+        human_visible: value
+      });
+      setHumanVisible(value);
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to update human visibility');
+    } finally {
+      setSavingHumanVisible(false);
     }
   };
 
@@ -602,8 +676,8 @@ export default function ImageAnnotationPage() {
   const canEdit = data?.can_edit && !isImproper;
 
   return (
-    <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
-      <header className="glass border-b border-white/30 sticky top-0 z-10">
+    <div className="fixed inset-0 bg-gray-50 flex flex-col">
+      <header className="glass border-b border-white/30 z-10 shrink-0">
         <div className="px-5 py-3 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <button onClick={handleBack} className="w-8 h-8 flex items-center justify-center text-gray-500 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition cursor-pointer">
@@ -651,9 +725,8 @@ export default function ImageAnnotationPage() {
         </div>
       </header>
 
-      <main className="flex-1 w-full min-h-0 overflow-hidden">
-        <div className="h-full grid grid-cols-1 lg:grid-cols-[1fr_420px]">
-          <div className="bg-gray-900 relative flex items-center justify-center p-4 h-full">
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-[1fr_420px] overflow-hidden">
+          <div className="bg-gray-900 relative flex items-center justify-center p-4 min-h-0 overflow-hidden">
             {isImproper && (
               <div className="absolute inset-0 bg-red-900/20 z-10 flex items-center justify-center">
                 <div className="bg-red-50 rounded-xl p-6 max-w-md mx-4 text-center">
@@ -677,44 +750,81 @@ export default function ImageAnnotationPage() {
             
             {/* Blur tool floating toolbar */}
             <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2">
-              <button
-                onClick={() => setBlurActive(!blurActive)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold backdrop-blur-sm border transition cursor-pointer ${
-                  blurActive
-                    ? 'bg-red-500/90 text-white border-red-400'
-                    : 'bg-black/50 text-white border-white/20 hover:bg-black/70'
-                }`}
-              >
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h16v16H4z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9h6v6H9z" /></svg>
-                {blurActive ? 'Drawing...' : 'Blur Tool'}
-              </button>
-              {blurBoxes.length > 0 && (
+              {applyingBlur ? (
+                <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-600 text-white text-xs font-semibold shadow-lg">
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Processing on server…
+                </div>
+              ) : (
                 <>
-                  <span className="px-2 py-1 rounded-full bg-black/50 text-white text-xs backdrop-blur-sm border border-white/20">
-                    {blurBoxes.length} region{blurBoxes.length > 1 ? 's' : ''}
-                  </span>
+                  {/* Blur Tool toggle */}
                   <button
-                    onClick={handleApplyBlur}
-                    disabled={applyingBlur}
-                    className="px-3 py-1.5 rounded-full bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-700 transition cursor-pointer disabled:opacity-50"
+                    onClick={() => setBlurActive(!blurActive)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold backdrop-blur-sm border transition cursor-pointer ${
+                      blurActive
+                        ? 'bg-red-500/90 text-white border-red-400'
+                        : 'bg-black/50 text-white border-white/20 hover:bg-black/70'
+                    }`}
                   >
-                    {applyingBlur ? 'Applying...' : 'Apply Blur'}
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h16v16H4z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9h6v6H9z" /></svg>
+                    {blurActive ? 'Drawing…' : 'Blur Tool'}
                   </button>
-                  <button
-                    onClick={() => setBlurBoxes([])}
-                    className="px-2 py-1.5 rounded-full bg-black/50 text-white text-xs hover:bg-black/70 transition cursor-pointer backdrop-blur-sm border border-white/20"
-                  >
-                    Clear
-                  </button>
+
+                  {/* Drawing controls — visible when boxes are drawn */}
+                  {blurBoxes.length > 0 && (
+                    <>
+                      <span className="px-2 py-1 rounded-full bg-black/50 text-white text-xs backdrop-blur-sm border border-white/20">
+                        {blurBoxes.length} region{blurBoxes.length > 1 ? 's' : ''}
+                      </span>
+                      <button
+                        onClick={handleApplyBlur}
+                        className="px-3 py-1.5 rounded-full bg-green-600 text-white text-xs font-semibold hover:bg-green-700 transition cursor-pointer shadow-lg"
+                      >
+                        ✓ Apply Blur
+                      </button>
+                      <button
+                        onClick={() => setBlurBoxes(prev => prev.slice(0, -1))}
+                        className="px-2 py-1.5 rounded-full bg-black/50 text-white text-xs hover:bg-black/70 transition cursor-pointer backdrop-blur-sm border border-white/20"
+                      >
+                        ↶ Undo
+                      </button>
+                      <button
+                        onClick={() => setBlurBoxes([])}
+                        className="px-2 py-1.5 rounded-full bg-black/50 text-white text-xs hover:bg-black/70 transition cursor-pointer backdrop-blur-sm border border-white/20"
+                      >
+                        Clear
+                      </button>
+                    </>
+                  )}
+
+                  {/* Undo applied blur — visible when image is blurred (manual or pipeline) & no new boxes drawn */}
+                  {data?.is_blurred && blurBoxes.length === 0 && (
+                    <button
+                      onClick={handleUndoBlur}
+                      className="px-3 py-1.5 rounded-full bg-amber-500/90 text-white text-xs font-semibold hover:bg-amber-600 transition cursor-pointer backdrop-blur-sm border border-amber-400 shadow-lg"
+                    >
+                      ↶ Undo Blur
+                    </button>
+                  )}
+
+                  {/* Restore blur — visible after undoing a pipeline-blurred image */}
+                  {!data?.is_blurred && data?.compliance_status === 'blurred' && blurBoxes.length === 0 && (
+                    <button
+                      onClick={handleRestoreBlur}
+                      className="px-3 py-1.5 rounded-full bg-indigo-500/90 text-white text-xs font-semibold hover:bg-indigo-600 transition cursor-pointer backdrop-blur-sm border border-indigo-400 shadow-lg"
+                    >
+                      ↻ Restore Blur
+                    </button>
+                  )}
                 </>
               )}
             </div>
 
-            <div ref={imageContainerRef} className="relative inline-block">
+            <div ref={imageContainerRef} className="relative max-w-full max-h-full overflow-hidden flex items-center justify-center">
               <img
-                src={getImageUrl(data?.id)}
+                src={data?.id ? `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/images/proxy/${data.id}?t=${imageVersion}` : ''}
                 alt={data?.filename}
-                className={`max-w-full max-h-full object-contain rounded-lg ${isImproper ? 'opacity-50' : ''}`}
+                className={`max-w-full max-h-full object-contain rounded-lg block ${isImproper ? 'opacity-50' : ''}`}
                 onLoad={() => window.dispatchEvent(new Event('resize'))}
               />
               {blurActive && (
@@ -737,8 +847,8 @@ export default function ImageAnnotationPage() {
             )}
           </div>
 
-          <div className="bg-white border-l border-gray-200 flex flex-col overflow-hidden">
-            <div className="px-5 py-4 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white">
+          <div className="bg-white border-l border-gray-200 flex flex-col overflow-hidden min-h-0">
+            <div className="px-5 py-4 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white shrink-0">
               <h2 className="font-bold text-gray-900">Categories</h2>
               <p className="text-xs text-gray-500 mt-0.5">
                 {isLocked && !canEdit ? 'View your annotations (read-only)' : 'Select one option for each category'}
@@ -813,7 +923,7 @@ export default function ImageAnnotationPage() {
               </div>
             )}
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-3">
+            <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-3">
               {data?.categories?.map((cat) => (
                 <CategoryDropdown
                   key={cat.id}
@@ -826,143 +936,111 @@ export default function ImageAnnotationPage() {
               ))}
             </div>
 
-            <div className="border-t border-gray-200 px-5 py-4 bg-gradient-to-t from-gray-50 to-white space-y-3">
-              {/* AI-Generated Detection Toggle */}
+            <div className="shrink-0 border-t border-gray-200 bg-white">
+              {/* Classification toggles */}
               {!isImproper && (
-                <div className="bg-white border-2 border-gray-200 rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <svg className="w-5 h-5 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                      </svg>
-                      <h3 className="font-semibold text-gray-900 text-sm">Is this image AI-generated?</h3>
+                <div className="px-4 py-2.5 space-y-2 border-b border-gray-100">
+                  {/* Row 1: AI Detection */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider w-20 shrink-0">AI</span>
+                    <div className="flex rounded-lg overflow-hidden border border-gray-200 flex-1 max-w-[220px]">
+                      {[
+                        { value: false, label: 'Real', activeClass: 'bg-green-500 text-white' },
+                        { value: null, label: 'Unknown', activeClass: 'bg-gray-500 text-white' },
+                        { value: true, label: 'AI', activeClass: 'bg-purple-500 text-white' },
+                      ].map((opt, idx) => (
+                        <button
+                          key={String(opt.value)}
+                          onClick={() => handleAIStatusChange(opt.value)}
+                          disabled={savingAIStatus || !canEdit}
+                          className={`flex-1 py-1.5 text-[11px] font-semibold transition-all cursor-pointer
+                            ${idx > 0 ? 'border-l border-gray-200' : ''}
+                            ${isAIGenerated === opt.value
+                              ? opt.activeClass
+                              : 'bg-white text-gray-400 hover:bg-gray-50'
+                            } disabled:opacity-50 disabled:cursor-not-allowed`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
                     </div>
-                    {savingAIStatus && (
-                      <span className="text-xs text-gray-500 italic">Saving...</span>
-                    )}
+                    {/* Flag / Edit button aligned right */}
+                    <div className="w-16 shrink-0 flex justify-end">
+                      {!isLocked && (
+                        <button
+                          onClick={() => setShowImproperModal(true)}
+                          className="px-2 py-1 border border-red-200 text-red-500 rounded-lg text-[10px] font-medium hover:bg-red-50 transition cursor-pointer"
+                        >
+                          ⚠️
+                        </button>
+                      )}
+                      {isLocked && !hasPendingRequest && (
+                        <button
+                          onClick={() => setShowEditRequestModal(true)}
+                          className="px-2 py-1 bg-amber-500 text-white rounded-lg text-[10px] font-medium hover:bg-amber-600 transition cursor-pointer"
+                        >
+                          ✏️
+                        </button>
+                      )}
+                    </div>
                   </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => handleAIStatusChange(false)}
-                      disabled={savingAIStatus || !canEdit}
-                      className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition border-2 cursor-pointer ${
-                        isAIGenerated === false
-                          ? 'bg-green-50 border-green-500 text-green-700'
-                          : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300'
-                      } disabled:opacity-50 disabled:cursor-not-allowed`}
-                    >
-                      <div className="flex items-center justify-center gap-2">
-                        <div className={`w-4 h-4 rounded-full flex items-center justify-center border-2 ${
-                          isAIGenerated === false ? 'border-green-500' : 'border-gray-300'
-                        }`}>
-                          {isAIGenerated === false && (
-                            <div className="w-2 h-2 rounded-full bg-green-500" />
-                          )}
-                        </div>
-                        <span>Real</span>
-                      </div>
-                    </button>
-                    <button
-                      onClick={() => handleAIStatusChange(true)}
-                      disabled={savingAIStatus || !canEdit}
-                      className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition border-2 cursor-pointer ${
-                        isAIGenerated === true
-                          ? 'bg-purple-50 border-purple-500 text-purple-700'
-                          : 'bg-white border-gray-200 text-gray-700 hover:border-gray-300'
-                      } disabled:opacity-50 disabled:cursor-not-allowed`}
-                    >
-                      <div className="flex items-center justify-center gap-2">
-                        <div className={`w-4 h-4 rounded-full flex items-center justify-center border-2 ${
-                          isAIGenerated === true ? 'border-purple-500' : 'border-gray-300'
-                        }`}>
-                          {isAIGenerated === true && (
-                            <div className="w-2 h-2 rounded-full bg-purple-500" />
-                          )}
-                        </div>
-                        <span>AI-Generated</span>
-                      </div>
-                    </button>
-                    <button
-                      onClick={() => handleAIStatusChange(null)}
-                      disabled={savingAIStatus || !canEdit}
-                      className={`flex-1 px-4 py-2.5 rounded-lg text-sm font-medium transition border-2 cursor-pointer ${
-                        isAIGenerated === null
-                          ? 'bg-gray-50 border-gray-400 text-gray-700'
-                          : 'bg-white border-gray-200 text-gray-500 hover:border-gray-300'
-                      } disabled:opacity-50 disabled:cursor-not-allowed`}
-                    >
-                      <div className="flex items-center justify-center gap-2">
-                        <div className={`w-4 h-4 rounded-full flex items-center justify-center border-2 ${
-                          isAIGenerated === null ? 'border-gray-400' : 'border-gray-300'
-                        }`}>
-                          {isAIGenerated === null && (
-                            <div className="w-2 h-2 rounded-full bg-gray-400" />
-                          )}
-                        </div>
-                        <span>Unknown</span>
-                      </div>
-                    </button>
+
+                  {/* Row 2: Human Visible */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider w-20 shrink-0">Human</span>
+                    <div className="flex rounded-lg overflow-hidden border border-gray-200 flex-1 max-w-[220px]">
+                      {[
+                        { value: true, label: 'Visible', activeClass: 'bg-blue-500 text-white' },
+                        { value: null, label: 'Unknown', activeClass: 'bg-gray-500 text-white' },
+                        { value: false, label: 'Not Visible', activeClass: 'bg-orange-500 text-white' },
+                      ].map((opt, idx) => (
+                        <button
+                          key={String(opt.value)}
+                          onClick={() => handleHumanVisibleChange(opt.value)}
+                          disabled={savingHumanVisible || !canEdit}
+                          className={`flex-1 py-1.5 text-[11px] font-semibold transition-all cursor-pointer
+                            ${idx > 0 ? 'border-l border-gray-200' : ''}
+                            ${humanVisible === opt.value
+                              ? opt.activeClass
+                              : 'bg-white text-gray-400 hover:bg-gray-50'
+                            } disabled:opacity-50 disabled:cursor-not-allowed`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="w-16 shrink-0" />
                   </div>
                 </div>
               )}
 
-              {!isImproper && !isLocked && (
-                <button
-                  onClick={() => setShowImproperModal(true)}
-                  className="w-full px-4 py-2.5 border-2 border-red-200 text-red-600 rounded-lg hover:bg-red-50 hover:border-red-300 transition cursor-pointer text-sm font-medium flex items-center justify-center gap-2"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                  Mark Improper
-                </button>
-              )}
-
-              {isLocked && !isImproper && !hasPendingRequest && (
-                <button
-                  onClick={() => setShowEditRequestModal(true)}
-                  className="w-full px-4 py-2.5 bg-amber-500 text-white rounded-lg hover:bg-amber-600 transition cursor-pointer text-sm font-medium flex items-center justify-center gap-2"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                  </svg>
-                  Request Edit Permission
-                </button>
-              )}
-              
-              <div className="flex gap-3">
+              {/* Navigation buttons */}
+              <div className="px-4 py-3 flex gap-2">
                 <button
                   onClick={() => handleNavigate(data?.prev_image_id)}
                   disabled={!data?.prev_image_id || saving}
-                  className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer text-sm font-medium"
+                  className="w-10 h-10 flex items-center justify-center border border-gray-200 text-gray-600 rounded-xl hover:bg-gray-50 transition disabled:opacity-25 disabled:cursor-not-allowed cursor-pointer"
                 >
-                  ← Prev
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
                 </button>
                 <button
                   onClick={handleSave}
                   disabled={saving || !canEdit}
-                  className="flex-1 px-4 py-2.5 border border-indigo-200 text-indigo-700 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer text-sm font-semibold"
+                  className="flex-1 h-10 border border-indigo-200 text-indigo-700 bg-indigo-50 rounded-xl hover:bg-indigo-100 transition disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer text-sm font-semibold"
                 >
                   {saving ? 'Saving...' : 'Save'}
                 </button>
                 <button
                   onClick={handleSaveAndNext}
                   disabled={saving || !canEdit}
-                  className="flex-1 px-4 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white rounded-xl transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer text-sm font-semibold"
+                  className="flex-[1.5] h-10 bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white rounded-xl transition shadow-sm disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer text-sm font-semibold"
                 >
-                  {saving ? 'Saving...' : data?.next_image_id ? 'Save & Next →' : 'Save & Finish'}
+                  {saving ? 'Saving...' : data?.next_image_id ? 'Save & Next →' : 'Save & Finish ✓'}
                 </button>
-              </div>
-
-              <div className="flex items-center justify-center gap-4 text-xs text-gray-400">
-                <span><kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-500">←</kbd> Prev</span>
-                <span><kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-500">→</kbd> Next</span>
-                <span><kbd className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-500">Ctrl+S</kbd> Save</span>
               </div>
             </div>
           </div>
         </div>
-      </main>
 
       <MarkImproperModal isOpen={showImproperModal} onClose={() => setShowImproperModal(false)} onConfirm={handleMarkImproper} loading={markingImproper} />
       <RequestEditModal isOpen={showEditRequestModal} onClose={() => setShowEditRequestModal(false)} onConfirm={handleRequestEdit} loading={requestingEdit} />

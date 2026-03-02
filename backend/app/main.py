@@ -35,25 +35,49 @@ from app.models import settings as settings_model  # noqa - rename to avoid conf
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
 
 def get_drive_service():
-    """Create Google Drive API service using service account from settings."""
-    # Handle escaped newlines in private key
-    private_key = settings.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY.replace('\\n', '\n')
+    """Create Google Drive API service using service account JSON file or settings."""
+    import json as _json
     
-    credentials_info = {
-        "type": settings.GOOGLE_SERVICE_ACCOUNT_TYPE,
-        "project_id": settings.GOOGLE_SERVICE_ACCOUNT_PROJECT_ID,
-        "private_key_id": settings.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY_ID,
-        "private_key": private_key,
-        "client_email": settings.GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL,
-        "client_id": settings.GOOGLE_SERVICE_ACCOUNT_CLIENT_ID,
-        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-        "token_uri": "https://oauth2.googleapis.com/token",
-    }
+    # Method 1: Use GOOGLE_SERVICE_ACCOUNT_FILE (JSON file path) — preferred
+    sa_file = getattr(settings, 'GOOGLE_SERVICE_ACCOUNT_FILE', None)
+    if sa_file:
+        from pathlib import Path
+        # Try relative to backend directory
+        backend_dir = os.path.dirname(os.path.dirname(__file__))
+        candidates = [
+            Path(sa_file),  # absolute or cwd-relative
+            Path(backend_dir) / sa_file,  # relative to backend/
+            Path(backend_dir) / "master_pipeline" / sa_file,  # relative to pipeline/
+        ]
+        for creds_path in candidates:
+            if creds_path.exists():
+                with open(creds_path, 'r') as f:
+                    creds_dict = _json.load(f)
+                credentials = service_account.Credentials.from_service_account_info(
+                    creds_dict, scopes=SCOPES
+                )
+                return build('drive', 'v3', credentials=credentials)
     
-    credentials = service_account.Credentials.from_service_account_info(
-        credentials_info, scopes=SCOPES
-    )
-    return build('drive', 'v3', credentials=credentials)
+    # Method 2: Use individual env vars (legacy)
+    private_key = getattr(settings, 'GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY', '')
+    if private_key:
+        private_key = private_key.replace('\\n', '\n')
+        credentials_info = {
+            "type": getattr(settings, 'GOOGLE_SERVICE_ACCOUNT_TYPE', 'service_account'),
+            "project_id": getattr(settings, 'GOOGLE_SERVICE_ACCOUNT_PROJECT_ID', ''),
+            "private_key_id": getattr(settings, 'GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY_ID', ''),
+            "private_key": private_key,
+            "client_email": getattr(settings, 'GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL', ''),
+            "client_id": getattr(settings, 'GOOGLE_SERVICE_ACCOUNT_CLIENT_ID', ''),
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+        }
+        credentials = service_account.Credentials.from_service_account_info(
+            credentials_info, scopes=SCOPES
+        )
+        return build('drive', 'v3', credentials=credentials)
+    
+    raise ValueError("No Google Drive credentials configured. Set GOOGLE_SERVICE_ACCOUNT_FILE in .env")
 
 # Create tables
 Base.metadata.create_all(bind=engine)
@@ -283,8 +307,69 @@ def proxy_image(image_id: int):
                 backend_dir = os.path.dirname(os.path.dirname(__file__))
                 local_path = os.path.join(backend_dir, local_path)
             
-            if not os.path.exists(local_path):
-                raise HTTPException(status_code=404, detail=f"Local image file not found: {local_path}")
+            if not os.path.exists(local_path) or os.path.getsize(local_path) == 0:
+                # Fallback: scan pipeline workspace folders for the file by filename
+                filename = os.path.basename(local_path)
+                workspace = os.path.join(os.path.dirname(os.path.dirname(__file__)), "master_pipeline", "pipeline_workspace")
+                found = False
+                for sub in ["04_final_output", "03_biometric_processed", "02_unique_images", "02_deduplicated", "01_downloaded_from_drive", "01_downloaded"]:
+                    candidate = os.path.join(workspace, sub, filename)
+                    if os.path.exists(candidate) and os.path.getsize(candidate) > 0:
+                        local_path = candidate
+                        found = True
+                        break
+                    # Also check subdirectories (e.g. blurred/clean inside 03_biometric_processed)
+                    sub_dir = os.path.join(workspace, sub)
+                    if os.path.isdir(sub_dir):
+                        for root, dirs, files in os.walk(sub_dir):
+                            if filename in files:
+                                candidate = os.path.join(root, filename)
+                                if os.path.getsize(candidate) > 0:
+                                    local_path = candidate
+                                    found = True
+                                    break
+                        if found:
+                            break
+                if not found:
+                    # Last resort: try re-downloading from Google Drive
+                    try:
+                        gdrive_folder_id = getattr(settings, 'GOOGLE_DRIVE_FOLDER_ID', None)
+                        if gdrive_folder_id:
+                            service = get_drive_service()
+                            query = f"name = '{filename}' and trashed = false"
+                            results = service.files().list(
+                                q=query,
+                                fields="files(id, name, mimeType)",
+                                spaces='drive',
+                            ).execute()
+                            gdrive_files = results.get('files', [])
+                            if gdrive_files:
+                                file_id = gdrive_files[0]['id']
+                                request_dl = service.files().get_media(fileId=file_id)
+                                file_buffer = io.BytesIO()
+                                downloader = MediaIoBaseDownload(file_buffer, request_dl)
+                                done = False
+                                while not done:
+                                    _, done = downloader.next_chunk()
+                                file_buffer.seek(0)
+                                gdrive_content = file_buffer.read()
+                                if len(gdrive_content) > 0:
+                                    # Save to download folder for future
+                                    dl_folder = os.path.join(workspace, "01_downloaded_from_drive")
+                                    os.makedirs(dl_folder, exist_ok=True)
+                                    with open(os.path.join(dl_folder, filename), "wb") as f:
+                                        f.write(gdrive_content)
+                                    # Cache and serve
+                                    cache_image(image_id, gdrive_content, 'image/jpeg')
+                                    return Response(
+                                        content=gdrive_content,
+                                        media_type='image/jpeg',
+                                        headers={"Cache-Control": "public, max-age=604800", "X-Cache": "GDRIVE_RESTORE"}
+                                    )
+                    except Exception as gdrive_err:
+                        print(f"[Proxy] Google Drive fallback failed for {filename}: {gdrive_err}")
+                    
+                    raise HTTPException(status_code=404, detail=f"Local image file not found: {local_path}")
             
             # Read local file
             with open(local_path, 'rb') as f:

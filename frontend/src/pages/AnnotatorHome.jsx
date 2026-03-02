@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
 
@@ -67,10 +67,22 @@ function Pagination({ currentPage, totalPages, onPageChange }) {
 export default function AnnotatorHome() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
-  const [filter, setFilter] = useState('all'); // all, pending, completed
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [page, setPageState] = useState(() => parseInt(searchParams.get('page')) || 1);
+  const [filter, setFilterState] = useState(() => searchParams.get('filter') || 'all');
   const { user, logout } = useAuth();
   const navigate = useNavigate();
+
+  // Sync page & filter to URL search params so they persist across navigation
+  const setPage = (p) => {
+    setPageState(p);
+    setSearchParams((prev) => { prev.set('page', String(p)); prev.set('filter', filter); return prev; }, { replace: true });
+  };
+  const setFilter = (f) => {
+    setFilterState(f);
+    setPageState(1);
+    setSearchParams((prev) => { prev.set('page', '1'); prev.set('filter', f); return prev; }, { replace: true });
+  };
 
   // Notifications state
   const [notifications, setNotifications] = useState([]);
@@ -146,8 +158,7 @@ export default function AnnotatorHome() {
   };
 
   const handleFilterChange = (f) => {
-    setFilter(f);
-    setPage(1);
+    setFilter(f); // setFilter already resets page to 1
   };
 
   const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 1;

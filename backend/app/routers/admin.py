@@ -1497,3 +1497,190 @@ async def trigger_auto_processor(
     
     return {'message': 'Auto-processor triggered successfully'}
 
+
+# ── Photo Registry (All Downloaded Photos Status) ──────────────────
+
+@router.get("/photo-registry")
+def get_photo_registry(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=10, le=200),
+    search: str = Query("", description="Search by filename"),
+    status_filter: str = Query("all", description="all|unique|duplicate|blurred|clean|manually_blurred"),
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """
+    Comprehensive photo registry showing ALL downloaded images with:
+    - unique/duplicate status + parent image name
+    - original path and processed path
+    - pipeline blur status, manual blur status + annotated_blur path
+    """
+    import os
+    from pathlib import Path
+
+    backend_dir = Path(__file__).parent.parent.parent
+    workspace = backend_dir / "master_pipeline" / "pipeline_workspace"
+
+    # ── 1. Build duplicate map from cluster folders ──
+    duplicate_map = {}      # duplicate_filename → original_filename
+    clusters_dir = workspace / "02_duplicate_clusters"
+    if clusters_dir.is_dir():
+        for cluster_folder in sorted(clusters_dir.iterdir()):
+            if not cluster_folder.is_dir():
+                continue
+            original = None
+            dupes = []
+            for f in cluster_folder.iterdir():
+                if f.name.startswith("ORIGINAL_"):
+                    # Strip "ORIGINAL_" prefix to get real filename
+                    original = f.name.replace("ORIGINAL_", "", 1)
+                elif f.name.startswith("duplicate_"):
+                    dupes.append(f.name.replace("duplicate_", "", 1))
+            if original:
+                for d in dupes:
+                    duplicate_map[d] = original
+
+    # ── 2. Build file-existence lookups ──
+    def _file_path_if_exists(directory, filename):
+        """Return relative path if file exists with content, else None."""
+        fpath = directory / filename
+        if fpath.is_file() and fpath.stat().st_size > 0:
+            return str(fpath.relative_to(backend_dir))
+        return None
+
+    download_dir = workspace / "01_downloaded_from_drive"
+    unique_dir = workspace / "02_unique_images"
+    blurred_dir = workspace / "03_biometric_processed" / "blurred"
+    clean_dir = workspace / "03_biometric_processed" / "clean"
+    final_dir = workspace / "04_final_output"
+    annotated_dir = workspace / "annotated_blur"
+
+    # ── 3. Collect all downloaded filenames ──
+    all_downloaded = set()
+    if download_dir.is_dir():
+        for f in download_dir.iterdir():
+            if f.is_file() and f.suffix.lower() in ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.bmp'):
+                all_downloaded.add(f.name)
+
+    # Also add any files in unique_dir not already known (in case download dir was cleared)
+    if unique_dir.is_dir():
+        for f in unique_dir.iterdir():
+            if f.is_file() and f.suffix.lower() in ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.bmp'):
+                all_downloaded.add(f.name)
+
+    # Also add duplicates from duplicate_map
+    for dup_name in duplicate_map:
+        all_downloaded.add(dup_name)
+
+    # ── 4. Get DB image data (keyed by filename) ──
+    db_images = db.query(Image).all()
+    db_by_filename = {}
+    for img in db_images:
+        db_by_filename[img.filename] = img
+
+    # Also add DB images not in downloaded set
+    for img in db_images:
+        all_downloaded.add(img.filename)
+
+    # ── 5. Build registry entries ──
+    registry = []
+    for filename in sorted(all_downloaded):
+        is_duplicate = filename in duplicate_map
+        parent_image = duplicate_map.get(filename, "")
+        db_img = db_by_filename.get(filename)
+
+        # Paths
+        original_path = (
+            _file_path_if_exists(download_dir, filename)
+            or _file_path_if_exists(unique_dir, filename)
+            or ""
+        )
+        processed_path = (
+            _file_path_if_exists(final_dir, filename)
+            or _file_path_if_exists(blurred_dir, filename)
+            or _file_path_if_exists(clean_dir, filename)
+            or ""
+        )
+
+        # Blur status
+        pipeline_blurred = False
+        manually_blurred = False
+        annotated_blur_path = ""
+
+        if db_img:
+            pipeline_blurred = db_img.compliance_status in ("blurred", "processed", "obfuscated")
+            manually_blurred = db_img.manually_blurred or False
+            if manually_blurred and db_img.annotated_blur_url:
+                annotated_blur_path = db_img.annotated_blur_url
+        else:
+            # No DB record — check if blurred file exists on disk
+            pipeline_blurred = _file_path_if_exists(blurred_dir, filename) is not None
+
+        # Check annotated_blur folder for manual blur files (any naming convention)
+        if not annotated_blur_path and annotated_dir.is_dir():
+            for af in annotated_dir.iterdir():
+                if filename in af.name:
+                    annotated_blur_path = str(af.relative_to(backend_dir))
+                    break
+
+        entry = {
+            "filename": filename,
+            "db_id": db_img.id if db_img else None,
+            "is_unique": not is_duplicate,
+            "is_duplicate": is_duplicate,
+            "parent_image": parent_image,
+            "original_path": original_path,
+            "processed_path": processed_path,
+            "pipeline_blurred": pipeline_blurred,
+            "manually_blurred": manually_blurred,
+            "annotated_blur_path": annotated_blur_path,
+            "compliance_status": (db_img.compliance_status or "unknown") if db_img else ("blurred" if pipeline_blurred else "unknown"),
+            "human_faces_detected": db_img.human_faces_detected if db_img else 0,
+            "in_database": db_img is not None,
+            "is_ai_generated": db_img.is_ai_generated if db_img else None,
+            "human_visible": db_img.human_visible if db_img else None,
+        }
+        registry.append(entry)
+
+    # ── 6. Apply filters ──
+    if search:
+        search_lower = search.lower()
+        registry = [r for r in registry if search_lower in r["filename"].lower()]
+
+    if status_filter == "unique":
+        registry = [r for r in registry if r["is_unique"]]
+    elif status_filter == "duplicate":
+        registry = [r for r in registry if r["is_duplicate"]]
+    elif status_filter == "blurred":
+        registry = [r for r in registry if r["pipeline_blurred"]]
+    elif status_filter == "clean":
+        registry = [r for r in registry if not r["pipeline_blurred"] and not r["is_duplicate"]]
+    elif status_filter == "manually_blurred":
+        registry = [r for r in registry if r["manually_blurred"]]
+
+    # ── 7. Summary stats ──
+    total = len(registry)
+    summary = {
+        "total_downloaded": len(all_downloaded),
+        "total_unique": sum(1 for r in registry if r["is_unique"]),
+        "total_duplicate": sum(1 for r in registry if r["is_duplicate"]),
+        "total_pipeline_blurred": sum(1 for r in registry if r["pipeline_blurred"]),
+        "total_manually_blurred": sum(1 for r in registry if r["manually_blurred"]),
+        "total_in_database": sum(1 for r in registry if r["in_database"]),
+        "total_clean": sum(1 for r in registry if not r["pipeline_blurred"] and not r["is_duplicate"]),
+    }
+
+    # ── 8. Paginate ──
+    start = (page - 1) * per_page
+    end = start + per_page
+    page_data = registry[start:end]
+
+    return {
+        "summary": summary,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "total_pages": (total + per_page - 1) // per_page,
+        "data": page_data,
+    }
+

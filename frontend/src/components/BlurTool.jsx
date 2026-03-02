@@ -3,17 +3,20 @@ import axios from 'axios';
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
+/**
+ * BlurTool — simple rectangle drawing overlay.
+ * User draws regions → backend applies actual blur → image reloads.
+ * No canvas pixel manipulation — avoids all CORS / performance issues.
+ */
 export default function BlurTool({ imageId, imageUrl, onBlurApplied }) {
   const [isActive, setIsActive] = useState(false);
   const [regions, setRegions] = useState([]);
   const [currentRegion, setCurrentRegion] = useState(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [imageLoaded, setImageLoaded] = useState(false);
-  
-  const canvasRef = useRef(null);
-  const imageRef = useRef(null);
-  const originalImageData = useRef(null);
+  const [progress, setProgress] = useState('');
+
+  const containerRef = useRef(null);
 
   // Load existing blur regions when tool is activated
   useEffect(() => {
@@ -33,345 +36,238 @@ export default function BlurTool({ imageId, imageUrl, onBlurApplied }) {
     }
   };
 
-  const handleImageLoad = () => {
-    const img = imageRef.current;
-    const canvas = canvasRef.current;
-    
-    if (!img || !canvas) return;
+  // ── Mouse handlers (draw rectangles as % of image) ──
 
-    // Set canvas size to match image natural size (for quality)
-    const maxWidth = 1200;
-    const maxHeight = 800;
-    let width = img.naturalWidth;
-    let height = img.naturalHeight;
-    
-    // Scale down if too large
-    if (width > maxWidth) {
-      height = (maxWidth / width) * height;
-      width = maxWidth;
-    }
-    if (height > maxHeight) {
-      width = (maxHeight / height) * width;
-      height = maxHeight;
-    }
-    
-    canvas.width = width;
-    canvas.height = height;
-
-    const ctx = canvas.getContext('2d');
-    ctx.drawImage(img, 0, 0, width, height);
-    
-    // Store original image data
-    originalImageData.current = ctx.getImageData(0, 0, width, height);
-    
-    setImageLoaded(true);
-    console.log('Image loaded successfully:', width, 'x', height);
+  const getRelativePos = (e) => {
+    const rect = containerRef.current?.getBoundingClientRect();
+    if (!rect) return { x: 0, y: 0 };
+    return {
+      x: Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width)),
+      y: Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height)),
+    };
   };
-
-  const applyGaussianBlur = (pixels, width, height, x, y, w, h) => {
-    const radius = 15;
-    
-    // Apply box blur multiple times for Gaussian-like effect
-    for (let i = 0; i < 3; i++) {
-      boxBlur(pixels, width, height, x, y, w, h, radius);
-    }
-  };
-
-  const boxBlur = (pixels, width, height, x, y, w, h, radius) => {
-    const tempPixels = new Uint8ClampedArray(pixels.length);
-    tempPixels.set(pixels);
-
-    for (let py = Math.max(0, y); py < Math.min(height, y + h); py++) {
-      for (let px = Math.max(0, x); px < Math.min(width, x + w); px++) {
-        let r = 0, g = 0, b = 0, count = 0;
-
-        for (let dy = -radius; dy <= radius; dy++) {
-          for (let dx = -radius; dx <= radius; dx++) {
-            const nx = px + dx;
-            const ny = py + dy;
-
-            if (nx >= x && nx < x + w && ny >= y && ny < y + h &&
-                nx >= 0 && nx < width && ny >= 0 && ny < height) {
-              const idx = (ny * width + nx) * 4;
-              r += tempPixels[idx];
-              g += tempPixels[idx + 1];
-              b += tempPixels[idx + 2];
-              count++;
-            }
-          }
-        }
-
-        const idx = (py * width + px) * 4;
-        pixels[idx] = r / count;
-        pixels[idx + 1] = g / count;
-        pixels[idx + 2] = b / count;
-      }
-    }
-  };
-
-  const redrawCanvas = () => {
-    const canvas = canvasRef.current;
-    if (!canvas || !originalImageData.current) return;
-
-    const ctx = canvas.getContext('2d');
-    
-    // Restore original image
-    ctx.putImageData(originalImageData.current, 0, 0);
-    
-    // Get current image data to apply blurs
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-    const pixels = imageData.data;
-
-    // Apply blur to each region
-    [...regions, currentRegion].forEach((region, idx) => {
-      if (!region) return;
-      
-      const normalized = {
-        x: region.width < 0 ? region.x + region.width : region.x,
-        y: region.height < 0 ? region.y + region.height : region.y,
-        width: Math.abs(region.width),
-        height: Math.abs(region.height)
-      };
-
-      if (normalized.width < 0.01 || normalized.height < 0.01) return;
-
-      const x = Math.floor(normalized.x * canvas.width);
-      const y = Math.floor(normalized.y * canvas.height);
-      const w = Math.ceil(normalized.width * canvas.width);
-      const h = Math.ceil(normalized.height * canvas.height);
-
-      applyGaussianBlur(pixels, canvas.width, canvas.height, x, y, w, h);
-    });
-
-    // Put blurred image back
-    ctx.putImageData(imageData, 0, 0);
-
-    // Draw borders
-    regions.forEach((region, idx) => {
-      const x = region.x * canvas.width;
-      const y = region.y * canvas.height;
-      const w = region.width * canvas.width;
-      const h = region.height * canvas.height;
-
-      ctx.strokeStyle = '#ef4444';
-      ctx.lineWidth = 3;
-      ctx.strokeRect(x, y, w, h);
-
-      // Region number
-      ctx.fillStyle = '#ef4444';
-      ctx.font = 'bold 16px Arial';
-      ctx.strokeStyle = 'white';
-      ctx.lineWidth = 4;
-      ctx.strokeText(`#${idx + 1}`, x + 8, y + 24);
-      ctx.fillText(`#${idx + 1}`, x + 8, y + 24);
-    });
-
-    // Draw current region
-    if (currentRegion && Math.abs(currentRegion.width) > 0.01 && Math.abs(currentRegion.height) > 0.01) {
-      const normalized = {
-        x: currentRegion.width < 0 ? currentRegion.x + currentRegion.width : currentRegion.x,
-        y: currentRegion.height < 0 ? currentRegion.y + currentRegion.height : currentRegion.y,
-        width: Math.abs(currentRegion.width),
-        height: Math.abs(currentRegion.height)
-      };
-
-      const x = normalized.x * canvas.width;
-      const y = normalized.y * canvas.height;
-      const w = normalized.width * canvas.width;
-      const h = normalized.height * canvas.height;
-
-      ctx.strokeStyle = '#3b82f6';
-      ctx.lineWidth = 3;
-      ctx.setLineDash([10, 5]);
-      ctx.strokeRect(x, y, w, h);
-      ctx.setLineDash([]);
-    }
-  };
-
-  useEffect(() => {
-    if (imageLoaded) {
-      redrawCanvas();
-    }
-  }, [regions, currentRegion, imageLoaded]);
 
   const handleMouseDown = (e) => {
-    if (!canvasRef.current) return;
-
-    const rect = canvasRef.current.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width;
-    const y = (e.clientY - rect.top) / rect.height;
-
+    e.preventDefault();
+    const pos = getRelativePos(e);
     setIsDrawing(true);
-    setCurrentRegion({ x, y, width: 0, height: 0 });
+    setCurrentRegion({ x: pos.x, y: pos.y, width: 0, height: 0 });
   };
 
   const handleMouseMove = (e) => {
-    if (!isDrawing || !currentRegion || !canvasRef.current) return;
-
-    const rect = canvasRef.current.getBoundingClientRect();
-    const currentX = (e.clientX - rect.left) / rect.width;
-    const currentY = (e.clientY - rect.top) / rect.height;
-
-    setCurrentRegion({
-      ...currentRegion,
-      width: currentX - currentRegion.x,
-      height: currentY - currentRegion.y
-    });
+    if (!isDrawing || !currentRegion) return;
+    const pos = getRelativePos(e);
+    setCurrentRegion(prev => ({
+      ...prev,
+      width: pos.x - prev.x,
+      height: pos.y - prev.y,
+    }));
   };
 
   const handleMouseUp = () => {
     if (!isDrawing || !currentRegion) return;
-
     if (Math.abs(currentRegion.width) > 0.01 && Math.abs(currentRegion.height) > 0.01) {
+      // Normalize negative dimensions
       const normalized = {
         x: currentRegion.width < 0 ? currentRegion.x + currentRegion.width : currentRegion.x,
         y: currentRegion.height < 0 ? currentRegion.y + currentRegion.height : currentRegion.y,
         width: Math.abs(currentRegion.width),
-        height: Math.abs(currentRegion.height)
+        height: Math.abs(currentRegion.height),
       };
-      
-      setRegions([...regions, normalized]);
+      setRegions(prev => [...prev, normalized]);
     }
-
     setIsDrawing(false);
     setCurrentRegion(null);
   };
 
+  // ── Apply blur on backend ──
+
   const handleApplyBlur = async () => {
-    if (regions.length === 0) {
-      alert('Please draw at least one region to blur');
-      return;
-    }
-
+    if (regions.length === 0) return;
     setLoading(true);
-    try {
-      await axios.post(`${API_BASE}/api/annotator/blur/apply/${imageId}`, {
-        regions: regions
-      });
+    setProgress('Sending regions to server…');
 
-      alert('✅ Blur applied successfully!');
+    try {
+      setProgress('Applying blur on server… this may take a moment');
+      await axios.post(`${API_BASE}/api/annotator/blur/apply/${imageId}`, { regions });
+
+      setProgress('Done! Reloading image…');
+
+      // Small delay so user sees the "Done" message
+      await new Promise(r => setTimeout(r, 600));
+
       setIsActive(false);
       setRegions([]);
-      setImageLoaded(false);
-      
-      if (onBlurApplied) {
-        onBlurApplied();
-      }
+      if (onBlurApplied) onBlurApplied();
     } catch (error) {
       console.error('Failed to apply blur:', error);
-      alert('❌ Failed to apply blur: ' + (error.response?.data?.detail || error.message));
+      alert('❌ Failed: ' + (error.response?.data?.detail || error.message));
     } finally {
       setLoading(false);
+      setProgress('');
     }
+  };
+
+  const handleClose = () => {
+    setIsActive(false);
+    setRegions([]);
+    setCurrentRegion(null);
+    setIsDrawing(false);
+  };
+
+  // Render a single rectangle overlay
+  const renderRegion = (region, idx, isCurrent = false) => {
+    if (!region) return null;
+    const n = {
+      x: region.width < 0 ? region.x + region.width : region.x,
+      y: region.height < 0 ? region.y + region.height : region.y,
+      width: Math.abs(region.width),
+      height: Math.abs(region.height),
+    };
+    if (n.width < 0.005 || n.height < 0.005) return null;
+
+    return (
+      <div
+        key={isCurrent ? 'current' : idx}
+        className="absolute pointer-events-none"
+        style={{
+          left: `${n.x * 100}%`,
+          top: `${n.y * 100}%`,
+          width: `${n.width * 100}%`,
+          height: `${n.height * 100}%`,
+          border: isCurrent ? '2px dashed #3b82f6' : '2px solid #ef4444',
+          backgroundColor: isCurrent ? 'rgba(59,130,246,0.15)' : 'rgba(239,68,68,0.12)',
+          backdropFilter: isCurrent ? 'none' : 'blur(0px)', // visual hint
+        }}
+      >
+        {!isCurrent && (
+          <span className="absolute top-0.5 left-1 text-[10px] font-bold text-red-600 bg-white/80 px-1 rounded">
+            #{idx + 1}
+          </span>
+        )}
+      </div>
+    );
   };
 
   return (
     <div className="blur-tool">
       <button
         onClick={() => setIsActive(!isActive)}
-        className={`w-full px-4 py-2 rounded-lg font-medium transition ${
+        className={`w-full px-4 py-2 rounded-lg font-medium transition cursor-pointer ${
           isActive
             ? 'bg-red-500 text-white hover:bg-red-600'
             : 'bg-blue-500 text-white hover:bg-blue-600'
         }`}
       >
-        {isActive ? '✕ Cancel Blur Tool' : '🎨 Manual Blur Tool'}
+        {isActive ? '✕ Cancel Blur' : '🎨 Manual Blur Tool'}
       </button>
 
       {isActive && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-2xl max-w-7xl w-full max-h-[95vh] overflow-hidden flex flex-col">
-            <div className="p-4 border-b flex items-center justify-between bg-gradient-to-r from-blue-50 to-indigo-50">
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl max-w-6xl w-full max-h-[95vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="px-5 py-3 border-b flex items-center justify-between bg-gradient-to-r from-blue-50 to-indigo-50 shrink-0">
               <div>
-                <h3 className="text-xl font-bold text-gray-900">🎨 Manual Blur Tool</h3>
-                <p className="text-sm text-gray-600 mt-1">Draw rectangles to blur sensitive areas - see blur in real-time!</p>
+                <h3 className="text-lg font-bold text-gray-900">🎨 Manual Blur Tool</h3>
+                <p className="text-xs text-gray-500">
+                  Draw rectangles over areas to blur. Backend will process the actual blurring.
+                </p>
               </div>
               <button
-                onClick={() => {
-                  setIsActive(false);
-                  setRegions([]);
-                  setImageLoaded(false);
-                }}
-                className="text-gray-500 hover:text-gray-700 p-2 hover:bg-gray-100 rounded-lg transition"
+                onClick={handleClose}
+                disabled={loading}
+                className="text-gray-400 hover:text-gray-600 p-1.5 hover:bg-white/60 rounded-lg transition cursor-pointer disabled:opacity-50"
               >
-                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
 
-            <div className="flex-1 overflow-auto p-6 bg-gray-50">
-              <div className="flex justify-center">
-                <div className="relative inline-block">
-                  <img
-                    ref={imageRef}
-                    src={imageUrl}
-                    alt="Source"
-                    onLoad={handleImageLoad}
-                    className="hidden"
-                    crossOrigin="anonymous"
-                  />
-                  <canvas
-                    ref={canvasRef}
-                    onMouseDown={handleMouseDown}
-                    onMouseMove={handleMouseMove}
-                    onMouseUp={handleMouseUp}
-                    onMouseLeave={() => isDrawing && handleMouseUp()}
-                    className="max-w-full h-auto border-4 border-gray-300 rounded-lg shadow-xl cursor-crosshair bg-white"
-                    style={{ maxHeight: '70vh' }}
-                  />
+            {/* Image + overlay area */}
+            <div className="flex-1 min-h-0 overflow-auto bg-gray-100 flex items-center justify-center p-4">
+              {loading ? (
+                // Progress overlay
+                <div className="text-center py-16">
+                  <div className="relative mx-auto w-16 h-16 mb-4">
+                    <div className="absolute inset-0 border-4 border-blue-200 rounded-full" />
+                    <div className="absolute inset-0 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                  <p className="text-lg font-semibold text-gray-800 mb-1">Processing…</p>
+                  <p className="text-sm text-gray-500">{progress}</p>
                 </div>
-              </div>
+              ) : (
+                <div
+                  ref={containerRef}
+                  className="relative inline-block select-none"
+                  onMouseDown={handleMouseDown}
+                  onMouseMove={handleMouseMove}
+                  onMouseUp={handleMouseUp}
+                  onMouseLeave={() => isDrawing && handleMouseUp()}
+                  style={{ cursor: 'crosshair' }}
+                >
+                  <img
+                    src={imageUrl}
+                    alt="Image to blur"
+                    className="block max-w-full rounded-lg shadow-lg"
+                    style={{ maxHeight: '70vh' }}
+                    draggable={false}
+                  />
+                  {/* Saved region overlays */}
+                  {regions.map((r, i) => renderRegion(r, i))}
+                  {/* Current region being drawn */}
+                  {renderRegion(currentRegion, -1, true)}
+                </div>
+              )}
             </div>
 
-            <div className="p-4 border-t bg-gray-50">
-              <div className="flex items-center justify-between mb-4">
-                <div className="text-sm">
-                  <span className="font-bold text-lg text-gray-900">{regions.length}</span>
-                  <span className="text-gray-600 ml-1">region(s) selected</span>
+            {/* Footer controls */}
+            {!loading && (
+              <div className="px-5 py-3 border-t bg-gray-50 shrink-0">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-sm text-gray-700">
+                    <span className="font-bold text-gray-900 text-base">{regions.length}</span>
+                    {' '}region{regions.length !== 1 ? 's' : ''} marked
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => setRegions(r => r.slice(0, -1))}
+                      disabled={regions.length === 0}
+                      className="px-3 py-1.5 text-xs bg-white border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed font-medium transition cursor-pointer"
+                    >
+                      ↶ Undo
+                    </button>
+                    <button
+                      onClick={() => setRegions([])}
+                      disabled={regions.length === 0}
+                      className="px-3 py-1.5 text-xs bg-white border border-gray-200 text-gray-600 rounded-lg hover:bg-gray-50 disabled:opacity-30 disabled:cursor-not-allowed font-medium transition cursor-pointer"
+                    >
+                      Clear All
+                    </button>
+                  </div>
                 </div>
+
                 <div className="flex gap-2">
                   <button
-                    onClick={() => setRegions(regions.slice(0, -1))}
-                    disabled={regions.length === 0}
-                    className="px-4 py-2 text-sm bg-white border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed font-medium transition"
+                    onClick={handleClose}
+                    className="flex-1 h-10 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 font-semibold transition cursor-pointer"
                   >
-                    ↶ Undo Last
+                    Cancel
                   </button>
                   <button
-                    onClick={() => setRegions([])}
+                    onClick={handleApplyBlur}
                     disabled={regions.length === 0}
-                    className="px-4 py-2 text-sm bg-white border-2 border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed font-medium transition"
+                    className="flex-[1.5] h-10 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-lg hover:from-blue-600 hover:to-indigo-700 font-semibold disabled:opacity-40 disabled:cursor-not-allowed transition shadow-md cursor-pointer"
                   >
-                    🗑️ Clear All
+                    ✓ Apply Blur ({regions.length} region{regions.length !== 1 ? 's' : ''})
                   </button>
                 </div>
-              </div>
 
-              <div className="flex gap-3">
-                <button
-                  onClick={() => {
-                    setIsActive(false);
-                    setRegions([]);
-                    setImageLoaded(false);
-                  }}
-                  className="flex-1 px-6 py-3 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 font-semibold transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleApplyBlur}
-                  disabled={regions.length === 0 || loading}
-                  className="flex-1 px-6 py-3 bg-gradient-to-r from-blue-500 to-indigo-600 text-white rounded-lg hover:from-blue-600 hover:to-indigo-700 font-semibold disabled:opacity-50 disabled:cursor-not-allowed transition shadow-lg"
-                >
-                  {loading ? '⏳ Applying Blur...' : `✓ Apply Blur to ${regions.length} Region${regions.length !== 1 ? 's' : ''}`}
-                </button>
+                <p className="text-[11px] text-gray-400 mt-2 text-center">
+                  Click &amp; drag to mark areas → Click "Apply" → Backend blurs the image
+                </p>
               </div>
-
-              <p className="text-xs text-gray-500 mt-3 text-center italic">
-                💡 Click and drag to draw blur rectangles. The blur effect is calculated in real-time!
-              </p>
-            </div>
+            )}
           </div>
         </div>
       )}

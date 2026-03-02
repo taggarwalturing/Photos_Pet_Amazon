@@ -18,7 +18,8 @@ export default function AnnotationPage() {
   const [task, setTask] = useState(null);
   const [selectedOptions, setSelectedOptions] = useState([]);
   const [isDuplicate, setIsDuplicate] = useState(null);
-  const [isAIGenerated, setIsAIGenerated] = useState(null);
+  const [isAIGenerated, setIsAIGenerated] = useState(false); // default Real
+  const [humanVisible, setHumanVisible] = useState(null); // null=Unknown, true=Visible, false=Not Visible
   const [queueIndex, setQueueIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -45,7 +46,8 @@ export default function AnnotationPage() {
       } else {
         setSelectedOptions([]);
         setIsDuplicate(null);
-        setIsAIGenerated(null);
+        setIsAIGenerated(false); // default Real
+        setHumanVisible(null);
         setElapsedSeconds(0);
       }
     } catch (err) {
@@ -101,6 +103,7 @@ export default function AnnotationPage() {
         selected_option_ids: selectedOptions,
         is_duplicate: isDuplicate,
         is_ai_generated: isAIGenerated,
+        human_visible: humanVisible,
         status,
         time_spent_seconds: elapsedSeconds,
       });
@@ -250,9 +253,9 @@ export default function AnnotationPage() {
   const progress = task ? Math.round(((queueIndex + 1) / task.total_images) * 100) : 0;
 
   return (
-    <div className="h-screen bg-gray-100 flex flex-col overflow-hidden">
+    <div className="fixed inset-0 bg-gray-100 flex flex-col">
       {/* Header */}
-      <header className="bg-white border-b border-gray-200/80 sticky top-0 z-10 shadow-sm">
+      <header className="bg-white border-b border-gray-200/80 z-10 shadow-sm shrink-0">
         <div className="px-6 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3.5">
             <button
@@ -307,37 +310,36 @@ export default function AnnotationPage() {
         </div>
       </header>
 
-      {/* Main Content */}
-      <main className="flex-1 w-full px-3 py-2 min-h-0" style={{ height: 'calc(100vh - 54px)' }}>
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_380px] gap-3 h-full">
-          {/* Left: Image — fills all remaining space */}
-          <div className="bg-gray-900 rounded-xl overflow-hidden relative min-h-0 ring-1 ring-gray-800">
-            <img
-              src={getImageUrl(task?.image_id)}
-              alt={task?.image_filename}
-              className="absolute inset-0 w-full h-full object-contain"
-              loading="eager"
-            />
+      {/* Main Content - takes ALL remaining space */}
+      <div className="flex-1 min-h-0 flex gap-3 px-3 py-2">
+        {/* Left: Image — fills all remaining space */}
+        <div className="flex-1 min-w-0 bg-gray-900 rounded-xl overflow-hidden relative ring-1 ring-gray-800">
+          <img
+            src={getImageUrl(task?.image_id)}
+            alt={task?.image_filename}
+            className="absolute inset-0 w-full h-full object-contain"
+            loading="eager"
+          />
+        </div>
+
+        {/* Right: Options form — fixed width sidebar, MUST NOT exceed parent height */}
+        <div className="w-[380px] shrink-0 flex flex-col bg-white rounded-xl shadow-sm border border-gray-200/80 overflow-hidden">
+          {/* Fixed Header Section */}
+          <div className="px-4 py-3 shrink-0 border-b border-gray-100">
+            <h2 className="text-sm font-bold text-gray-900">{task?.category_name}</h2>
+            <p className="text-xs text-gray-500">Select all that apply</p>
           </div>
 
-          {/* Right: Options form — fixed width sidebar */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200/80 flex flex-col overflow-hidden min-h-0">
-            {/* Fixed Header Section */}
-            <div className="p-5 pb-3 shrink-0 border-b border-gray-100">
-              <h2 className="text-base font-bold text-gray-900 mb-0.5">{task?.category_name}</h2>
-              <p className="text-xs text-gray-500">Select all that apply</p>
-            </div>
-
-            {/* Scrollable Content Section */}
-            <div className="flex-1 overflow-y-auto p-5 pt-3">
+          {/* Scrollable Content Section - ONLY this section scrolls */}
+          <div className="flex-1 min-h-0 overflow-y-auto">
+            <div className="p-4">
               {/* Blur Tool */}
               {task?.image_id && (
-                <div className="mb-4">
+                <div className="mb-3">
                   <BlurTool 
                     imageId={task.image_id} 
                     imageUrl={getImageUrl(task.image_id)}
                     onBlurApplied={() => {
-                      // Optionally reload the image or show a success message
                       console.log('Blur applied successfully');
                     }}
                   />
@@ -345,170 +347,168 @@ export default function AnnotationPage() {
               )}
 
               {error && (
-                <div className="bg-red-50 text-red-700 px-4 py-2 rounded-lg text-sm mb-4">
+                <div className="bg-red-50 text-red-700 px-3 py-2 rounded-lg text-xs mb-3">
                   {error}
                 </div>
               )}
 
               {/* Options as pill-like checkboxes */}
-              <div className="space-y-2 mb-4">
+              <div className="space-y-1.5">
                 {task?.options.map((opt) => {
-                const isSelected = selectedOptions.includes(opt.id);
-                return (
-                  <label
-                    key={opt.id}
-                    className={`
-                      flex items-center gap-3 px-4 py-2.5 rounded-xl border-2 cursor-pointer transition-all
-                      ${isSelected
-                        ? 'border-indigo-500 bg-indigo-50/80 text-indigo-900 shadow-sm shadow-indigo-100'
-                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50/50 bg-white text-gray-700'
-                      }
-                    `}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isSelected}
-                      onChange={() => toggleOption(opt.id)}
-                      className="sr-only"
-                    />
-                    <div
+                  const isSelected = selectedOptions.includes(opt.id);
+                  return (
+                    <label
+                      key={opt.id}
                       className={`
-                        w-4.5 h-4.5 rounded flex items-center justify-center border-2 shrink-0 transition-all
-                        ${isSelected ? 'bg-indigo-500 border-indigo-500' : 'border-gray-300'}
+                        flex items-center gap-2.5 px-3 py-2 rounded-lg border-2 cursor-pointer transition-all
+                        ${isSelected
+                          ? 'border-indigo-500 bg-indigo-50/80 text-indigo-900'
+                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50/50 bg-white text-gray-700'
+                        }
                       `}
                     >
-                      {isSelected && (
-                        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                        </svg>
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleOption(opt.id)}
+                        className="sr-only"
+                      />
+                      <div
+                        className={`
+                          w-4 h-4 rounded flex items-center justify-center border-2 shrink-0 transition-all
+                          ${isSelected ? 'bg-indigo-500 border-indigo-500' : 'border-gray-300'}
+                        `}
+                      >
+                        {isSelected && (
+                          <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                          </svg>
+                        )}
+                      </div>
+                      <span className="text-xs font-medium">{opt.label}</span>
+                      {opt.is_typical && (
+                        <span className="ml-auto text-[9px] font-semibold bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full uppercase">
+                          typical
+                        </span>
                       )}
-                    </div>
-                    <span className="text-sm font-medium">{opt.label}</span>
-                    {opt.is_typical && (
-                      <span className="ml-auto text-[10px] font-semibold bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full uppercase tracking-wide">
-                        typical
-                      </span>
-                    )}
-                  </label>
-                );
-              })}
+                    </label>
+                  );
+                })}
               </div>
             </div>
+          </div>
 
-            {/* Fixed Footer Section with Controls */}
-            <div className="shrink-0 border-t border-gray-200 p-5 pt-4 bg-gray-50">
-              {/* Is Duplicate */}
-              <div className="mb-4">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Is Duplicate?</p>
-              <div className="flex gap-2">
-                {[
-                  { value: null, label: 'Not set', color: 'gray' },
-                  { value: false, label: 'No', color: 'green' },
-                  { value: true, label: 'Yes', color: 'red' },
-                ].map((opt) => (
-                  <button
-                    key={String(opt.value)}
-                    onClick={() => setIsDuplicate(opt.value)}
-                    className={`
-                      px-3.5 py-1.5 rounded-xl text-xs font-semibold border-2 transition-all cursor-pointer
-                      ${isDuplicate === opt.value
-                        ? opt.color === 'red'
-                          ? 'border-red-400 bg-red-50 text-red-700'
-                          : opt.color === 'green'
-                            ? 'border-green-400 bg-green-50 text-green-700'
-                            : 'border-gray-400 bg-gray-100 text-gray-700'
-                        : 'border-gray-200 text-gray-400 hover:border-gray-300 hover:text-gray-600'
-                      }
-                    `}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-              {/* Is AI-Generated */}
-              <div className="mb-4">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">🤖 AI-Generated Image?</p>
-              <div className="flex gap-2">
-                {[
-                  { value: null, label: 'Not set', color: 'gray' },
-                  { value: false, label: 'Real', color: 'green' },
-                  { value: true, label: 'AI-Generated', color: 'purple' },
-                ].map((opt) => (
-                  <button
-                    key={String(opt.value)}
-                    onClick={() => setIsAIGenerated(opt.value)}
-                    className={`
-                      px-3.5 py-1.5 rounded-xl text-xs font-semibold border-2 transition-all cursor-pointer
-                      ${isAIGenerated === opt.value
-                        ? opt.color === 'purple'
-                          ? 'border-purple-400 bg-purple-50 text-purple-700'
-                          : opt.color === 'green'
-                            ? 'border-green-400 bg-green-50 text-green-700'
-                            : 'border-gray-400 bg-gray-100 text-gray-700'
-                        : 'border-gray-200 text-gray-400 hover:border-gray-300 hover:text-gray-600'
-                      }
-                    `}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-              
-              {/* Already annotated indicator */}
-              {task?.current_annotation?.status === 'completed' && (
-                <div className="mb-4 flex items-center gap-2 px-3 py-2.5 bg-green-50/80 border border-green-200 rounded-xl text-xs text-green-700 font-medium">
-                  <svg className="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  Already completed. Changes will update your annotation.
+          {/* Fixed Footer Section - ALWAYS VISIBLE at bottom of sidebar */}
+          <div className="shrink-0 border-t-2 border-gray-200 p-3 bg-gray-50">
+            {/* Classification Toggles */}
+            <div className="space-y-1.5 mb-2">
+              {/* Row: Duplicate */}
+              <div className="flex items-center">
+                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider w-14 shrink-0">Dup</span>
+                <div className="flex rounded-md overflow-hidden border border-gray-200 flex-1">
+                  {[
+                    { value: null, label: '?', activeClass: 'bg-gray-500 text-white' },
+                    { value: false, label: 'No', activeClass: 'bg-green-500 text-white' },
+                    { value: true, label: 'Yes', activeClass: 'bg-red-500 text-white' },
+                  ].map((opt, idx) => (
+                    <button
+                      key={String(opt.value)}
+                      onClick={() => setIsDuplicate(opt.value)}
+                      className={`flex-1 py-1 text-[10px] font-bold transition-all cursor-pointer
+                        ${idx > 0 ? 'border-l border-gray-200' : ''}
+                        ${isDuplicate === opt.value ? opt.activeClass : 'bg-white text-gray-400 hover:bg-gray-50'}
+                      `}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
                 </div>
-              )}
+              </div>
 
-              {/* Navigation buttons */}
-              <div className="flex items-center gap-2.5 mb-2">
-                <button
-                  onClick={handleBack}
-                  disabled={queueIndex === 0 || saving}
-                  className="px-4 py-2.5 border border-gray-200 text-gray-600 rounded-xl hover:bg-gray-50 hover:border-gray-300 transition disabled:opacity-25 disabled:cursor-not-allowed cursor-pointer text-sm font-medium"
-                >
-                  &larr;
-                </button>
+              {/* Row: AI Detection */}
+              <div className="flex items-center">
+                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider w-14 shrink-0">AI</span>
+                <div className="flex rounded-md overflow-hidden border border-gray-200 flex-1">
+                  {[
+                    { value: false, label: 'Real', activeClass: 'bg-green-500 text-white' },
+                    { value: null, label: '?', activeClass: 'bg-gray-500 text-white' },
+                    { value: true, label: 'AI', activeClass: 'bg-purple-500 text-white' },
+                  ].map((opt, idx) => (
+                    <button
+                      key={String(opt.value)}
+                      onClick={() => setIsAIGenerated(opt.value)}
+                      className={`flex-1 py-1 text-[10px] font-bold transition-all cursor-pointer
+                        ${idx > 0 ? 'border-l border-gray-200' : ''}
+                        ${isAIGenerated === opt.value ? opt.activeClass : 'bg-white text-gray-400 hover:bg-gray-50'}
+                      `}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Row: Human Visible */}
+              <div className="flex items-center">
+                <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider w-14 shrink-0">Human</span>
+                <div className="flex rounded-md overflow-hidden border border-gray-200 flex-1">
+                  {[
+                    { value: true, label: 'Visible', activeClass: 'bg-blue-500 text-white' },
+                    { value: null, label: '?', activeClass: 'bg-gray-500 text-white' },
+                    { value: false, label: 'Not Visible', activeClass: 'bg-orange-500 text-white' },
+                  ].map((opt, idx) => (
+                    <button
+                      key={String(opt.value)}
+                      onClick={() => setHumanVisible(opt.value)}
+                      className={`flex-1 py-1 text-[10px] font-bold transition-all cursor-pointer
+                        ${idx > 0 ? 'border-l border-gray-200' : ''}
+                        ${humanVisible === opt.value ? opt.activeClass : 'bg-white text-gray-400 hover:bg-gray-50'}
+                      `}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            
+            {/* Already annotated indicator */}
+            {task?.current_annotation?.status === 'completed' && (
+              <div className="mb-2 flex items-center gap-1.5 px-2 py-1 bg-green-50 border border-green-200 rounded text-[9px] text-green-700 font-medium">
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                </svg>
+                Already completed
+              </div>
+            )}
+
+            {/* Navigation buttons */}
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={handleBack}
+                disabled={queueIndex === 0 || saving}
+                className="px-2.5 py-1.5 border border-gray-300 text-gray-600 rounded hover:bg-gray-100 transition disabled:opacity-25 cursor-pointer text-xs font-medium"
+              >
+                ←
+              </button>
               <button
                 onClick={handleSkip}
                 disabled={saving}
-                className="px-4 py-2.5 border border-amber-200 text-amber-700 bg-amber-50/50 rounded-xl hover:bg-amber-100 hover:border-amber-300 transition disabled:opacity-50 cursor-pointer text-sm font-medium"
+                className="px-2.5 py-1.5 border border-amber-300 text-amber-700 bg-amber-50 rounded hover:bg-amber-100 transition disabled:opacity-50 cursor-pointer text-xs font-medium"
               >
                 Skip
               </button>
               <button
                 onClick={handleNext}
                 disabled={saving || selectedOptions.length === 0}
-                className="flex-1 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white rounded-xl transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer text-sm font-semibold shadow-sm shadow-indigo-200 hover:shadow-md hover:shadow-indigo-200"
+                className="flex-1 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded transition-all disabled:opacity-40 cursor-pointer text-xs font-bold"
               >
-                {saving ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg className="animate-spin w-3.5 h-3.5" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                    </svg>
-                    Saving...
-                  </span>
-                ) : 'Save & Next \u2192'}
+                {saving ? '...' : 'Save & Next →'}
               </button>
-            </div>
-
-              {/* Keyboard shortcut hints */}
-              <div className="flex items-center justify-center gap-4 text-[10px] text-gray-400">
-                <span><kbd className="px-1.5 py-0.5 bg-gray-50 border border-gray-200 rounded text-gray-500 font-mono">&larr;</kbd> Back</span>
-                <span><kbd className="px-1.5 py-0.5 bg-gray-50 border border-gray-200 rounded text-gray-500 font-mono">S</kbd> Skip</span>
-                <span><kbd className="px-1.5 py-0.5 bg-gray-50 border border-gray-200 rounded text-gray-500 font-mono">&rarr;</kbd> Save</span>
-              </div>
             </div>
           </div>
         </div>
-      </main>
+      </div>
     </div>
   );
 }

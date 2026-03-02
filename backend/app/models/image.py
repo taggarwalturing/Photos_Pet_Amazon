@@ -25,10 +25,15 @@ class Image(Base):
     processing_log = Column(Text, nullable=True)
     
     # AI-generated image detection
-    is_ai_generated = Column(Boolean, nullable=True)  # True=AI, False=Real, None=Unknown
+    is_ai_generated = Column(Boolean, nullable=True, default=False)  # True=AI, False=Real, None=Unknown; default Real
     ai_detection_confidence = Column(Integer, nullable=True)  # 0-100
     marked_ai_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     marked_ai_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Human visibility tracking
+    human_visible = Column(Boolean, nullable=True)  # True=Human visible, False=No human, None=Unknown
+    human_visible_marked_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    human_visible_marked_at = Column(DateTime(timezone=True), nullable=True)
     
     # Dual URL storage for version control
     original_url = Column(Text, nullable=True)  # Original unprocessed image
@@ -47,6 +52,7 @@ class Image(Base):
     annotations = relationship("Annotation", back_populates="image")
     improper_marker = relationship("User", foreign_keys=[marked_improper_by])
     ai_marker = relationship("User", foreign_keys=[marked_ai_by])
+    human_visible_marker = relationship("User", foreign_keys=[human_visible_marked_by])
     edit_requests = relationship("EditRequest", back_populates="image")
     manual_blur_user = relationship("User", foreign_keys=[manually_blurred_by])
     
