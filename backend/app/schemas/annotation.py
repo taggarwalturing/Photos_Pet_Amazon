@@ -6,6 +6,7 @@ from datetime import datetime
 class AnnotationSave(BaseModel):
     selected_option_ids: list[int] = []
     is_duplicate: Optional[bool] = None
+    is_ai_generated: Optional[bool] = None
     status: str = "completed"  # completed / skipped
     time_spent_seconds: int = 0  # cumulative time spent on this annotation
 

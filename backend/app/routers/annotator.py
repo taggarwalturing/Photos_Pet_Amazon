@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_
 from typing import Optional
+from datetime import datetime, timezone
 from app.database import get_db
 from app.dependencies import require_annotator
 from app.models.user import User
@@ -1006,6 +1007,13 @@ def save_annotation(
         annotation.is_duplicate = payload.is_duplicate
         annotation.status = payload.status
         annotation.time_spent_seconds = payload.time_spent_seconds
+        
+        # Update image AI-generated status if provided
+        if payload.is_ai_generated is not None:
+            image.is_ai_generated = payload.is_ai_generated
+            image.marked_ai_by = user.id
+            image.marked_ai_at = datetime.now(timezone.utc)
+        
         # Clear old selections
         db.query(AnnotationSelection).filter(
             AnnotationSelection.annotation_id == annotation.id
@@ -1021,6 +1029,12 @@ def save_annotation(
         )
         db.add(annotation)
         db.flush()  # get annotation.id
+        
+        # Update image AI-generated status if provided
+        if payload.is_ai_generated is not None:
+            image.is_ai_generated = payload.is_ai_generated
+            image.marked_ai_by = user.id
+            image.marked_ai_at = datetime.now(timezone.utc)
 
     # Add selections
     for option_id in payload.selected_option_ids:
@@ -1523,7 +1537,7 @@ def get_ai_detection(
 from pydantic import BaseModel
 import os
 import httpx as _httpx
-from app.models.blur_region import BlurRegion as BlurRegionModel
+from datetime import datetime
 
 
 class BlurRegionSchema(BaseModel):
@@ -1579,17 +1593,11 @@ def blur_image_regions_endpoint(
     with open(cached_path, "wb") as f:
         f.write(blurred_bytes)
 
-    # Persist blur coordinates in the database
-    for r in payload.regions:
-        db.add(BlurRegionModel(
-            image_id=image_id,
-            created_by=user.id,
-            x=r.x,
-            y=r.y,
-            width=r.width,
-            height=r.height,
-        ))
-
+    # Store blur regions as JSON in the image record
+    image.blur_regions = regions
+    image.manually_blurred = True
+    image.manually_blurred_by = user.id
+    image.manually_blurred_at = datetime.utcnow()
     image.processed_url = f"file://image_cache/{blurred_filename}"
     image.is_using_processed = True
     image.processing_method = "manual"
@@ -1609,16 +1617,17 @@ def get_blur_regions(
     user: User = Depends(require_annotator),
 ):
     """Return saved blur regions for an image."""
-    rows = db.query(BlurRegionModel).filter(BlurRegionModel.image_id == image_id).all()
+    image = db.query(Image).filter(Image.id == image_id).first()
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+    
+    regions = image.blur_regions or []
     return [
         {
-            "id": r.id,
-            "x": r.x,
-            "y": r.y,
-            "width": r.width,
-            "height": r.height,
-            "created_by": r.created_by,
-            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "x": r.get("x", 0),
+            "y": r.get("y", 0),
+            "width": r.get("width", 0),
+            "height": r.get("height", 0),
         }
-        for r in rows
+        for r in regions
     ]

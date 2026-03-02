@@ -18,6 +18,7 @@ export default function AnnotationPage() {
   const [task, setTask] = useState(null);
   const [selectedOptions, setSelectedOptions] = useState([]);
   const [isDuplicate, setIsDuplicate] = useState(null);
+  const [isAIGenerated, setIsAIGenerated] = useState(null);
   const [queueIndex, setQueueIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -44,6 +45,7 @@ export default function AnnotationPage() {
       } else {
         setSelectedOptions([]);
         setIsDuplicate(null);
+        setIsAIGenerated(null);
         setElapsedSeconds(0);
       }
     } catch (err) {
@@ -98,6 +100,7 @@ export default function AnnotationPage() {
       await api.put(`/annotator/categories/${categoryId}/images/${task.image_id}/annotate`, {
         selected_option_ids: selectedOptions,
         is_duplicate: isDuplicate,
+        is_ai_generated: isAIGenerated,
         status,
         time_spent_seconds: elapsedSeconds,
       });
@@ -403,6 +406,36 @@ export default function AnnotationPage() {
                       ${isDuplicate === opt.value
                         ? opt.color === 'red'
                           ? 'border-red-400 bg-red-50 text-red-700'
+                          : opt.color === 'green'
+                            ? 'border-green-400 bg-green-50 text-green-700'
+                            : 'border-gray-400 bg-gray-100 text-gray-700'
+                        : 'border-gray-200 text-gray-400 hover:border-gray-300 hover:text-gray-600'
+                      }
+                    `}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Is AI-Generated */}
+            <div className="mt-4 pt-4 border-t border-gray-100">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">🤖 AI-Generated Image?</p>
+              <div className="flex gap-2">
+                {[
+                  { value: null, label: 'Not set', color: 'gray' },
+                  { value: false, label: 'Real', color: 'green' },
+                  { value: true, label: 'AI-Generated', color: 'purple' },
+                ].map((opt) => (
+                  <button
+                    key={String(opt.value)}
+                    onClick={() => setIsAIGenerated(opt.value)}
+                    className={`
+                      px-3.5 py-1.5 rounded-xl text-xs font-semibold border-2 transition-all cursor-pointer
+                      ${isAIGenerated === opt.value
+                        ? opt.color === 'purple'
+                          ? 'border-purple-400 bg-purple-50 text-purple-700'
                           : opt.color === 'green'
                             ? 'border-green-400 bg-green-50 text-green-700'
                             : 'border-gray-400 bg-gray-100 text-gray-700'

@@ -260,6 +260,17 @@ db-migrate: ## Run database migrations (creates tables)
 		$(PYTHON) -c "from app.database import Base, engine; from app.models import user, category, option, image, annotation, edit_request, notification, system_settings as app_settings; Base.metadata.create_all(bind=engine); print('✅ Database tables created')"
 	@echo "$(GREEN)✅ Migrations complete$(NC)"
 
+db-migrate-blur: ## Run blur tracking migration (adds blur columns to images table)
+	@echo "$(CYAN)🔄 Running blur tracking migration...$(NC)"
+	@cd $(BACKEND_DIR) && \
+		if [ ! -d ".venv" ]; then \
+			echo "$(YELLOW)Creating Python virtual environment...$(NC)"; \
+			python3 -m venv .venv; \
+		fi && \
+		source .venv/bin/activate && \
+		$(PYTHON) migrations/add_blur_tracking.py
+	@echo "$(GREEN)✅ Blur tracking migration complete$(NC)"
+
 db-seed: ## Seed database with admin users
 	@echo "$(CYAN)🌱 Seeding database...$(NC)"
 	@echo "$(YELLOW)Admin users will be created from SEED_ADMINS env var$(NC)"

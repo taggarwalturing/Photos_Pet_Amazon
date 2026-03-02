@@ -28,7 +28,7 @@ except ImportError:
     HEIF_SUPPORT = False
 
 # Import all models so Base knows about them
-from app.models import user, image, category, option, annotator_category, annotation, image_assignment, edit_request, notification, blur_region  # noqa
+from app.models import user, image, category, option, annotator_category, annotation, image_assignment, edit_request, notification  # noqa
 from app.models import settings as settings_model  # noqa - rename to avoid conflict with config.settings
 
 # Google Drive service account setup from settings
