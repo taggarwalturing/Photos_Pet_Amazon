@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, ForeignKey, Index
+from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, ForeignKey, Index, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.database import Base
@@ -35,13 +35,20 @@ class Image(Base):
     processed_url = Column(Text, nullable=True)  # Processed (blurred) version
     is_using_processed = Column(Boolean, default=True, nullable=False)  # Which version is currently shown
     processing_method = Column(String(50), nullable=True)  # 'opencv', 'openai', 'manual'
+    
+    # Manual blur tracking by annotators
+    manually_blurred = Column(Boolean, default=False, nullable=False)  # Track if annotator manually blurred
+    blur_regions = Column(JSON, nullable=True)  # Store blur region coordinates as JSON array
+    manually_blurred_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    manually_blurred_at = Column(DateTime(timezone=True), nullable=True)
+    annotated_blur_url = Column(Text, nullable=True)  # URL to manually blurred version
 
     # Relationships
     annotations = relationship("Annotation", back_populates="image")
     improper_marker = relationship("User", foreign_keys=[marked_improper_by])
     ai_marker = relationship("User", foreign_keys=[marked_ai_by])
     edit_requests = relationship("EditRequest", back_populates="image")
-    blur_regions = relationship("BlurRegion", back_populates="image", cascade="all, delete-orphan")
+    manual_blur_user = relationship("User", foreign_keys=[manually_blurred_by])
     
     # Composite indexes for common query patterns
     __table_args__ = (

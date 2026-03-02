@@ -9,7 +9,7 @@ import io
 from contextlib import asynccontextmanager
 from app.config import settings
 from app.database import engine, Base, SessionLocal, get_db
-from app.routers import auth, admin, annotator, compliance, compliance_management, pipeline, public_blur
+from app.routers import auth, admin, annotator, compliance, compliance_management, pipeline, public_blur, annotator_blur
 from app.seed import seed_database
 from app.models.image import Image
 
@@ -145,6 +145,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(annotator.router, prefix="/api")
+app.include_router(annotator_blur.router, prefix="/api")
 app.include_router(compliance.router, prefix="/api")
 app.include_router(compliance_management.router, prefix="/api")
 app.include_router(pipeline.router, prefix="/api")

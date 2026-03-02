@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
+import BlurTool from '../components/BlurTool';
 
 // Helper to get proxied image URL for Google Drive images
 const getImageUrl = (imageId) => {
@@ -320,6 +321,20 @@ export default function AnnotationPage() {
           <div className="bg-white rounded-xl shadow-sm border border-gray-200/80 p-5 flex flex-col overflow-y-auto min-h-0">
             <h2 className="text-base font-bold text-gray-900 mb-0.5">{task?.category_name}</h2>
             <p className="text-xs text-gray-500 mb-4">Select all that apply</p>
+
+            {/* Blur Tool */}
+            {task?.image_id && (
+              <div className="mb-4">
+                <BlurTool 
+                  imageId={task.image_id} 
+                  imageUrl={getImageUrl(task.image_id)}
+                  onBlurApplied={() => {
+                    // Optionally reload the image or show a success message
+                    console.log('Blur applied successfully');
+                  }}
+                />
+              </div>
+            )}
 
             {error && (
               <div className="bg-red-50 text-red-700 px-4 py-2 rounded-lg text-sm mb-4">

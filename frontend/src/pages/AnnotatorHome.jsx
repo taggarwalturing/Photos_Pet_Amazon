@@ -317,14 +317,6 @@ export default function AnnotatorHome() {
                 <p className="text-2xl font-bold text-gray-900">{totalCompleted}</p>
                 <p className="text-xs text-gray-500 font-medium">Completed</p>
               </div>
-              <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm animate-slide-up relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-br from-amber-500 to-orange-500 opacity-10 rounded-bl-[32px] -mr-1 -mt-1" />
-                <div className="w-8 h-8 bg-gradient-to-br from-amber-500 to-orange-500 rounded-lg flex items-center justify-center text-white text-sm mb-2 shadow-sm">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                </div>
-                <p className="text-2xl font-bold text-gray-900">{totalPending}</p>
-                <p className="text-xs text-gray-500 font-medium">Remaining</p>
-              </div>
             </div>
 
             {/* Filters & Categories */}
