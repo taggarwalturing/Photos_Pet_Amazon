@@ -1,10 +1,25 @@
-.PHONY: help install install-backend install-frontend install-pipeline clean-ports start stop dev backend frontend logs status health
+.PHONY: help install install-backend install-frontend install-pipeline clean-ports start stop dev backend frontend logs status health \
+		download-images deduplicate-images process-biometric import-images run-pipeline pipeline-status \
+		setup setup-with-images setup-fast first-time-setup
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Photo Pets Annotation Tool - Makefile
+# ═══════════════════════════════════════════════════════════════════════════
+#
+# Quick Start Commands:
+#   make first-time-setup  - Interactive wizard for first-time users
+#   make setup-with-images - Automated complete setup with image processing
+#   make start             - Start the application
+#   make help              - Show all available commands
+#
+# ═══════════════════════════════════════════════════════════════════════════
 
 # Colors for output
 CYAN := \033[0;36m
 GREEN := \033[0;32m
 YELLOW := \033[0;33m
 RED := \033[0;31m
+BOLD := \033[1m
 NC := \033[0m # No Color
 
 # Configuration
@@ -19,9 +34,35 @@ PIP := $(VENV_DIR)/bin/pip
 ##@ Help
 
 help: ## Display this help message
-	@echo "$(CYAN)Photo Pets Annotation Tool - Makefile Commands$(NC)"
+	@echo "$(BOLD)$(CYAN)═══════════════════════════════════════════════════════════════$(NC)"
+	@echo "$(BOLD)$(CYAN)   Photo Pets Annotation Tool - Command Reference$(NC)"
+	@echo "$(BOLD)$(CYAN)═══════════════════════════════════════════════════════════════$(NC)"
 	@echo ""
-	@awk 'BEGIN {FS = ":.*##"; printf "Usage:\n  make $(CYAN)<target>$(NC)\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  $(CYAN)%-20s$(NC) %s\n", $$1, $$2 } /^##@/ { printf "\n$(YELLOW)%s$(NC)\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+	@echo "$(BOLD)$(GREEN)🚀 Quick Start (New Users):$(NC)"
+	@echo "  $(CYAN)make first-time-setup$(NC)  - Interactive setup wizard (RECOMMENDED)"
+	@echo "  $(CYAN)make setup-with-images$(NC) - Automated full setup"
+	@echo "  $(CYAN)make start$(NC)             - Start the application"
+	@echo ""
+	@echo "$(BOLD)$(YELLOW)📋 All Available Commands:$(NC)"
+	@echo ""
+	@awk 'BEGIN {FS = ":.*##"; printf "Usage:\n  make $(CYAN)<target>$(NC)\n\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  $(CYAN)%-28s$(NC) %s\n", $$1, $$2 } /^##@/ { printf "\n$(BOLD)$(YELLOW)%s$(NC)\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
+	@echo ""
+	@echo "$(BOLD)$(GREEN)💡 Common Workflows:$(NC)"
+	@echo ""
+	@echo "  $(BOLD)First Time Setup:$(NC)"
+	@echo "    1. make first-time-setup"
+	@echo "    2. make start"
+	@echo ""
+	@echo "  $(BOLD)Add More Images:$(NC)"
+	@echo "    1. Upload images to Google Drive"
+	@echo "    2. make import-incremental  (processes only NEW images)"
+	@echo ""
+	@echo "  $(BOLD)Check Status:$(NC)"
+	@echo "    • make pipeline-status  (see image counts)"
+	@echo "    • make status          (see if servers are running)"
+	@echo ""
+	@echo "$(BOLD)$(CYAN)═══════════════════════════════════════════════════════════════$(NC)"
+	@echo ""
 
 ##@ Installation
 
@@ -181,26 +222,113 @@ test: test-backend test-frontend ## Run all tests
 
 ##@ Pipeline
 
-run-pipeline: ## Run standalone master pipeline (download + deduplicate + biometric processing)
-	@echo "$(CYAN)🚀 Running master pipeline...$(NC)"
+download-images: ## Download images from Google Drive only
+	@echo "$(CYAN)📥 Downloading images from Google Drive...$(NC)"
 	@cd $(BACKEND_DIR)/master_pipeline && \
-		source ../$(BACKEND_DIR)/.venv/bin/activate && \
-		python master_pipeline.py --all
-	@echo "$(GREEN)✅ Pipeline complete$(NC)"
+		source ../.venv/bin/activate && \
+		python master_pipeline.py --download
+	@echo "$(GREEN)✅ Images downloaded to pipeline_workspace/01_downloaded_from_drive/$(NC)"
 
-test-pipeline: ## Test master pipeline with 10 images
-	@echo "$(CYAN)🧪 Testing pipeline with limited images...$(NC)"
+deduplicate-images: ## Remove duplicate images only
+	@echo "$(CYAN)🔍 Removing duplicate images...$(NC)"
+	@cd $(BACKEND_DIR)/master_pipeline && \
+		source ../.venv/bin/activate && \
+		python master_pipeline.py --deduplicate
+	@echo "$(GREEN)✅ Unique images saved to pipeline_workspace/02_unique_images/$(NC)"
+
+process-biometric: ## Process images through biometric compliance pipeline only
+	@echo "$(CYAN)🔐 Processing images through biometric compliance...$(NC)"
 	@cd $(BACKEND_DIR)/master_pipeline && \
 		source ../.venv/bin/activate && \
 		python master_pipeline.py --pipeline
-	@echo "$(GREEN)✅ Test complete$(NC)"
+	@echo "$(GREEN)✅ Processed images saved to pipeline_workspace/04_final_output/$(NC)"
 
-process-images: ## Process Google Drive images through biometric pipeline (legacy - use run-pipeline instead)
-	@echo "$(CYAN)🔐 Processing images through compliance pipeline...$(NC)"
+import-images: ## Import processed images to database
+	@echo "$(CYAN)📥 Importing processed images to database...$(NC)"
 	@cd $(BACKEND_DIR) && \
 		source .venv/bin/activate && \
-		$(PYTHON) scripts/process_gdrive_only.py
-	@echo "$(GREEN)✅ Images processed and uploaded to Google Drive$(NC)"
+		$(PYTHON) import_pipeline_images.py
+	@echo "$(GREEN)✅ Images imported to database$(NC)"
+
+import-incremental: ## Import only NEW images (incremental processing)
+	@echo "$(CYAN)🔄 Running incremental import (only new images)...$(NC)"
+	@cd $(BACKEND_DIR) && \
+		source .venv/bin/activate && \
+		$(PYTHON) import_incremental.py --full
+	@echo "$(GREEN)✅ Incremental import complete$(NC)"
+
+run-pipeline: ## Run COMPLETE pipeline (download + deduplicate + biometric + import)
+	@echo "$(CYAN)🚀 Running COMPLETE master pipeline...$(NC)"
+	@echo ""
+	@$(MAKE) download-images
+	@echo ""
+	@$(MAKE) deduplicate-images
+	@echo ""
+	@$(MAKE) process-biometric
+	@echo ""
+	@$(MAKE) import-images
+	@echo ""
+	@echo "$(GREEN)✅ ✅ ✅ Complete pipeline finished!$(NC)"
+	@echo "$(CYAN)Images are now ready for annotation in the UI$(NC)"
+
+run-pipeline-fast: ## Run pipeline WITHOUT deduplication (faster)
+	@echo "$(CYAN)⚡ Running FAST pipeline (skipping deduplication)...$(NC)"
+	@echo ""
+	@$(MAKE) download-images
+	@echo ""
+	@$(MAKE) process-biometric
+	@echo ""
+	@$(MAKE) import-images
+	@echo ""
+	@echo "$(GREEN)✅ Fast pipeline complete!$(NC)"
+
+test-pipeline: ## Test pipeline with limited images (10 images max)
+	@echo "$(CYAN)🧪 Testing pipeline with 10 images...$(NC)"
+	@cd $(BACKEND_DIR)/master_pipeline && \
+		source ../.venv/bin/activate && \
+		LIMIT_IMAGES=10 python master_pipeline.py --download --pipeline
+	@cd $(BACKEND_DIR) && \
+		source .venv/bin/activate && \
+		$(PYTHON) import_pipeline_images.py
+	@echo "$(GREEN)✅ Test pipeline complete$(NC)"
+
+check-new-images: ## Check how many new images are ready to process
+	@echo "$(CYAN)🔍 Checking for new images...$(NC)"
+	@cd $(BACKEND_DIR) && \
+		source .venv/bin/activate && \
+		$(PYTHON) import_incremental.py --import-only
+	@echo ""
+
+pipeline-status: ## Show pipeline workspace status
+	@echo "$(CYAN)📊 Pipeline Workspace Status:$(NC)"
+	@echo ""
+	@if [ -d "$(BACKEND_DIR)/master_pipeline/pipeline_workspace/01_downloaded_from_drive" ]; then \
+		count=$$(find $(BACKEND_DIR)/master_pipeline/pipeline_workspace/01_downloaded_from_drive -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" \) 2>/dev/null | wc -l | tr -d ' '); \
+		echo "  📥 Downloaded: $$count images"; \
+	else \
+		echo "  📥 Downloaded: 0 images (folder doesn't exist)"; \
+	fi
+	@if [ -d "$(BACKEND_DIR)/master_pipeline/pipeline_workspace/02_unique_images" ]; then \
+		count=$$(find $(BACKEND_DIR)/master_pipeline/pipeline_workspace/02_unique_images -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" \) 2>/dev/null | wc -l | tr -d ' '); \
+		echo "  🔍 Unique:     $$count images"; \
+	else \
+		echo "  🔍 Unique:     0 images (folder doesn't exist)"; \
+	fi
+	@if [ -d "$(BACKEND_DIR)/master_pipeline/pipeline_workspace/04_final_output" ]; then \
+		count=$$(find $(BACKEND_DIR)/master_pipeline/pipeline_workspace/04_final_output -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" \) 2>/dev/null | wc -l | tr -d ' '); \
+		echo "  ✅ Processed:  $$count images"; \
+	else \
+		echo "  ✅ Processed:  0 images (folder doesn't exist)"; \
+	fi
+	@cd $(BACKEND_DIR) && \
+		if [ -f "photo_annotation.db" ]; then \
+			source .venv/bin/activate && \
+			count=$$($(PYTHON) -c "from app.database import SessionLocal; from sqlalchemy import text; db = SessionLocal(); result = db.execute(text('SELECT COUNT(*) FROM images')).scalar(); print(result); db.close()" 2>/dev/null || echo "0"); \
+			echo "  💾 In Database: $$count images"; \
+		else \
+			echo "  💾 In Database: 0 images (database doesn't exist)"; \
+		fi
+	@echo ""
 
 ##@ Utility
 
@@ -221,12 +349,89 @@ check-env: ## Check if required environment files exist
 
 setup: check-env install db-migrate ## Complete first-time setup (env check + install + db setup)
 	@echo ""
-	@echo "$(GREEN)🎉 Setup complete!$(NC)"
+	@echo "$(GREEN)🎉 Basic setup complete!$(NC)"
 	@echo ""
 	@echo "$(CYAN)Next steps:$(NC)"
 	@echo "  1. Configure $(BACKEND_DIR)/.env with your credentials"
 	@echo "  2. Configure $(FRONTEND_DIR)/.env with backend URL"
-	@echo "  3. Run $(YELLOW)make start$(NC) to launch the application"
+	@echo "  3. Run $(YELLOW)make setup-with-images$(NC) to download and process images"
+	@echo "  4. Run $(YELLOW)make start$(NC) to launch the application"
+	@echo ""
+
+setup-with-images: check-env install db-migrate run-pipeline ## COMPLETE setup with image download and processing
+	@echo ""
+	@echo "$(GREEN)🎉 🎉 🎉 Complete setup finished!$(NC)"
+	@echo ""
+	@echo "$(CYAN)✅ All done! Your annotation tool is ready:$(NC)"
+	@echo "  • Dependencies installed"
+	@echo "  • Database created"
+	@echo "  • Images downloaded from Google Drive"
+	@echo "  • Images deduplicated"
+	@echo "  • Faces blurred (biometric compliance)"
+	@echo "  • Images imported to database"
+	@echo ""
+	@$(MAKE) pipeline-status
+	@echo "$(YELLOW)Ready to start:$(NC) Run $(CYAN)make start$(NC)"
+	@echo ""
+
+setup-fast: check-env install db-migrate run-pipeline-fast ## Fast setup (skip deduplication)
+	@echo ""
+	@echo "$(GREEN)🎉 Fast setup complete!$(NC)"
+	@echo ""
+	@$(MAKE) pipeline-status
+	@echo "$(YELLOW)Ready to start:$(NC) Run $(CYAN)make start$(NC)"
+	@echo ""
+
+first-time-setup: ## Interactive first-time setup wizard
+	@echo "$(CYAN)═══════════════════════════════════════════════════════$(NC)"
+	@echo "$(CYAN)   📋 Photo Pets Annotation Tool - First Time Setup$(NC)"
+	@echo "$(CYAN)═══════════════════════════════════════════════════════$(NC)"
+	@echo ""
+	@echo "$(YELLOW)This wizard will help you set up the annotation tool.$(NC)"
+	@echo ""
+	@echo "$(CYAN)Step 1: Environment Configuration$(NC)"
+	@if [ ! -f "$(BACKEND_DIR)/.env" ]; then \
+		echo "$(YELLOW)Creating backend/.env from example...$(NC)"; \
+		cp $(BACKEND_DIR)/.env.example $(BACKEND_DIR)/.env; \
+		echo "$(RED)⚠️  IMPORTANT: Edit backend/.env and add your credentials!$(NC)"; \
+		echo "   Required: GOOGLE_SERVICE_ACCOUNT_* and GOOGLE_DRIVE_FOLDER_ID"; \
+		echo ""; \
+		read -p "Press Enter after you've configured backend/.env..." dummy; \
+	fi
+	@if [ ! -f "$(FRONTEND_DIR)/.env" ]; then \
+		echo "$(YELLOW)Creating frontend/.env from example...$(NC)"; \
+		cp $(FRONTEND_DIR)/.env.example $(FRONTEND_DIR)/.env; \
+	fi
+	@echo ""
+	@echo "$(CYAN)Step 2: Installing Dependencies$(NC)"
+	@$(MAKE) install
+	@echo ""
+	@echo "$(CYAN)Step 3: Database Setup$(NC)"
+	@$(MAKE) db-migrate
+	@echo ""
+	@echo "$(CYAN)Step 4: Image Processing$(NC)"
+	@echo "$(YELLOW)Choose how to set up images:$(NC)"
+	@echo "  1) Download and process all images (RECOMMENDED)"
+	@echo "  2) Skip for now (you can run 'make run-pipeline' later)"
+	@read -p "Enter choice (1 or 2): " choice; \
+	if [ "$$choice" = "1" ]; then \
+		$(MAKE) run-pipeline; \
+	else \
+		echo "$(YELLOW)Skipping image processing. Run 'make run-pipeline' when ready.$(NC)"; \
+	fi
+	@echo ""
+	@echo "$(GREEN)═══════════════════════════════════════════════════════$(NC)"
+	@echo "$(GREEN)   🎉 Setup Complete!$(NC)"
+	@echo "$(GREEN)═══════════════════════════════════════════════════════$(NC)"
+	@echo ""
+	@$(MAKE) pipeline-status
+	@echo "$(CYAN)To start the application:$(NC)"
+	@echo "  $(YELLOW)make start$(NC)"
+	@echo ""
+	@echo "$(CYAN)Useful commands:$(NC)"
+	@echo "  $(YELLOW)make pipeline-status$(NC)  - Check image processing status"
+	@echo "  $(YELLOW)make run-pipeline$(NC)     - Process more images"
+	@echo "  $(YELLOW)make help$(NC)             - Show all available commands"
 	@echo ""
 
 ##@ Quick Start

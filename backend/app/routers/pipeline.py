@@ -450,3 +450,154 @@ def sync_pipeline_status(
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to sync pipeline status: {str(e)}")
+
+
+@router.post("/incremental-import")
+async def run_incremental_import(
+    background_tasks: BackgroundTasks,
+    admin: User = Depends(require_admin)
+):
+    """
+    Run incremental pipeline processing.
+    
+    This intelligently:
+    1. Detects NEW downloaded images that haven't been processed
+    2. Processes ONLY those new images (not the entire collection)
+    3. Imports the newly processed images to the database
+    
+    Example: If you have images 1-1000 already processed and imported,
+    and then download images 1001-1500, this will process only 1001-1500.
+    """
+    if pipeline_status["is_running"]:
+        raise HTTPException(
+            status_code=400,
+            detail="Pipeline is already running. Please wait for it to complete."
+        )
+    
+    # Run incremental import in background
+    background_tasks.add_task(run_incremental_import_background)
+    
+    return {
+        "message": "Incremental import started",
+        "info": "Processing only NEW images that haven't been processed yet"
+    }
+
+
+@router.get("/check-new-images")
+def check_for_new_images(
+    admin: User = Depends(require_admin)
+):
+    """
+    Check how many NEW images are available for processing.
+    
+    Returns counts of:
+    - Downloaded but not processed
+    - Processed but not imported to DB
+    - Already in database
+    """
+    try:
+        backend_dir = Path(__file__).parent.parent.parent
+        workspace = backend_dir / "master_pipeline" / "pipeline_workspace"
+        
+        # Load state tracking
+        state_file = workspace / "pipeline_state.json"
+        if state_file.exists():
+            with open(state_file, 'r') as f:
+                state = json.load(f)
+        else:
+            state = {"processed_files": [], "imported_files": []}
+        
+        # Count downloaded files
+        downloaded_dir = workspace / "01_downloaded_from_drive"
+        downloaded_files = []
+        if downloaded_dir.exists():
+            extensions = {'.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif', '.avif'}
+            downloaded_files = [
+                f.name for f in downloaded_dir.iterdir()
+                if f.is_file() and f.suffix.lower() in extensions
+            ]
+        
+        # Count final output files
+        final_output_dir = workspace / "04_final_output"
+        final_files = []
+        if final_output_dir.exists():
+            extensions = {'.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif', '.avif'}
+            final_files = [
+                f.name for f in final_output_dir.iterdir()
+                if f.is_file() and f.suffix.lower() in extensions
+            ]
+        
+        # Count database files
+        from app.database import SessionLocal
+        db = SessionLocal()
+        try:
+            db_files = db.execute(text("SELECT filename FROM images")).fetchall()
+            db_filenames = {row[0] for row in db_files}
+        finally:
+            db.close()
+        
+        # Calculate differences
+        processed_set = set(state.get("processed_files", []))
+        downloaded_set = set(downloaded_files)
+        final_set = set(final_files)
+        
+        new_downloaded = downloaded_set - processed_set  # Downloaded but not processed
+        new_final = final_set - db_filenames  # Processed but not imported
+        
+        return {
+            "new_to_process": len(new_downloaded),
+            "new_to_import": len(new_final),
+            "total_downloaded": len(downloaded_files),
+            "total_processed": len(final_files),
+            "total_in_database": len(db_filenames),
+            "ready_for_incremental": len(new_downloaded) > 0 or len(new_final) > 0,
+            "recommendation": (
+                f"Run incremental import to process {len(new_downloaded)} new images and import {len(new_final)} processed images"
+                if (len(new_downloaded) > 0 or len(new_final) > 0)
+                else "No new images found. All images are up to date."
+            )
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error checking for new images: {str(e)}")
+
+
+# Background task for incremental import
+def run_incremental_import_background():
+    """Run incremental import in the background."""
+    import sys
+    global pipeline_status
+    
+    try:
+        pipeline_status["is_running"] = True
+        pipeline_status["current_step"] = "incremental_import"
+        pipeline_status["started_at"] = datetime.now().isoformat()
+        
+        backend_dir = Path(__file__).parent.parent.parent
+        sys.path.insert(0, str(backend_dir))
+        
+        # Import and run the incremental importer
+        from import_incremental import IncrementalPipelineImporter
+        
+        importer = IncrementalPipelineImporter()
+        results = importer.full_incremental_workflow(
+            run_deduplication=False,  # Skip dedup for speed (can be enabled if needed)
+            run_biometric=True
+        )
+        
+        pipeline_status["is_running"] = False
+        pipeline_status["current_step"] = "completed"
+        pipeline_status["completed_at"] = datetime.now().isoformat()
+        pipeline_status["summary"] = results.get("summary", {})
+        
+        print(f"[INCREMENTAL IMPORT] Completed: {results}")
+        
+    except Exception as e:
+        print(f"[INCREMENTAL IMPORT] Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        
+        pipeline_status["is_running"] = False
+        pipeline_status["current_step"] = "error"
+        pipeline_status["completed_at"] = datetime.now().isoformat()
+        pipeline_status["errors"].append(f"Incremental import error: {str(e)}")
