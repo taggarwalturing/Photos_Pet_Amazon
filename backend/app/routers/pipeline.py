@@ -280,6 +280,16 @@ def get_pipeline_stats(
     pending = stats[2] or 0
     failed = stats[3] or 0
     
+    # Load Drive metadata
+    drive_meta = {}
+    drive_meta_path = workspace / "drive_metadata.json"
+    if drive_meta_path.exists():
+        try:
+            with open(drive_meta_path, 'r') as f:
+                drive_meta = json.load(f)
+        except Exception:
+            pass
+    
     return {
         "total_images": total,
         "processed": processed,
@@ -292,7 +302,13 @@ def get_pipeline_stats(
         "images_without_faces": stats[5] or 0,
         "screenshots_skipped": stats[6] or 0,
         "status": "idle" if not pipeline_status["is_running"] else pipeline_status["current_step"],
-        "last_run": pipeline_status.get("completed_at")
+        "last_run": pipeline_status.get("completed_at"),
+        # Drive metadata
+        "total_in_drive": drive_meta.get("total_in_drive", 0),
+        "drive_unique_filenames": drive_meta.get("unique_filenames", 0),
+        "drive_duplicate_filenames": drive_meta.get("duplicate_filename_count", 0),
+        "drive_duplicate_details": drive_meta.get("duplicate_filenames", {}),
+        "drive_scanned_at": drive_meta.get("scanned_at", ""),
     }
 
 

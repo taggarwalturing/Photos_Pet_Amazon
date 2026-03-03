@@ -282,6 +282,53 @@ db-migrate-human-visible: ## Run human visibility migration (adds human_visible 
 		$(PYTHON) migrations/add_human_visible.py
 	@echo "$(GREEN)✅ Human visibility migration complete$(NC)"
 
+db-migrate-original-filename: ## Add original_filename tracking columns and backfill HEIC data
+	@echo "$(CYAN)🔄 Running original filename migration...$(NC)"
+	@cd $(BACKEND_DIR) && \
+		if [ ! -d ".venv" ]; then \
+			echo "$(YELLOW)Creating virtual environment...$(NC)"; \
+			python3 -m venv .venv; \
+		fi && \
+		source .venv/bin/activate && \
+		$(PYTHON) migrations/add_original_filename.py
+	@echo "$(GREEN)✅ Original filename migration complete$(NC)"
+
+convert-heic: ## Convert all HEIC/HEIF/AVIF images to JPG in pipeline workspace
+	@echo "$(CYAN)🔄 Converting HEIC/HEIF/AVIF images to JPG...$(NC)"
+	@cd $(BACKEND_DIR) && \
+		source .venv/bin/activate && \
+		$(PYTHON) -c "\
+import json, shutil; \
+from pathlib import Path; \
+from datetime import datetime; \
+import pillow_heif; \
+pillow_heif.register_heif_opener(); \
+from PIL import Image; \
+ws = Path('master_pipeline/pipeline_workspace'); \
+total = 0; \
+for d in ['01_downloaded_from_drive', '02_unique_images']: \
+    folder = ws / d; \
+    if not folder.is_dir(): continue; \
+    orig_dir = folder / '_heic_originals'; \
+    mf_path = folder / '_heic_conversions.json'; \
+    mf = json.load(open(mf_path)) if mf_path.exists() else {}; \
+    unsup = {'.heic', '.heif', '.avif'}; \
+    to_conv = [f for f in folder.iterdir() if f.is_file() and f.suffix.lower() in unsup]; \
+    if not to_conv: print(f'  {d}: no HEIC files'); continue; \
+    orig_dir.mkdir(exist_ok=True); \
+    for f in sorted(to_conv): \
+        jn = f.stem + '.jpg'; jp = folder / jn; \
+        i = Image.open(f); \
+        i = i.convert('RGB') if i.mode != 'RGB' else i; \
+        i.save(str(jp), 'JPEG', quality=95); \
+        shutil.move(str(f), str(orig_dir / f.name)); \
+        mf[jn] = {'original_filename': f.name, 'original_format': f.suffix.upper().lstrip('.'), 'converted_at': datetime.now().isoformat()}; \
+        total += 1; \
+        print(f'  ✓ {f.name} → {jn}'); \
+    json.dump(mf, open(mf_path, 'w'), indent=2); \
+print(f'Total converted: {total}')"
+	@echo "$(GREEN)✅ HEIC conversion complete$(NC)"
+
 db-seed: ## Seed database with admin users
 	@echo "$(CYAN)🌱 Seeding database...$(NC)"
 	@echo "$(YELLOW)Admin users will be created from SEED_ADMINS env var$(NC)"

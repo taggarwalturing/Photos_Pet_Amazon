@@ -112,6 +112,8 @@ class ReviewTableCell(BaseModel):
     annotator_username: str
     is_duplicate: Optional[bool]
     review_status: Optional[str]
+    reviewed_by_username: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
     time_spent_seconds: int = 0
     rework_time_seconds: int = 0
     is_rework: bool = False
@@ -123,6 +125,14 @@ class ReviewTableRow(BaseModel):
     image_url: str
     image_filename: str
     annotations: dict[str, ReviewTableCell]  # key = str(category_id)
+    # Blur-related fields for admin review modal
+    is_blurred: bool = False
+    compliance_status: Optional[str] = None
+    is_using_processed: Optional[bool] = None
+    manually_blurred: bool = False
+    # Reviewer info (image-level: who last reviewed any annotation on this image)
+    reviewed_by_username: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
 
 
 class ReviewTableCategory(BaseModel):

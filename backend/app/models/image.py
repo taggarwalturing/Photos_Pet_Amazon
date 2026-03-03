@@ -9,6 +9,8 @@ class Image(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     filename = Column(String(255), nullable=False)
+    original_filename = Column(String(255), nullable=True)  # Original filename before conversion (e.g. IMG.HEIC → IMG.jpg)
+    original_format = Column(String(20), nullable=True)     # Original file format (e.g. "HEIC", "PNG") if converted
     url = Column(String(1024), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     

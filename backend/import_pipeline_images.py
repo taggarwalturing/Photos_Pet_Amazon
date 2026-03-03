@@ -69,6 +69,48 @@ def import_images_from_pipeline():
     
     print(f"📁 Found {len(image_files)} images in final output")
     
+    # ── Build HEIC → JPG conversion map ──
+    download_dir = pipeline_workspace / "01_downloaded_from_drive"
+    unique_dir = pipeline_workspace / "02_unique_images"
+    
+    # Method 1: Read from _heic_conversions.json manifest (new flow)
+    heic_conversion_map = {}  # jpg_filename → heic_original_filename
+    manifest_path = download_dir / "_heic_conversions.json"
+    if manifest_path.exists():
+        try:
+            with open(manifest_path, 'r') as f:
+                manifest = json.load(f)
+            for jpg_name, info in manifest.items():
+                heic_conversion_map[jpg_name] = info['original_filename']
+            print(f"📷 Loaded {len(heic_conversion_map)} HEIC conversions from manifest")
+        except Exception as e:
+            print(f"⚠️  Could not read HEIC manifest: {e}")
+    
+    # Method 2: Fallback - scan disk for HEIC files (legacy flow)
+    if not heic_conversion_map:
+        heic_on_disk = set()
+        heic_originals_dir = download_dir / '_heic_originals'
+        scan_dirs = [download_dir, unique_dir]
+        if heic_originals_dir.is_dir():
+            scan_dirs.append(heic_originals_dir)
+        for d in scan_dirs:
+            if d.is_dir():
+                for f in d.iterdir():
+                    if f.is_file() and f.suffix.lower() in ('.heic', '.heif', '.avif'):
+                        heic_on_disk.add(f.name)
+        
+        for img_file in image_files:
+            stem = img_file.stem
+            if img_file.suffix.lower() in ('.jpg', '.jpeg'):
+                for heic_name in heic_on_disk:
+                    heic_stem = Path(heic_name).stem
+                    if heic_stem == stem:
+                        heic_conversion_map[img_file.name] = heic_name
+                        break
+    
+    if heic_conversion_map:
+        print(f"📷 Detected {len(heic_conversion_map)} HEIC → JPG conversions")
+    
     db = SessionLocal()
     try:
         # Get existing filenames
@@ -134,10 +176,16 @@ def import_images_from_pipeline():
                 updated_count += 1
                 skipped_count += 1
             else:
+                # Check if this file was converted from HEIC
+                heic_original = heic_conversion_map.get(filename)
+                orig_format = "HEIC" if heic_original else None
+                
                 # Insert new image
                 db.execute(text('''
                     INSERT INTO images (
                         filename, 
+                        original_filename,
+                        original_format,
                         url, 
                         compliance_processed,
                         compliance_status,
@@ -150,6 +198,8 @@ def import_images_from_pipeline():
                     )
                     VALUES (
                         :filename, 
+                        :original_filename,
+                        :original_format,
                         :url, 
                         TRUE,
                         :compliance_status,
@@ -162,6 +212,8 @@ def import_images_from_pipeline():
                     )
                 '''), {
                     'filename': filename,
+                    'original_filename': heic_original,
+                    'original_format': orig_format,
                     'url': url,
                     'compliance_status': compliance_status,
                     'face_count': face_count,

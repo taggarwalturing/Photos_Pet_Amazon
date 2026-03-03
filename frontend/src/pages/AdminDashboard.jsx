@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
 import MasterPipelineTab from '../components/MasterPipelineTab';
 import PhotoRegistryTab from '../components/PhotoRegistryTab';
+import BoundingBoxCanvas from '../components/BoundingBoxCanvas';
 
 const PAGE_SIZE = 10;
 
@@ -888,44 +889,451 @@ function ImageCompletionTab() {
 // ─── Images Tab ───────────────────────────────────────────────
 
 function ImagesTab() {
-  const [images, setImages] = useState([]);
+  const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
+  const [filter, setFilter] = useState('all');
+  const [search, setSearch] = useState('');
+  const [searchInput, setSearchInput] = useState('');
+  const [lightboxImg, setLightboxImg] = useState(null); // image object for lightbox
   const imagesPerPage = 20;
 
-  useEffect(() => {
-    api.get('/admin/images').then((res) => {
-      setImages(res.data);
-      setLoading(false);
-    });
-  }, []);
+  const fetchImages = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = {};
+      if (filter !== 'all') params.filter = filter;
+      if (search) params.search = search;
+      const res = await api.get('/admin/images', { params });
+      setData(res.data);
+    } catch (err) {
+      console.error('Failed to load images:', err);
+    }
+    setLoading(false);
+  }, [filter, search]);
 
-  if (loading) return <LoadingSkeleton rows={3} />;
+  useEffect(() => { fetchImages(); }, [fetchImages]);
 
+  const handleFilterChange = (f) => {
+    setFilter(f);
+    setPage(1);
+  };
+
+  const handleSearch = (e) => {
+    e.preventDefault();
+    setSearch(searchInput);
+    setPage(1);
+  };
+
+  const images = data?.images || [];
+  const summary = data?.summary || {};
   const totalPages = Math.max(1, Math.ceil(images.length / imagesPerPage));
   const safePage = Math.min(page, totalPages);
   const paginatedImages = images.slice((safePage - 1) * imagesPerPage, safePage * imagesPerPage);
 
+  const filterTags = [
+    { key: 'all', label: 'All', value: summary.total, icon: '📋', color: 'indigo' },
+    { key: 'blurred', label: 'Blurred', value: summary.blurred, icon: '🔒', color: 'red' },
+    { key: 'clean', label: 'Clean', value: summary.clean, icon: '🟢', color: 'green' },
+    { key: 'manually_blurred', label: 'Manual Blur', value: summary.manually_blurred, icon: '✋', color: 'violet' },
+    { key: 'ai_generated', label: 'AI Generated', value: summary.ai_generated, icon: '🤖', color: 'amber' },
+    { key: 'human_visible', label: 'Human Visible', value: summary.human_visible, icon: '👤', color: 'blue' },
+    { key: 'improper', label: 'Improper', value: summary.improper, icon: '⚠️', color: 'orange' },
+  ];
+
+  const colorMap = {
+    indigo: { active: 'bg-indigo-100 text-indigo-700 border-indigo-300 ring-indigo-400', inactive: 'bg-white text-gray-600 border-gray-200 hover:border-gray-300' },
+    red: { active: 'bg-red-100 text-red-700 border-red-300 ring-red-400', inactive: 'bg-white text-gray-600 border-gray-200 hover:border-gray-300' },
+    green: { active: 'bg-green-100 text-green-700 border-green-300 ring-green-400', inactive: 'bg-white text-gray-600 border-gray-200 hover:border-gray-300' },
+    violet: { active: 'bg-violet-100 text-violet-700 border-violet-300 ring-violet-400', inactive: 'bg-white text-gray-600 border-gray-200 hover:border-gray-300' },
+    amber: { active: 'bg-amber-100 text-amber-700 border-amber-300 ring-amber-400', inactive: 'bg-white text-gray-600 border-gray-200 hover:border-gray-300' },
+    blue: { active: 'bg-blue-100 text-blue-700 border-blue-300 ring-blue-400', inactive: 'bg-white text-gray-600 border-gray-200 hover:border-gray-300' },
+    orange: { active: 'bg-orange-100 text-orange-700 border-orange-300 ring-orange-400', inactive: 'bg-white text-gray-600 border-gray-200 hover:border-gray-300' },
+  };
+
+  const getStatusBadges = (img) => {
+    const badges = [];
+    if (img.manually_blurred) {
+      badges.push({ label: 'Manual Blur', className: 'bg-violet-500' });
+    } else if (img.compliance_status && ['blurred', 'processed', 'obfuscated'].includes(img.compliance_status)) {
+      badges.push({ label: 'Blurred', className: 'bg-red-500' });
+    } else if (img.compliance_status === 'clean') {
+      badges.push({ label: 'Clean', className: 'bg-green-500' });
+    }
+    if (img.is_ai_generated) {
+      badges.push({ label: 'AI', className: 'bg-amber-500' });
+    }
+    if (img.is_improper) {
+      badges.push({ label: 'Improper', className: 'bg-orange-500' });
+    }
+    if (img.human_faces_detected > 0) {
+      badges.push({ label: `${img.human_faces_detected} face${img.human_faces_detected > 1 ? 's' : ''}`, className: 'bg-sky-500' });
+    }
+    return badges;
+  };
+
+  // Lightbox navigation
+  const lightboxIdx = lightboxImg ? images.findIndex(i => i.id === lightboxImg.id) : -1;
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
+      {/* Header */}
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-gray-900">Images ({images.length})</h2>
-      </div>
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-        {paginatedImages.map((img) => (
-          <div key={img.id} className="bg-white rounded-lg border border-gray-200 overflow-hidden shadow-sm">
-            <img src={getImageUrl(img.id)} alt={img.filename} className="w-full h-32 object-cover" />
-            <div className="px-3 py-2">
-              <p className="text-xs text-gray-500 truncate">{img.filename}</p>
-            </div>
-          </div>
-        ))}
+        <h2 className="text-lg font-semibold text-gray-900">Images ({data?.total ?? '…'})</h2>
+        <form onSubmit={handleSearch} className="relative max-w-xs">
+          <input
+            type="text"
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            placeholder="Search filename…"
+            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+          />
+          <svg className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+        </form>
       </div>
 
+      {/* Filter Tags */}
+      <div className="flex flex-wrap gap-2">
+        {filterTags.map((tag) => {
+          const isActive = filter === tag.key;
+          const colors = colorMap[tag.color];
+          return (
+            <button
+              key={tag.key}
+              onClick={() => handleFilterChange(tag.key)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full border transition cursor-pointer ${
+                isActive ? colors.active + ' ring-2 ring-offset-1 ' + colors.active.split(' ').find(c => c.startsWith('ring-')) : colors.inactive
+              }`}
+            >
+              <span>{tag.icon}</span>
+              <span>{tag.label}</span>
+              <span className={`ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${isActive ? 'bg-white/60' : 'bg-gray-100'}`}>
+                {tag.value ?? '—'}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Image Grid */}
+      {loading ? (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+          {Array.from({ length: 20 }).map((_, i) => (
+            <div key={i} className="bg-gray-100 rounded-xl aspect-[4/3] animate-pulse" />
+          ))}
+        </div>
+      ) : images.length === 0 ? (
+        <div className="py-16 text-center text-gray-400">
+          <p className="text-lg">No images found</p>
+          <p className="text-sm mt-1">Try adjusting your filter or search.</p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+          {paginatedImages.map((img) => {
+            const badges = getStatusBadges(img);
+            return (
+              <div
+                key={img.id}
+                onClick={() => setLightboxImg(img)}
+                className="group relative bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm hover:shadow-lg hover:ring-2 hover:ring-indigo-400 transition-all cursor-pointer"
+              >
+                <div className="relative aspect-[4/3]">
+                  <img
+                    src={getImageUrl(img.id)}
+                    alt={img.filename}
+                    className="w-full h-full object-cover"
+                    loading="lazy"
+                  />
+                  {/* Status badges overlay */}
+                  {badges.length > 0 && (
+                    <div className="absolute top-2 left-2 flex flex-wrap gap-1">
+                      {badges.map((b, i) => (
+                        <span key={i} className={`px-1.5 py-0.5 text-[9px] font-bold text-white rounded-md shadow-sm ${b.className}`}>
+                          {b.label}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {/* Hover overlay */}
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all flex items-center justify-center">
+                    <svg className="w-8 h-8 text-white opacity-0 group-hover:opacity-80 transition-all scale-75 group-hover:scale-100" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  </div>
+                </div>
+                <div className="px-3 py-2">
+                  <p className="text-xs text-gray-600 truncate font-medium" title={img.filename}>{img.filename}</p>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {/* Pagination */}
-      <div className="flex items-center justify-between text-sm text-gray-500">
-        <span>Showing {((safePage - 1) * imagesPerPage) + 1}–{Math.min(safePage * imagesPerPage, images.length)} of {images.length}</span>
-        <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />
+      {images.length > 0 && (
+        <div className="flex items-center justify-between text-sm text-gray-500">
+          <span>Showing {((safePage - 1) * imagesPerPage) + 1}–{Math.min(safePage * imagesPerPage, images.length)} of {images.length}</span>
+          <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />
+        </div>
+      )}
+
+      {/* Lightbox Modal with Blur Tool */}
+      {lightboxImg && (
+        <ImageLightbox
+          img={lightboxImg}
+          images={images}
+          idx={lightboxIdx}
+          getStatusBadges={getStatusBadges}
+          onClose={() => setLightboxImg(null)}
+          onNavigate={(newImg) => setLightboxImg(newImg)}
+          onImageUpdated={fetchImages}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── Image Lightbox with Blur Tool ──────────────────────────
+
+function ImageLightbox({ img, images, idx, getStatusBadges, onClose, onNavigate, onImageUpdated }) {
+  const [blurActive, setBlurActive] = useState(false);
+  const [blurBoxes, setBlurBoxes] = useState([]);
+  const [applyingBlur, setApplyingBlur] = useState(false);
+  const [imageVersion, setImageVersion] = useState(Date.now());
+  const [blurError, setBlurError] = useState('');
+  const imageContainerRef = useRef(null);
+
+  // Blur state flags — initialised from img prop, refreshed from admin endpoint
+  const [blurFlags, setBlurFlags] = useState({
+    is_blurred: img.is_blurred || false,
+    compliance_status: img.compliance_status || null,
+    is_using_processed: img.is_using_processed !== undefined ? img.is_using_processed : true,
+    manually_blurred: img.manually_blurred || false,
+  });
+
+  // Fetch blur flags from the admin-accessible status endpoint
+  const refreshBlurFlags = useCallback(async () => {
+    try {
+      const res = await api.get(`/admin/images/${img.id}/status`);
+      setBlurFlags({
+        is_blurred: res.data.is_blurred || false,
+        compliance_status: res.data.compliance_status || null,
+        is_using_processed: res.data.is_using_processed,
+        manually_blurred: res.data.manually_blurred || false,
+      });
+    } catch (err) {
+      console.error('Failed to refresh blur flags:', err);
+    }
+  }, [img.id]);
+
+  useEffect(() => {
+    refreshBlurFlags();
+    setBlurActive(false);
+    setBlurBoxes([]);
+    setBlurError('');
+    setImageVersion(Date.now());
+  }, [img.id, refreshBlurFlags]);
+
+  // Keyboard nav
+  useEffect(() => {
+    const handleKey = (e) => {
+      if (e.key === 'Escape') onClose();
+      if (e.key === 'ArrowLeft' && idx > 0) onNavigate(images[idx - 1]);
+      if (e.key === 'ArrowRight' && idx < images.length - 1) onNavigate(images[idx + 1]);
+    };
+    window.addEventListener('keydown', handleKey);
+    return () => window.removeEventListener('keydown', handleKey);
+  });
+
+  const handleApplyBlur = async () => {
+    if (!blurBoxes.length) return;
+    setApplyingBlur(true);
+    setBlurError('');
+    try {
+      await api.post(`/annotator/blur/apply/${img.id}`, { regions: blurBoxes });
+      setBlurBoxes([]);
+      setBlurActive(false);
+      setImageVersion(Date.now());
+      await refreshBlurFlags();
+      if (onImageUpdated) onImageUpdated();
+    } catch (err) {
+      setBlurError(err.response?.data?.detail || 'Failed to apply blur');
+    } finally {
+      setApplyingBlur(false);
+    }
+  };
+
+  const handleUndoBlur = async () => {
+    setApplyingBlur(true);
+    setBlurError('');
+    try {
+      const res = await api.delete(`/annotator/blur/${img.id}/blur`);
+      if (res.data?.had_original) {
+        setImageVersion(Date.now());
+        await refreshBlurFlags();
+        if (onImageUpdated) onImageUpdated();
+      } else {
+        setBlurError('Original unblurred image not found.');
+      }
+    } catch (err) {
+      setBlurError(err.response?.data?.detail || 'Failed to undo blur');
+    } finally {
+      setApplyingBlur(false);
+    }
+  };
+
+  const handleRestoreBlur = async () => {
+    setApplyingBlur(true);
+    setBlurError('');
+    try {
+      await api.post(`/annotator/blur/${img.id}/restore-blur`);
+      setImageVersion(Date.now());
+      await refreshBlurFlags();
+      if (onImageUpdated) onImageUpdated();
+    } catch (err) {
+      setBlurError(err.response?.data?.detail || 'Failed to restore blur');
+    } finally {
+      setApplyingBlur(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/90 flex flex-col" onClick={onClose}>
+      <div className="flex-1 flex items-center justify-center relative" onClick={(e) => e.stopPropagation()}>
+        {/* Close button */}
+        <button
+          onClick={onClose}
+          className="absolute top-4 right-4 z-30 w-9 h-9 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center text-white transition cursor-pointer"
+        >
+          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+
+        {/* Nav arrows */}
+        {idx > 0 && (
+          <button
+            onClick={() => onNavigate(images[idx - 1])}
+            className="absolute left-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center text-white transition cursor-pointer z-20"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+          </button>
+        )}
+        {idx < images.length - 1 && (
+          <button
+            onClick={() => onNavigate(images[idx + 1])}
+            className="absolute right-4 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center text-white transition cursor-pointer z-20"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+          </button>
+        )}
+
+        {/* Blur tool floating toolbar */}
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2">
+          {applyingBlur ? (
+            <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-600 text-white text-xs font-semibold shadow-lg">
+              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              Processing on server…
+            </div>
+          ) : (
+            <>
+              <button
+                onClick={() => setBlurActive(!blurActive)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold backdrop-blur-sm border transition cursor-pointer ${
+                  blurActive ? 'bg-red-500/90 text-white border-red-400' : 'bg-black/50 text-white border-white/20 hover:bg-black/70'
+                }`}
+              >
+                {blurActive ? '✕ Cancel Blur' : '🔒 Blur Tool'}
+              </button>
+
+              {blurActive && blurBoxes.length > 0 && (
+                <>
+                  <button
+                    onClick={handleApplyBlur}
+                    className="px-3 py-1.5 rounded-full bg-green-500/90 text-white text-xs font-semibold hover:bg-green-600 transition cursor-pointer backdrop-blur-sm border border-green-400 shadow-lg"
+                  >
+                    ✓ Apply ({blurBoxes.length})
+                  </button>
+                  <button
+                    onClick={() => setBlurBoxes([])}
+                    className="px-3 py-1.5 rounded-full bg-gray-500/80 text-white text-xs font-semibold hover:bg-gray-600 transition cursor-pointer backdrop-blur-sm border border-gray-400"
+                  >
+                    Clear
+                  </button>
+                </>
+              )}
+
+              {/* Undo Blur */}
+              {blurFlags.is_blurred && blurBoxes.length === 0 && (
+                <button
+                  onClick={handleUndoBlur}
+                  className="px-3 py-1.5 rounded-full bg-amber-500/90 text-white text-xs font-semibold hover:bg-amber-600 transition cursor-pointer backdrop-blur-sm border border-amber-400 shadow-lg"
+                >
+                  ↶ Undo Blur
+                </button>
+              )}
+
+              {/* Restore Blur — visible after undoing a blurred image */}
+              {!blurFlags.is_blurred && blurFlags.compliance_status === 'blurred' && blurBoxes.length === 0 && (
+                <button
+                  onClick={handleRestoreBlur}
+                  className="px-3 py-1.5 rounded-full bg-indigo-500/90 text-white text-xs font-semibold hover:bg-indigo-600 transition cursor-pointer backdrop-blur-sm border border-indigo-400 shadow-lg"
+                >
+                  ↻ Restore Blur
+                </button>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Blur error toast */}
+        {blurError && (
+          <div className="absolute bottom-20 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-full bg-red-600 text-white text-xs font-medium shadow-lg">
+            {blurError}
+          </div>
+        )}
+
+        {/* Image with BoundingBoxCanvas overlay */}
+        <div ref={imageContainerRef} className="relative max-w-5xl w-full mx-16 flex items-center justify-center">
+          <img
+            src={`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/images/proxy/${img.id}?t=${imageVersion}`}
+            alt={img.filename}
+            className="max-w-full max-h-[80vh] object-contain rounded-lg block"
+            onLoad={() => window.dispatchEvent(new Event('resize'))}
+          />
+          {blurActive && (
+            <BoundingBoxCanvas
+              containerRef={imageContainerRef}
+              boxes={blurBoxes}
+              setBoxes={setBlurBoxes}
+              disabled={false}
+            />
+          )}
+        </div>
+      </div>
+
+      {/* Info bar at bottom */}
+      <div className="shrink-0 px-6 py-3" onClick={(e) => e.stopPropagation()}>
+        <div className="max-w-5xl mx-auto bg-gray-900/80 rounded-lg p-3 flex items-center justify-between backdrop-blur-sm">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="text-white text-sm font-medium truncate">{img.filename}</span>
+            <div className="flex gap-1.5">
+              {getStatusBadges(img).map((b, i) => (
+                <span key={i} className={`px-2 py-0.5 text-[10px] font-bold text-white rounded-md ${b.className}`}>
+                  {b.label}
+                </span>
+              ))}
+              {blurFlags.is_blurred && !img.manually_blurred && !['blurred', 'processed', 'obfuscated'].includes(img.compliance_status) && (
+                <span className="px-2 py-0.5 text-[10px] font-bold text-white rounded-md bg-violet-500">Manual Blur</span>
+              )}
+            </div>
+          </div>
+          <span className="text-white/50 text-xs shrink-0 ml-3">
+            {idx + 1} / {images.length}
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -999,9 +1407,28 @@ function ImageDetailModal({ row, categories, tableImages, onApprove, onSaveEdits
   const [edits, setEdits] = useState({});
   const [saving, setSaving] = useState(false);
 
-  // Reset edits when image changes
+  // Blur tool state
+  const [blurActive, setBlurActive] = useState(false);
+  const [blurBoxes, setBlurBoxes] = useState([]);
+  const [applyingBlur, setApplyingBlur] = useState(false);
+  const [imageVersion, setImageVersion] = useState(Date.now());
+  const [blurError, setBlurError] = useState('');
+  // Blur state flags — initialized from row, refreshed after undo/restore
+  const [blurFlags, setBlurFlags] = useState({
+    is_blurred: row.is_blurred || false,
+    compliance_status: row.compliance_status || null,
+    is_using_processed: row.is_using_processed,
+    manually_blurred: row.manually_blurred || false,
+  });
+  const imageContainerRef = useRef(null);
+
+  // Reset edits and blur state when image changes
   useEffect(() => {
     setEdits({});
+    setBlurActive(false);
+    setBlurBoxes([]);
+    setBlurError('');
+    setImageVersion(Date.now());
   }, [row.image_id]);
 
   const getEditsForCat = (catId) => {
@@ -1025,12 +1452,12 @@ function ImageDetailModal({ row, categories, tableImages, onApprove, onSaveEdits
     });
   };
 
-  const toggleOption = (catId, optId) => {
+  // Radio button behavior: select exactly one option per category
+  const selectOption = (catId, optId) => {
     const current = getEditsForCat(catId);
     if (!current) return;
-    const newSels = current.selections.includes(optId)
-      ? current.selections.filter((id) => id !== optId)
-      : [...current.selections, optId];
+    // If already selected, deselect; otherwise select only this one
+    const newSels = current.selections.includes(optId) ? [] : [optId];
     setEditForCat(catId, 'selections', newSels);
   };
 
@@ -1050,12 +1477,10 @@ function ImageDetailModal({ row, categories, tableImages, onApprove, onSaveEdits
   const pendingAnnotations = categories
     .filter((cat) => {
       const cell = row.annotations[String(cat.id)];
-      // Include null/undefined, rework_requested, and rework_completed as "pending" (approvable)
       return cell && cell.review_status !== 'approved';
     })
     .map((cat) => row.annotations[String(cat.id)]);
 
-  // Get all completed annotations (including approved) for rework option
   const allAnnotations = categories
     .filter((cat) => {
       const cell = row.annotations[String(cat.id)];
@@ -1078,7 +1503,6 @@ function ImageDetailModal({ row, categories, tableImages, onApprove, onSaveEdits
   const handleSaveAll = async () => {
     setSaving(true);
     try {
-      // Save changed categories
       for (const cat of categories) {
         if (hasChangesForCat(cat.id)) {
           const cell = row.annotations[String(cat.id)];
@@ -1086,7 +1510,6 @@ function ImageDetailModal({ row, categories, tableImages, onApprove, onSaveEdits
           await onSaveEdits(cell.annotation_id, e.selections, e.isDuplicate);
         }
       }
-      // Approve unchanged pending ones
       for (const cell of pendingAnnotations) {
         const catId = categories.find((c) => row.annotations[String(c.id)]?.annotation_id === cell.annotation_id)?.id;
         if (catId && !hasChangesForCat(catId)) {
@@ -1099,57 +1522,216 @@ function ImageDetailModal({ row, categories, tableImages, onApprove, onSaveEdits
     }
   };
 
-  // Current index for navigation
+  // ── Blur handlers ──
+  // Helper to refresh blur flags from admin-accessible endpoint
+  const refreshBlurFlags = async () => {
+    try {
+      const res = await api.get(`/admin/images/${row.image_id}/status`);
+      setBlurFlags({
+        is_blurred: res.data.is_blurred || false,
+        compliance_status: res.data.compliance_status || null,
+        is_using_processed: res.data.is_using_processed,
+        manually_blurred: res.data.manually_blurred || false,
+      });
+    } catch (err) {
+      console.error('Failed to refresh blur flags:', err);
+    }
+  };
+
+  const handleApplyBlur = async () => {
+    if (!blurBoxes.length) return;
+    setApplyingBlur(true);
+    setBlurError('');
+    try {
+      await api.post(`/annotator/blur/apply/${row.image_id}`, { regions: blurBoxes });
+      setBlurBoxes([]);
+      setBlurActive(false);
+      setImageVersion(Date.now());
+      await refreshBlurFlags();
+    } catch (err) {
+      setBlurError(err.response?.data?.detail || 'Failed to apply blur');
+    } finally {
+      setApplyingBlur(false);
+    }
+  };
+
+  const handleUndoBlur = async () => {
+    setApplyingBlur(true);
+    setBlurError('');
+    try {
+      const res = await api.delete(`/annotator/blur/${row.image_id}/blur`);
+      if (res.data?.had_original) {
+        setImageVersion(Date.now());
+        await refreshBlurFlags();
+      } else {
+        setBlurError('Original unblurred image not found.');
+        setApplyingBlur(false);
+        return;
+      }
+    } catch (err) {
+      setBlurError(err.response?.data?.detail || 'Failed to undo blur');
+    } finally {
+      setApplyingBlur(false);
+    }
+  };
+
+  const handleRestoreBlur = async () => {
+    setApplyingBlur(true);
+    setBlurError('');
+    try {
+      await api.post(`/annotator/blur/${row.image_id}/restore-blur`);
+      setImageVersion(Date.now());
+      await refreshBlurFlags();
+    } catch (err) {
+      setBlurError(err.response?.data?.detail || 'Failed to restore blur');
+    } finally {
+      setApplyingBlur(false);
+    }
+  };
+
   const currentIdx = tableImages.findIndex((img) => img.image_id === row.image_id);
 
   return (
     <div className="fixed inset-0 z-50 flex bg-black/60" onClick={onClose}>
       <div className="flex w-full h-full" onClick={(e) => e.stopPropagation()}>
-        {/* Left panel: Large image */}
-        <div className="w-[55%] bg-gray-900 flex flex-col">
-          <div className="flex items-center justify-between px-6 py-3">
-            <span className="text-white/80 text-sm font-medium">{row.image_filename}</span>
-            <span className="text-white/50 text-xs">{currentIdx + 1} / {tableImages.length}</span>
+        {/* Left panel: Large image + blur tool */}
+        <div className="w-[65%] bg-gray-900 flex flex-col min-h-0">
+          <div className="flex items-center justify-between px-6 py-3 shrink-0">
+            <div className="flex items-center gap-3 min-w-0">
+              <span className="text-white/80 text-sm font-medium truncate">{row.image_filename}</span>
+              {row.reviewed_by_username && (
+                <span className="flex items-center gap-1.5 px-2.5 py-1 bg-green-500/20 text-green-300 text-[11px] font-medium rounded-full border border-green-500/30 shrink-0">
+                  <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
+                  Reviewed by {row.reviewed_by_username}
+                  {row.reviewed_at && (
+                    <span className="text-green-400/70 ml-1">
+                      · {new Date(row.reviewed_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                    </span>
+                  )}
+                </span>
+              )}
+            </div>
+            <span className="text-white/50 text-xs shrink-0">{currentIdx + 1} / {tableImages.length}</span>
           </div>
-          <div className="flex-1 flex items-center justify-center p-4 relative">
+          <div className="flex-1 min-h-0 flex items-center justify-center p-4 relative">
             {/* Nav arrows */}
             {currentIdx > 0 && (
               <button
                 onClick={() => onNavigate(tableImages[currentIdx - 1])}
-                className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center text-white transition cursor-pointer"
+                className="absolute left-3 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center text-white transition cursor-pointer z-20"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
               </button>
             )}
-            <img src={getImageUrl(row.image_id)} alt={row.image_filename} className="max-w-full max-h-full object-contain rounded-lg" />
             {currentIdx < tableImages.length - 1 && (
               <button
                 onClick={() => onNavigate(tableImages[currentIdx + 1])}
-                className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center text-white transition cursor-pointer"
+                className="absolute right-3 top-1/2 -translate-y-1/2 w-10 h-10 bg-white/10 hover:bg-white/20 rounded-full flex items-center justify-center text-white transition cursor-pointer z-20"
               >
                 <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
               </button>
             )}
+
+            {/* Blur tool floating toolbar */}
+            <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2">
+              {applyingBlur ? (
+                <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-600 text-white text-xs font-semibold shadow-lg">
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Processing on server…
+                </div>
+              ) : (
+                <>
+                  <button
+                    onClick={() => setBlurActive(!blurActive)}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold backdrop-blur-sm border transition cursor-pointer ${
+                      blurActive ? 'bg-red-500/90 text-white border-red-400' : 'bg-black/50 text-white border-white/20 hover:bg-black/70'
+                    }`}
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h16v16H4z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9h6v6H9z" /></svg>
+                    {blurActive ? 'Drawing…' : 'Blur Tool'}
+                  </button>
+                  {blurBoxes.length > 0 && (
+                    <>
+                      <span className="px-2 py-1 rounded-full bg-black/50 text-white text-xs backdrop-blur-sm border border-white/20">
+                        {blurBoxes.length} region{blurBoxes.length > 1 ? 's' : ''}
+                      </span>
+                      <button onClick={handleApplyBlur} className="px-3 py-1.5 rounded-full bg-green-600 text-white text-xs font-semibold hover:bg-green-700 transition cursor-pointer shadow-lg">
+                        ✓ Apply Blur
+                      </button>
+                      <button onClick={() => setBlurBoxes(prev => prev.slice(0, -1))} className="px-2 py-1.5 rounded-full bg-black/50 text-white text-xs hover:bg-black/70 transition cursor-pointer backdrop-blur-sm border border-white/20">
+                        ↶ Undo
+                      </button>
+                      <button onClick={() => setBlurBoxes([])} className="px-2 py-1.5 rounded-full bg-black/50 text-white text-xs hover:bg-black/70 transition cursor-pointer backdrop-blur-sm border border-white/20">
+                        Clear
+                      </button>
+                    </>
+                  )}
+
+                  {/* Undo applied blur — visible when image is blurred (manual or pipeline) & no new boxes drawn */}
+                  {blurFlags.is_blurred && blurBoxes.length === 0 && (
+                    <button
+                      onClick={handleUndoBlur}
+                      className="px-3 py-1.5 rounded-full bg-amber-500/90 text-white text-xs font-semibold hover:bg-amber-600 transition cursor-pointer backdrop-blur-sm border border-amber-400 shadow-lg"
+                    >
+                      ↶ Undo Blur
+                    </button>
+                  )}
+
+                  {/* Restore blur — visible after undoing a pipeline-blurred image */}
+                  {!blurFlags.is_blurred && blurFlags.compliance_status === 'blurred' && blurBoxes.length === 0 && (
+                    <button
+                      onClick={handleRestoreBlur}
+                      className="px-3 py-1.5 rounded-full bg-indigo-500/90 text-white text-xs font-semibold hover:bg-indigo-600 transition cursor-pointer backdrop-blur-sm border border-indigo-400 shadow-lg"
+                    >
+                      ↻ Restore Blur
+                    </button>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Blur error */}
+            {blurError && (
+              <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-full bg-red-600 text-white text-xs font-medium shadow-lg">
+                {blurError}
+              </div>
+            )}
+
+            <div ref={imageContainerRef} className="relative w-full h-full overflow-hidden flex items-center justify-center">
+              <img
+                src={`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/images/proxy/${row.image_id}?t=${imageVersion}`}
+                alt={row.image_filename}
+                className="max-w-full max-h-full object-contain rounded-lg block"
+                style={{ maxHeight: 'calc(100vh - 120px)' }}
+                onLoad={() => window.dispatchEvent(new Event('resize'))}
+              />
+              {blurActive && (
+                <BoundingBoxCanvas
+                  containerRef={imageContainerRef}
+                  boxes={blurBoxes}
+                  setBoxes={setBlurBoxes}
+                  disabled={false}
+                />
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Right panel: Categories + options */}
-        <div className="w-[45%] bg-white flex flex-col">
+        {/* Right panel: Categories + options (narrower) */}
+        <div className="w-[35%] bg-white flex flex-col min-h-0">
           {/* Header */}
-          <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
-            <div className="flex items-center gap-3">
+          <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200">
             <h3 className="text-sm font-semibold text-gray-900">Annotations</h3>
-            </div>
             <div className="flex items-center gap-2">
-              <span className="text-[10px] text-gray-400 bg-gray-100 px-2 py-1 rounded">Esc to close</span>
-              <button onClick={onClose} className="w-8 h-8 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg cursor-pointer">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              <span className="text-[10px] text-gray-400 bg-gray-100 px-2 py-1 rounded">Esc</span>
+              <button onClick={onClose} className="w-7 h-7 flex items-center justify-center text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg cursor-pointer">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
               </button>
             </div>
           </div>
 
           {/* Scrollable category list */}
-          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+          <div className="flex-1 min-h-0 overflow-y-auto px-4 py-3 space-y-3">
             {categories.map((cat) => {
               const cell = row.annotations[String(cat.id)];
               if (!cell) {
@@ -1163,40 +1745,51 @@ function ImageDetailModal({ row, categories, tableImages, onApprove, onSaveEdits
               const currentEdits = getEditsForCat(cat.id);
               const changed = hasChangesForCat(cat.id);
               return (
-                <div key={cat.id} className={`rounded-xl border p-3 ${changed ? 'border-indigo-300 bg-indigo-50/30' : 'border-gray-200'}`}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <h4 className="text-xs font-semibold text-gray-800">{cat.name}</h4>
+                <div key={cat.id} className={`rounded-lg border p-2.5 ${changed ? 'border-indigo-300 bg-indigo-50/30' : 'border-gray-200'}`}>
+                  <div className="flex items-center gap-1.5 mb-1.5">
+                    <h4 className="text-[11px] font-semibold text-gray-800 truncate">{cat.name}</h4>
                     {cell.review_status === 'approved' ? (
-                      <span className="px-1.5 py-0.5 bg-green-100 text-green-700 text-[10px] font-medium rounded-full">Approved</span>
+                      <span className="px-1.5 py-0.5 bg-green-100 text-green-700 text-[9px] font-medium rounded-full shrink-0">✓</span>
                     ) : cell.review_status === 'rework_requested' ? (
-                      <span className="px-1.5 py-0.5 bg-orange-100 text-orange-700 text-[10px] font-medium rounded-full">🔄 Awaiting Rework</span>
+                      <span className="px-1.5 py-0.5 bg-orange-100 text-orange-700 text-[9px] font-medium rounded-full shrink-0">🔄</span>
                     ) : cell.review_status === 'rework_completed' ? (
-                      <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 text-[10px] font-medium rounded-full">✅ Rework Done</span>
+                      <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 text-[9px] font-medium rounded-full shrink-0">✅</span>
                     ) : (
-                      <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 text-[10px] font-medium rounded-full">Pending</span>
+                      <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 text-[9px] font-medium rounded-full shrink-0">⏳</span>
                     )}
-                    <span className="text-[10px] text-gray-400 ml-auto">
-                      {cell.annotator_username}
-                    </span>
+                    <span className="text-[9px] text-gray-400 ml-auto shrink-0">{cell.annotator_username}</span>
                   </div>
-                  <div className="space-y-1">
+                  {cell.reviewed_by_username && (
+                    <div className="flex items-center gap-1 mb-1 px-1">
+                      <span className="w-1 h-1 rounded-full bg-green-400 shrink-0" />
+                      <span className="text-[9px] text-green-600">
+                        Reviewed by <span className="font-semibold">{cell.reviewed_by_username}</span>
+                        {cell.reviewed_at && (
+                          <span className="text-green-400 ml-1">
+                            · {new Date(cell.reviewed_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  )}
+                  <div className="space-y-0.5">
                     {cell.all_options.map((opt) => {
-                      const checked = currentEdits?.selections.includes(opt.id);
+                      const selected = currentEdits?.selections.includes(opt.id);
                       return (
-                        <label key={opt.id} className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border cursor-pointer transition text-xs ${checked ? 'border-indigo-400 bg-indigo-50 text-indigo-900' : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'}`}>
-                          <input type="checkbox" checked={checked || false} onChange={() => toggleOption(cat.id, opt.id)} className="sr-only" />
-                          <div className={`w-3.5 h-3.5 rounded flex items-center justify-center border shrink-0 ${checked ? 'bg-indigo-500 border-indigo-500' : 'border-gray-300'}`}>
-                            {checked && <svg className="w-2 h-2 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                        <label key={opt.id} className={`flex items-center gap-2 px-2 py-1 rounded-md border cursor-pointer transition text-[11px] ${selected ? 'border-indigo-400 bg-indigo-50 text-indigo-900' : 'border-gray-100 bg-white text-gray-600 hover:border-gray-300'}`}>
+                          <input type="radio" name={`cat-${cat.id}`} checked={selected || false} onChange={() => selectOption(cat.id, opt.id)} className="sr-only" />
+                          <div className={`w-3 h-3 rounded-full flex items-center justify-center border shrink-0 ${selected ? 'border-indigo-500' : 'border-gray-300'}`}>
+                            {selected && <div className="w-1.5 h-1.5 rounded-full bg-indigo-500" />}
                           </div>
-                          <span>{opt.label}</span>
-                          {opt.is_typical && <span className="ml-auto text-[10px] bg-gray-100 text-gray-500 px-1 py-0.5 rounded-full">typical</span>}
+                          <span className="truncate">{opt.label}</span>
+                          {opt.is_typical && <span className="ml-auto text-[9px] bg-gray-100 text-gray-400 px-1 rounded shrink-0">typ</span>}
                         </label>
                       );
                     })}
                   </div>
-                  <label className="flex items-center gap-2 mt-2 px-2.5 py-1.5 rounded-lg border border-gray-200 cursor-pointer text-xs">
-                    <input type="checkbox" checked={currentEdits?.isDuplicate || false} onChange={() => setEditForCat(cat.id, 'isDuplicate', !currentEdits?.isDuplicate)} className="accent-red-500 w-3.5 h-3.5" />
-                    <span className="text-gray-700">Is Duplicate?</span>
+                  <label className="flex items-center gap-2 mt-1.5 px-2 py-1 rounded-md border border-gray-200 cursor-pointer text-[11px]">
+                    <input type="checkbox" checked={currentEdits?.isDuplicate || false} onChange={() => setEditForCat(cat.id, 'isDuplicate', !currentEdits?.isDuplicate)} className="accent-red-500 w-3 h-3" />
+                    <span className="text-gray-700">Duplicate?</span>
                   </label>
                 </div>
               );
@@ -1204,47 +1797,46 @@ function ImageDetailModal({ row, categories, tableImages, onApprove, onSaveEdits
           </div>
 
           {/* Bottom action bar */}
-          <div className="border-t border-gray-200 px-5 py-3 flex items-center gap-3 bg-gray-50">
+          <div className="border-t border-gray-200 px-4 py-2.5 flex items-center gap-2 bg-gray-50">
             {hasAnyChanges ? (
               <button
                 onClick={handleSaveAll}
                 disabled={saving}
-                className="flex-1 px-4 py-2 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 cursor-pointer"
+                className="flex-1 px-3 py-2 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 disabled:opacity-50 cursor-pointer"
               >
-                {saving ? 'Saving...' : 'Save Changes & Approve All'}
+                {saving ? 'Saving...' : 'Save & Approve All'}
               </button>
             ) : pendingAnnotations.length > 0 ? (
               <>
-              <button
-                onClick={handleApproveAll}
-                disabled={saving}
-                className="flex-1 px-4 py-2 bg-green-500 text-white text-sm font-medium rounded-lg hover:bg-green-600 disabled:opacity-50 cursor-pointer"
-              >
+                <button
+                  onClick={handleApproveAll}
+                  disabled={saving}
+                  className="flex-1 px-3 py-2 bg-green-500 text-white text-xs font-medium rounded-lg hover:bg-green-600 disabled:opacity-50 cursor-pointer"
+                >
                   {saving ? 'Approving...' : `Approve All (${pendingAnnotations.length})`}
-              </button>
+                </button>
                 <button
                   onClick={() => onRework(pendingAnnotations[0]?.annotation_id)}
                   disabled={saving}
-                  className="px-4 py-2 border border-amber-300 text-amber-600 text-sm font-medium rounded-lg hover:bg-amber-50 disabled:opacity-50 cursor-pointer"
+                  className="px-3 py-2 border border-amber-300 text-amber-600 text-xs font-medium rounded-lg hover:bg-amber-50 disabled:opacity-50 cursor-pointer"
                 >
-                  Send for Rework
+                  Rework
                 </button>
               </>
             ) : (
               <>
-                <span className="flex-1 text-center text-sm text-green-600 font-medium">✓ All categories approved</span>
+                <span className="flex-1 text-center text-xs text-green-600 font-medium">✓ All approved</span>
                 {allAnnotations.length > 0 && (
                   <button
                     onClick={() => onRework(allAnnotations[0]?.annotation_id)}
                     disabled={saving}
-                    className="px-4 py-2 border border-amber-300 text-amber-600 text-sm font-medium rounded-lg hover:bg-amber-50 disabled:opacity-50 cursor-pointer"
+                    className="px-3 py-2 border border-amber-300 text-amber-600 text-xs font-medium rounded-lg hover:bg-amber-50 disabled:opacity-50 cursor-pointer"
                   >
-                    Send for Rework
+                    Rework
                   </button>
                 )}
               </>
             )}
-            <span className="text-[10px] text-gray-400 bg-gray-100 px-2 py-1 rounded">A = approve</span>
           </div>
         </div>
       </div>
@@ -1282,7 +1874,7 @@ function ShortcutsHelp({ show, onClose }) {
 }
 
 function ReviewTab() {
-  const [viewMode, setViewMode] = useState('table'); // cards, table
+  const [viewMode] = useState('gallery'); // gallery only
   // ── Cards state ──
   const [annotations, setAnnotations] = useState([]);
   const [stats, setStats] = useState(null);
@@ -1369,13 +1961,12 @@ function ReviewTab() {
   }, [filter, annotatorFilter, tablePage]);
 
   useEffect(() => {
-    if (viewMode === 'cards') loadCards();
-    else loadTable();
-  }, [viewMode, loadCards, loadTable]);
+    loadTable();
+  }, [loadTable]);
 
   const refreshData = useCallback(() => {
-    if (viewMode === 'cards') loadCards(); else loadTable();
-  }, [viewMode, loadCards, loadTable]);
+    loadTable();
+  }, [loadTable]);
 
   // ── Sync modalRow with latest tableData after refresh ──
   useEffect(() => {
@@ -1581,8 +2172,8 @@ function ReviewTab() {
         return;
       }
 
-      // Table-specific shortcuts (no modal)
-      if (viewMode === 'table' && tableData && tableData.images.length > 0) {
+      // Gallery/Table shortcuts (no modal)
+      if (tableData && tableData.images.length > 0) {
         if (e.key === 'ArrowDown') {
           e.preventDefault();
           setHighlightedIdx((prev) => Math.min(prev + 1, tableData.images.length - 1));
@@ -1610,7 +2201,7 @@ function ReviewTab() {
     return () => document.removeEventListener('keydown', handleKeyDown);
   }, [modalRow, tableData, viewMode, highlightedIdx, refreshData]);
 
-  if ((viewMode === 'cards' ? loading : tableLoading) && !stats) {
+  if (tableLoading && !stats) {
     return <div className="py-8 text-center text-gray-500">Loading...</div>;
   }
 
@@ -1622,9 +2213,9 @@ function ReviewTab() {
       {stats && (
         <div className="grid grid-cols-3 gap-4 stagger-children">
           {[
-            { label: 'Pending Review', value: stats.pending_review, key: 'pending', icon: '⏳', gradient: 'from-amber-500 to-orange-500', activeBorder: 'ring-2 ring-amber-400 ring-offset-2' },
-            { label: 'Approved', value: stats.approved, key: 'approved', icon: '✓', gradient: 'from-emerald-500 to-teal-500', activeBorder: 'ring-2 ring-emerald-400 ring-offset-2' },
-            { label: 'Total Completed', value: stats.total_completed, key: null, icon: '📊', gradient: 'from-indigo-500 to-purple-500', activeBorder: '' },
+            { label: 'Images Pending Review', value: stats.pending_review, key: 'pending', icon: '⏳', gradient: 'from-amber-500 to-orange-500', activeBorder: 'ring-2 ring-amber-400 ring-offset-2' },
+            { label: 'Images Approved', value: stats.approved, key: 'approved', icon: '✓', gradient: 'from-emerald-500 to-teal-500', activeBorder: 'ring-2 ring-emerald-400 ring-offset-2' },
+            { label: 'Total Images', value: stats.total_completed, key: null, icon: '📊', gradient: 'from-indigo-500 to-purple-500', activeBorder: '' },
           ].map((s) => (
             <button
               key={s.label}
@@ -1644,32 +2235,8 @@ function ReviewTab() {
         </div>
       )}
 
-      {/* Filters + View Toggle */}
+      {/* Filters */}
       <div className="flex items-center gap-3 flex-wrap">
-        {/* View toggle */}
-        <div className="flex bg-gray-100 rounded-lg p-0.5">
-          {[
-            { key: 'table', icon: (
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h18M3 14h18M3 6h18M3 18h18" /></svg>
-            ), label: 'Table' },
-            { key: 'cards', icon: (
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zm10 0a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2h-2a2 2 0 01-2-2v-2z" /></svg>
-            ), label: 'Cards' },
-          ].map((v) => (
-            <button
-              key={v.key}
-              onClick={() => setViewMode(v.key)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition cursor-pointer ${
-                viewMode === v.key ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {v.icon}{v.label}
-            </button>
-          ))}
-        </div>
-
-        <div className="w-px h-6 bg-gray-300" />
-
         {/* Status filters */}
         <div className="flex gap-1.5">
           {['pending', 'approved'].map((f) => (
@@ -1688,17 +2255,6 @@ function ReviewTab() {
           ))}
         </div>
 
-        {/* Category filter — only in cards mode */}
-        {viewMode === 'cards' && (
-          <select
-            value={catFilter}
-            onChange={(e) => { setCatFilter(e.target.value); setPage(1); }}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs outline-none"
-          >
-            <option value="">All Categories</option>
-            {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </select>
-        )}
         <select
           value={annotatorFilter}
           onChange={(e) => { setAnnotatorFilter(e.target.value); setPage(1); setTablePage(1); }}
@@ -1717,8 +2273,8 @@ function ReviewTab() {
         </button>
       </div>
 
-      {/* ─── TABLE VIEW ──────────────────────────────────── */}
-      {viewMode === 'table' && (
+      {/* ─── GALLERY VIEW ────────────────────────────────── */}
+      {viewMode === 'gallery' && (
         <>
           {tableLoading ? (
             <div className="py-8 text-center text-gray-500">Loading...</div>
@@ -1726,127 +2282,217 @@ function ReviewTab() {
             <div className="py-12 text-center text-gray-500">No annotations found for this filter.</div>
           ) : (
             <>
-              <div className="rounded-xl border border-gray-200 overflow-hidden">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="bg-gray-50 text-gray-600 text-left">
-                        {/* Select-all checkbox */}
-                        <th className="px-2 py-3 w-10 sticky left-0 bg-gray-50 z-20">
-                          <label className="flex items-center justify-center cursor-pointer">
-                            <input
-                              type="checkbox"
-                              checked={selectedRows.size === tableData.images.length && tableData.images.length > 0}
-                              onChange={toggleSelectAll}
-                              className="w-3.5 h-3.5 accent-indigo-600 cursor-pointer"
-                            />
-                          </label>
-                        </th>
-                        <th className="px-3 py-3 font-medium sticky left-10 bg-gray-50 z-20 min-w-[200px] border-r border-gray-200">Image</th>
-                        {tableData.categories.map((cat) => (
-                          <th key={cat.id} className="px-3 py-3 font-medium min-w-[170px] max-w-[240px]">
-                            <span className="truncate block">{cat.name}</span>
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {tableData.images.map((row, rowIdx) => {
-                        const isHighlighted = rowIdx === highlightedIdx;
-                        const isSelected = selectedRows.has(row.image_id);
-                        return (
-                          <tr
-                            key={row.image_id}
-                            className={`transition-colors ${isHighlighted ? 'bg-indigo-50/60' : isSelected ? 'bg-indigo-50/30' : 'hover:bg-gray-50/50'}`}
-                            onClick={() => setHighlightedIdx(rowIdx)}
-                          >
-                            {/* Row checkbox */}
-                            <td className="px-2 py-2 sticky left-0 bg-white z-10" onClick={(e) => e.stopPropagation()}>
-                              <label className="flex items-center justify-center cursor-pointer">
-                                <input
-                                  type="checkbox"
-                                  checked={isSelected}
-                                  onChange={() => toggleRowSelect(row.image_id)}
-                                  className="w-3.5 h-3.5 accent-indigo-600 cursor-pointer"
-                                />
-                              </label>
-                            </td>
-                            {/* Sticky image column */}
-                            <td className="px-3 py-2 sticky left-10 bg-white z-10 border-r border-gray-200">
-                              <div
-                                className="flex items-center gap-2.5 cursor-zoom-in"
-                                onClick={() => setModalRow(row)}
-                              >
-                                <img src={getImageUrl(row.image_id)} alt={row.image_filename} className="w-14 h-14 rounded-lg object-cover shrink-0 ring-1 ring-gray-200" />
-                                <span className="text-xs font-medium text-gray-800 truncate max-w-[110px]">{row.image_filename}</span>
-                              </div>
-                            </td>
-                            {/* Category cells */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+                {tableData.images.map((row) => {
+                  // Count pending annotations for this image
+                  const pendingCount = tableData.categories.filter((cat) => {
+                    const cell = row.annotations[String(cat.id)];
+                    return cell && !cell.review_status;
+                  }).length;
+                  const approvedCount = tableData.categories.filter((cat) => {
+                    const cell = row.annotations[String(cat.id)];
+                    return cell && cell.review_status === 'approved';
+                  }).length;
+                  const totalAnnotated = tableData.categories.filter((cat) => row.annotations[String(cat.id)]).length;
+                  const allApproved = approvedCount === totalAnnotated && totalAnnotated > 0;
+                  const hasRework = tableData.categories.some((cat) => {
+                    const cell = row.annotations[String(cat.id)];
+                    return cell && (cell.review_status === 'rework_requested' || cell.review_status === 'rework_completed');
+                  });
+
+                  return (
+                    <div
+                      key={row.image_id}
+                      className={`group relative rounded-xl overflow-hidden shadow-md hover:shadow-xl transition-all duration-300 ${
+                        hasRework ? 'ring-3 ring-orange-400' : allApproved ? 'ring-2 ring-green-400' : 'ring-1 ring-gray-200 hover:ring-indigo-400'
+                      }`}
+                    >
+                      {/* Image */}
+                      <div className="relative aspect-[4/3]">
+                        <img
+                          src={getImageUrl(row.image_id)}
+                          alt={row.image_filename}
+                          className="w-full h-full object-cover"
+                          loading="lazy"
+                        />
+
+                        {/* Gradient overlay for text readability */}
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+
+                        {/* Status badge - top left */}
+                        <div className="absolute top-3 left-3">
+                          {allApproved ? (
+                            <span className="px-2.5 py-1 bg-green-500 text-white text-xs font-bold rounded-lg shadow-lg">
+                              ✓ Approved
+                            </span>
+                          ) : hasRework ? (
+                            <span className="px-2.5 py-1 bg-orange-500 text-white text-xs font-bold rounded-lg shadow-lg">
+                              🔄 Rework
+                            </span>
+                          ) : pendingCount > 0 ? (
+                            <span className="px-2.5 py-1 bg-amber-500 text-white text-xs font-bold rounded-lg shadow-lg">
+                              ⏳ {pendingCount} Pending
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-1 bg-gray-800/80 text-white text-xs font-medium rounded-lg shadow-lg backdrop-blur-sm">
+                              {approvedCount}/{totalAnnotated}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Filename - top right */}
+                        <div className="absolute top-3 right-3 max-w-[50%]">
+                          <span className="px-2 py-1 bg-black/50 text-white text-[10px] font-medium rounded-lg backdrop-blur-sm truncate block">
+                            {row.image_filename}
+                          </span>
+                        </div>
+
+                        {/* Annotation labels overlay - bottom */}
+                        <div className="absolute bottom-0 left-0 right-0 p-3">
+                          <div className="flex flex-wrap gap-1.5">
                             {tableData.categories.map((cat) => {
                               const cell = row.annotations[String(cat.id)];
-                              const isEditingThis = editingCell && editingCell.imageId === row.image_id && editingCell.catId === cat.id;
                               if (!cell) {
                                 return (
-                                  <td key={cat.id} className="px-3 py-2 text-center">
-                                    <span className="text-gray-300">--</span>
-                                  </td>
+                                  <span
+                                    key={cat.id}
+                                    className="px-2 py-1 bg-gray-900/60 text-gray-400 text-[10px] rounded-md backdrop-blur-sm border border-gray-600/50"
+                                    title={`${cat.name}: Not annotated`}
+                                  >
+                                    {cat.name.split(' ')[0]}: <span className="italic">?</span>
+                                  </span>
                                 );
                               }
-                              return (
-                                <td key={cat.id} className="px-3 py-2 relative">
-                                  <div
-                                    onClick={(e) => { e.stopPropagation(); setEditingCell(isEditingThis ? null : { imageId: row.image_id, catId: cat.id }); }}
-                                    className={`cursor-pointer rounded-lg p-1.5 transition border ${
-                                      cell.review_status === 'approved'
-                                        ? 'border-green-200 bg-green-50/50 hover:border-green-300'
-                                        : cell.review_status === 'rework_requested'
-                                          ? 'border-orange-300 bg-orange-50/50 hover:border-orange-400'
-                                          : cell.review_status === 'rework_completed'
-                                            ? 'border-purple-300 bg-purple-50/50 hover:border-purple-400'
-                                        : 'border-amber-200 bg-amber-50/30 hover:border-amber-300'
+                              const isReworkCell = cell.review_status === 'rework_requested' || cell.review_status === 'rework_completed';
+                              const isApprovedCell = cell.review_status === 'approved';
+                              return cell.selected_options.length === 0 ? (
+                                <span
+                                  key={cat.id}
+                                  className="px-2 py-1 bg-gray-700/80 text-gray-300 text-[10px] rounded-md backdrop-blur-sm border border-gray-600"
+                                  title={cat.name}
+                                >
+                                  {cat.name.split(' ')[0]}: <span className="italic">none</span>
+                                </span>
+                              ) : (
+                                cell.selected_options.map((opt, i) => (
+                                  <span
+                                    key={`${cat.id}-${i}`}
+                                    className={`px-2 py-1 text-[11px] font-medium rounded-md backdrop-blur-sm border ${
+                                      isReworkCell
+                                        ? 'bg-orange-500/80 text-white border-orange-400'
+                                        : isApprovedCell
+                                          ? 'bg-green-500/80 text-white border-green-400'
+                                          : 'bg-indigo-500/80 text-white border-indigo-400'
                                     }`}
+                                    title={`${cat.name} — by ${cell.annotator_username}`}
                                   >
-                                    <div className="flex items-center gap-1 mb-1">
-                                      <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${cell.review_status === 'approved' ? 'bg-green-500' : cell.review_status === 'rework_requested' ? 'bg-orange-500' : cell.review_status === 'rework_completed' ? 'bg-purple-500' : 'bg-amber-400'}`} />
-                                      <span className="text-[10px] text-gray-500 truncate">{cell.annotator_username}</span>
-                                      {cell.is_duplicate === true && (
-                                        <span className="ml-auto px-1 py-0.5 bg-red-100 text-red-600 text-[9px] font-bold rounded">D</span>
-                                      )}
-                                    </div>
-                                    <div className="flex flex-wrap gap-0.5">
-                                      {cell.selected_options.length === 0 ? (
-                                        <span className="text-gray-400 italic">none</span>
-                                      ) : (
-                                        cell.selected_options.map((opt) => (
-                                          <span key={opt.id} className="px-1.5 py-0.5 bg-indigo-100 text-indigo-800 rounded text-[10px] font-medium leading-tight">
-                                            {opt.label}
-                                          </span>
-                                        ))
-                                      )}
-                                    </div>
-                                  </div>
-                                  {isEditingThis && (
-                                    <CellEditPopover
-                                      cell={cell}
-                                      onSave={(annId, sels, dup) => handleSaveEditsAndRefresh(annId, sels, dup)}
-                                      onApprove={(annId) => { setEditingCell(null); handleApproveAndRefresh(annId); }}
-                                      onClose={() => setEditingCell(null)}
-                                    />
-                                  )}
-                                </td>
+                                    {opt.label}
+                                  </span>
+                                ))
                               );
                             })}
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                          </div>
+                        </div>
+
+                        {/* Hover overlay with action buttons */}
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center gap-3">
+                          {/* Approve All button */}
+                          {pendingCount > 0 && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const pending = tableData.categories
+                                  .map((cat) => row.annotations[String(cat.id)])
+                                  .filter((cell) => cell && !cell.review_status);
+                                Promise.all(pending.map((cell) => handleApprove(cell.annotation_id))).then(() => refreshData());
+                              }}
+                              className="flex flex-col items-center gap-1.5 px-4 py-3 bg-green-500 hover:bg-green-600 text-white rounded-xl shadow-lg transform scale-90 group-hover:scale-100 transition-all duration-200 cursor-pointer"
+                              title="Approve all pending annotations"
+                            >
+                              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                              <span className="text-[10px] font-semibold">Approve</span>
+                            </button>
+                          )}
+                          {/* Rework button */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const firstAnnotation = tableData.categories
+                                .map((cat) => row.annotations[String(cat.id)])
+                                .find((cell) => cell);
+                              if (firstAnnotation) openReworkModal(firstAnnotation.annotation_id);
+                            }}
+                            className="flex flex-col items-center gap-1.5 px-4 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl shadow-lg transform scale-90 group-hover:scale-100 transition-all duration-200 cursor-pointer"
+                            title="Send for rework"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                            <span className="text-[10px] font-semibold">Rework</span>
+                          </button>
+                          {/* View button */}
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setModalRow(row);
+                            }}
+                            className="flex flex-col items-center gap-1.5 px-4 py-3 bg-white hover:bg-gray-100 text-gray-800 rounded-xl shadow-lg transform scale-90 group-hover:scale-100 transition-all duration-200 cursor-pointer"
+                            title="View details"
+                          >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                            </svg>
+                            <span className="text-[10px] font-semibold">View</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Annotator + Reviewer info bar */}
+                      <div className="bg-white px-3 py-2 space-y-1">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {(() => {
+                              const annotators = new Set();
+                              tableData.categories.forEach((cat) => {
+                                const cell = row.annotations[String(cat.id)];
+                                if (cell) annotators.add(cell.annotator_username);
+                              });
+                              return [...annotators].map((name) => (
+                                <span key={name} className="flex items-center gap-1 text-xs text-gray-600">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
+                                  {name}
+                                </span>
+                              ));
+                            })()}
+                          </div>
+                          <span className="text-[10px] text-gray-400">
+                            {approvedCount}/{totalAnnotated} approved
+                          </span>
+                        </div>
+                        {row.reviewed_by_username && (
+                          <div className="flex items-center gap-1.5 text-[10px] text-gray-500">
+                            <span className="w-1.5 h-1.5 rounded-full bg-green-400" />
+                            <span>Reviewed by <span className="font-semibold text-gray-700">{row.reviewed_by_username}</span></span>
+                            {row.reviewed_at && (
+                              <span className="text-gray-400 ml-auto">
+                                {new Date(row.reviewed_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
+                                {new Date(row.reviewed_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
               {/* Pagination */}
-              <div className="flex items-center justify-between text-sm text-gray-500">
+              <div className="flex items-center justify-between text-sm text-gray-500 mt-4">
                 <span>
-                  Showing {((tablePage - 1) * (tableData.page_size)) + 1}--{Math.min(tablePage * tableData.page_size, tableData.total_images)} of {tableData.total_images} images
+                  Showing {((tablePage - 1) * (tableData.page_size)) + 1}–{Math.min(tablePage * tableData.page_size, tableData.total_images)} of {tableData.total_images} images
                 </span>
                 <Pagination currentPage={tablePage} totalPages={tableTotalPages} onPageChange={setTablePage} />
               </div>
@@ -1855,8 +2501,8 @@ function ReviewTab() {
         </>
       )}
 
-      {/* ─── CARDS VIEW ──────────────────────────────────── */}
-      {viewMode === 'cards' && (
+      {/* ─── CARDS VIEW (hidden — gallery only) ──────────── */}
+      {false && (
         <>
           {loading ? (
             <div className="py-8 text-center text-gray-500">Loading...</div>
@@ -2019,8 +2665,8 @@ function ReviewTab() {
         </>
       )}
 
-      {/* ─── Floating bulk approve bar ──────────────────── */}
-      {selectedRows.size > 0 && viewMode === 'table' && (
+      {/* ─── Floating bulk approve bar (table only — hidden) ── */}
+      {selectedRows.size > 0 && false && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-gradient-to-r from-gray-900 to-gray-800 text-white rounded-2xl shadow-2xl px-6 py-3 flex items-center gap-4 animate-slide-up border border-gray-700">
           <span className="text-sm">
             <span className="font-bold">{selectedRows.size}</span> image{selectedRows.size > 1 ? 's' : ''} selected

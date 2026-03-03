@@ -59,6 +59,14 @@ try:
 except ImportError:
     CV2_AVAILABLE = False
 
+# Register HEIC/HEIF support for PIL
+try:
+    import pillow_heif
+    pillow_heif.register_heif_opener()
+    HEIF_AVAILABLE = True
+except ImportError:
+    HEIF_AVAILABLE = False
+
 
 class MasterPipeline:
     """
@@ -162,6 +170,9 @@ class MasterPipeline:
             print("⚠️  No images found")
             return 0
         
+        # Save Drive metadata (total files, unique names, duplicate filenames)
+        self._save_drive_metadata(images)
+        
         # Download images
         download_folder = self.folders['downloaded']
         print(f"\n📥 Downloading to: {download_folder}")
@@ -196,7 +207,126 @@ class MasterPipeline:
         print(f"\n✅ Downloaded {downloaded} new images")
         print(f"📊 Total in folder: {len(list(download_folder.glob('*')))} images")
         
+        # Auto-convert HEIC/HEIF/AVIF to JPG right after download
+        converted = self._convert_unsupported_formats(download_folder)
+        if converted > 0:
+            print(f"🔄 Converted {converted} HEIC/HEIF/AVIF images to JPG")
+        
         return len(list(download_folder.glob('*')))
+    
+    def _save_drive_metadata(self, images: List[Dict]):
+        """Save metadata about what was found in Google Drive."""
+        from collections import Counter
+        all_names = [img['name'] for img in images]
+        name_counts = Counter(all_names)
+        unique_names = set(all_names)
+        dup_names = {n: c for n, c in name_counts.items() if c > 1}
+
+        metadata = {
+            "total_in_drive": len(images),
+            "unique_filenames": len(unique_names),
+            "duplicate_filename_count": sum(c - 1 for c in name_counts.values() if c > 1),
+            "duplicate_filenames": {n: c for n, c in sorted(dup_names.items())},
+            "scanned_at": datetime.now().isoformat(),
+        }
+
+        metadata_path = self.workspace / "drive_metadata.json"
+        with open(metadata_path, 'w') as f:
+            json.dump(metadata, f, indent=2)
+
+        print(f"📊 Drive: {metadata['total_in_drive']} total, "
+              f"{metadata['unique_filenames']} unique filenames, "
+              f"{metadata['duplicate_filename_count']} duplicate filenames")
+
+    def _convert_unsupported_formats(self, folder: Path) -> int:
+        """
+        Convert HEIC/HEIF/AVIF images to JPG in-place.
+        
+        - Converts the file to .jpg
+        - Moves the original to a '_heic_originals' subfolder for traceability
+        - Tracks the conversion in a JSON manifest
+        
+        Returns: number of files converted
+        """
+        unsupported_exts = {'.heic', '.heif', '.avif'}
+        originals_dir = folder / '_heic_originals'
+        manifest_path = folder / '_heic_conversions.json'
+        
+        # Load existing manifest
+        manifest = {}
+        if manifest_path.exists():
+            try:
+                with open(manifest_path, 'r') as f:
+                    manifest = json.load(f)
+            except Exception:
+                manifest = {}
+        
+        # Find all unsupported format files
+        to_convert = []
+        for f in folder.iterdir():
+            if f.is_file() and f.suffix.lower() in unsupported_exts:
+                jpg_name = f.stem + '.jpg'
+                jpg_path = folder / jpg_name
+                # Skip if already converted
+                if jpg_name in manifest or jpg_path.exists():
+                    continue
+                to_convert.append(f)
+        
+        if not to_convert:
+            return 0
+        
+        print(f"\n🔄 Converting {len(to_convert)} HEIC/HEIF/AVIF files to JPG...")
+        originals_dir.mkdir(exist_ok=True)
+        
+        converted = 0
+        for img_path in tqdm(to_convert, desc="Converting"):
+            try:
+                jpg_name = img_path.stem + '.jpg'
+                jpg_path = folder / jpg_name
+                
+                # Try loading with PIL + pillow-heif (best HEIC support)
+                img = None
+                if HEIF_AVAILABLE:
+                    try:
+                        from PIL import Image as PILImage
+                        pil_img = PILImage.open(img_path)
+                        if pil_img.mode != 'RGB':
+                            pil_img = pil_img.convert('RGB')
+                        pil_img.save(str(jpg_path), 'JPEG', quality=95)
+                        img = True
+                    except Exception:
+                        pass
+                
+                # Fallback to OpenCV
+                if img is None and CV2_AVAILABLE:
+                    cv_img = cv2.imread(str(img_path))
+                    if cv_img is not None:
+                        cv2.imwrite(str(jpg_path), cv_img, [cv2.IMWRITE_JPEG_QUALITY, 95])
+                        img = True
+                
+                if img and jpg_path.exists() and jpg_path.stat().st_size > 0:
+                    # Move original to _heic_originals for traceability
+                    shutil.move(str(img_path), str(originals_dir / img_path.name))
+                    
+                    # Track in manifest
+                    manifest[jpg_name] = {
+                        'original_filename': img_path.name,
+                        'original_format': img_path.suffix.upper().lstrip('.'),
+                        'converted_at': datetime.now().isoformat(),
+                    }
+                    converted += 1
+                    print(f"  ✓ {img_path.name} → {jpg_name}")
+                else:
+                    print(f"  ✗ Failed to convert {img_path.name}")
+                    
+            except Exception as e:
+                print(f"  ✗ Error converting {img_path.name}: {e}")
+        
+        # Save manifest
+        with open(manifest_path, 'w') as f:
+            json.dump(manifest, f, indent=2)
+        
+        return converted
     
     def _list_all_drive_images(self, service, folder_id: str) -> List[Dict]:
         """Recursively list all images from Google Drive"""

@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import or_, and_
 from sqlalchemy.orm import Session, joinedload
 from typing import Optional
 from app.database import get_db
@@ -335,12 +336,118 @@ def list_categories(
 def list_images(
     db: Session = Depends(get_db),
     _admin: User = Depends(require_admin),
+    status_filter: Optional[str] = Query(None, alias="filter"),
+    search: Optional[str] = Query(None),
 ):
-    images = db.query(Image).order_by(Image.id).all()
-    return [
-        {"id": img.id, "filename": img.filename, "url": img.url, "created_at": img.created_at}
-        for img in images
-    ]
+    query = db.query(Image).order_by(Image.id)
+
+    # Apply search
+    if search:
+        query = query.filter(Image.filename.ilike(f"%{search}%"))
+
+    # Apply filter
+    if status_filter == "blurred":
+        query = query.filter(
+            or_(
+                Image.compliance_status.in_(["blurred", "processed", "obfuscated"]),
+                Image.manually_blurred == True,
+            )
+        )
+    elif status_filter == "clean":
+        query = query.filter(
+            Image.compliance_status == "clean",
+            or_(Image.manually_blurred == False, Image.manually_blurred.is_(None)),
+        )
+    elif status_filter == "manually_blurred":
+        query = query.filter(Image.manually_blurred == True)
+    elif status_filter == "ai_generated":
+        query = query.filter(Image.is_ai_generated == True)
+    elif status_filter == "human_visible":
+        query = query.filter(Image.human_visible == True)
+    elif status_filter == "improper":
+        query = query.filter(Image.is_improper == True)
+
+    images = query.all()
+
+    # Compute summary stats (unfiltered) for the filter badges
+    total = db.query(Image).count()
+    blurred_count = db.query(Image).filter(
+        or_(
+            Image.compliance_status.in_(["blurred", "processed", "obfuscated"]),
+            Image.manually_blurred == True,
+        )
+    ).count()
+    clean_count = db.query(Image).filter(
+        Image.compliance_status == "clean",
+        or_(Image.manually_blurred == False, Image.manually_blurred.is_(None)),
+    ).count()
+    manually_blurred_count = db.query(Image).filter(Image.manually_blurred == True).count()
+    ai_count = db.query(Image).filter(Image.is_ai_generated == True).count()
+    human_visible_count = db.query(Image).filter(Image.human_visible == True).count()
+    improper_count = db.query(Image).filter(Image.is_improper == True).count()
+
+    return {
+        "summary": {
+            "total": total,
+            "blurred": blurred_count,
+            "clean": clean_count,
+            "manually_blurred": manually_blurred_count,
+            "ai_generated": ai_count,
+            "human_visible": human_visible_count,
+            "improper": improper_count,
+        },
+        "total": len(images),
+        "images": [
+            {
+                "id": img.id,
+                "filename": img.filename,
+                "url": img.url,
+                "created_at": img.created_at,
+                "compliance_status": img.compliance_status,
+                "manually_blurred": img.manually_blurred or False,
+                "is_ai_generated": img.is_ai_generated or False,
+                "human_visible": img.human_visible,
+                "is_improper": img.is_improper or False,
+                "human_faces_detected": img.human_faces_detected or 0,
+                "is_using_processed": img.is_using_processed if img.is_using_processed is not None else True,
+                "is_blurred": (img.manually_blurred or False) or (
+                    (img.is_using_processed is not False) and
+                    (img.compliance_status or "") in ("blurred", "processed", "obfuscated")
+                ),
+            }
+            for img in images
+        ],
+    }
+
+
+# ── Single image status (for admin lightbox) ─────────────────────
+
+@router.get("/images/{image_id}/status")
+def get_image_status(
+    image_id: int,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """Return blur-related status flags for a single image (admin-accessible)."""
+    img = db.query(Image).filter(Image.id == image_id).first()
+    if not img:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    _manually_blurred = img.manually_blurred or False
+    _is_using_processed = img.is_using_processed if img.is_using_processed is not None else True
+    _compliance_status = img.compliance_status or None
+    _is_blurred = _manually_blurred or (
+        (img.is_using_processed is not False) and
+        (_compliance_status or "") in ("blurred", "processed", "obfuscated")
+    )
+
+    return {
+        "id": img.id,
+        "is_blurred": _is_blurred,
+        "compliance_status": _compliance_status,
+        "is_using_processed": _is_using_processed,
+        "manually_blurred": _manually_blurred,
+    }
 
 
 # ── Progress ──────────────────────────────────────────────────────
@@ -637,6 +744,7 @@ def review_table(
         .options(
             joinedload(Annotation.image),
             joinedload(Annotation.annotator),
+            joinedload(Annotation.reviewer),
             joinedload(Annotation.category).joinedload(Category.options),
             joinedload(Annotation.selections),
         )
@@ -685,6 +793,8 @@ def review_table(
             annotator_username=a.annotator.username,
             is_duplicate=a.is_duplicate,
             review_status=a.review_status,
+            reviewed_by_username=a.reviewer.username if a.reviewer else None,
+            reviewed_at=a.reviewed_at,
             time_spent_seconds=a.time_spent_seconds,
             rework_time_seconds=a.rework_time_seconds or 0,
             is_rework=a.is_rework or False,
@@ -695,11 +805,34 @@ def review_table(
     for img_id in page_image_ids:
         if img_id in image_map:
             entry = image_map[img_id]
+            img = entry["image"]
+            # Compute is_blurred the same way the annotator endpoint does
+            _manually_blurred = img.manually_blurred or False
+            _is_using_processed = img.is_using_processed
+            _compliance_status = img.compliance_status
+            _is_blurred = _manually_blurred or (
+                _compliance_status == 'blurred' and _is_using_processed is not False
+            )
+
+            # Determine image-level reviewer: most recently reviewed annotation
+            _reviewed_by = None
+            _reviewed_at = None
+            for cell in entry["annotations"].values():
+                if cell.reviewed_at and (not _reviewed_at or cell.reviewed_at > _reviewed_at):
+                    _reviewed_at = cell.reviewed_at
+                    _reviewed_by = cell.reviewed_by_username
+
             rows.append(ReviewTableRow(
                 image_id=img_id,
-                image_url=entry["image"].url,
-                image_filename=entry["image"].filename,
+                image_url=img.url,
+                image_filename=img.filename,
                 annotations=entry["annotations"],
+                is_blurred=_is_blurred,
+                compliance_status=_compliance_status,
+                is_using_processed=_is_using_processed,
+                manually_blurred=_manually_blurred,
+                reviewed_by_username=_reviewed_by,
+                reviewed_at=_reviewed_at,
             ))
 
     # All categories for column headers
@@ -720,30 +853,42 @@ def review_stats(
     db: Session = Depends(get_db),
     _admin: User = Depends(require_admin),
 ):
-    """Get review statistics."""
-    from sqlalchemy import or_, and_
-    # Total includes completed OR in_progress with rework_requested
-    total_completed = db.query(Annotation).filter(
+    """Get image-level review statistics."""
+    from sqlalchemy import or_, and_, func
+    from collections import defaultdict
+
+    # Get all annotations that are completed or in rework
+    annotations = db.query(
+        Annotation.image_id,
+        Annotation.review_status,
+        Annotation.status,
+    ).filter(
         or_(
             Annotation.status == "completed",
             and_(Annotation.status == "in_progress", Annotation.review_status == "rework_requested")
         )
-    ).count()
-    # Pending includes: no review yet, sent for rework, OR rework completed (waiting for re-review)
-    pending = db.query(Annotation).filter(
-        or_(
-            and_(Annotation.status == "completed", Annotation.review_status.is_(None)),
-            and_(Annotation.status == "completed", Annotation.review_status == "rework_completed"),
-            and_(Annotation.status == "in_progress", Annotation.review_status == "rework_requested")
-        )
-    ).count()
-    approved = db.query(Annotation).filter(
-        Annotation.status == "completed", Annotation.review_status == "approved"
-    ).count()
+    ).all()
+
+    # Group by image_id
+    image_annotations = defaultdict(list)
+    for ann in annotations:
+        image_annotations[ann.image_id].append(ann)
+
+    total_images = len(image_annotations)
+    approved_images = 0
+    pending_images = 0
+
+    for img_id, anns in image_annotations.items():
+        all_approved = all(a.review_status == "approved" for a in anns)
+        if all_approved:
+            approved_images += 1
+        else:
+            pending_images += 1
+
     return {
-        "total_completed": total_completed,
-        "pending_review": pending,
-        "approved": approved,
+        "total_completed": total_images,
+        "pending_review": pending_images,
+        "approved": approved_images,
     }
 
 
@@ -1556,21 +1701,27 @@ def get_photo_registry(
     annotated_dir = workspace / "annotated_blur"
 
     # ── 3. Collect all downloaded filenames ──
-    all_downloaded = set()
+    all_disk_files = set()            # every filename on disk (JPG/PNG only, HEIC already converted)
+
+    image_exts = ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp')
+
     if download_dir.is_dir():
         for f in download_dir.iterdir():
-            if f.is_file() and f.suffix.lower() in ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.bmp'):
-                all_downloaded.add(f.name)
+            # Skip the _heic_originals subfolder and manifest files
+            if f.is_dir() or f.name.startswith('_'):
+                continue
+            if f.is_file() and f.suffix.lower() in image_exts:
+                all_disk_files.add(f.name)
 
-    # Also add any files in unique_dir not already known (in case download dir was cleared)
     if unique_dir.is_dir():
         for f in unique_dir.iterdir():
-            if f.is_file() and f.suffix.lower() in ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.bmp'):
-                all_downloaded.add(f.name)
+            if f.is_dir() or f.name.startswith('_'):
+                continue
+            if f.is_file() and f.suffix.lower() in image_exts:
+                all_disk_files.add(f.name)
 
-    # Also add duplicates from duplicate_map
     for dup_name in duplicate_map:
-        all_downloaded.add(dup_name)
+        all_disk_files.add(dup_name)
 
     # ── 4. Get DB image data (keyed by filename) ──
     db_images = db.query(Image).all()
@@ -1578,16 +1729,38 @@ def get_photo_registry(
     for img in db_images:
         db_by_filename[img.filename] = img
 
-    # Also add DB images not in downloaded set
+    # ── 4b. Load HEIC conversion manifest (created by pipeline) ──
+    heic_manifest = {}
+    manifest_path = download_dir / "_heic_conversions.json"
+    if manifest_path.exists():
+        try:
+            with open(manifest_path, 'r') as f:
+                heic_manifest = json.load(f)
+        except Exception:
+            pass
+
+    # Build reverse map: jpg_name → heic_original_name
+    jpg_to_heic_map = {}
+    for jpg_name, info in heic_manifest.items():
+        jpg_to_heic_map[jpg_name] = info.get('original_filename', '')
+
+    # Also check DB original_filename column as fallback
     for img in db_images:
-        all_downloaded.add(img.filename)
+        if img.original_filename and img.filename not in jpg_to_heic_map:
+            jpg_to_heic_map[img.filename] = img.original_filename
+
+    # Build the canonical set of filenames
+    all_filenames = set(all_disk_files)
+    for img in db_images:
+        all_filenames.add(img.filename)
 
     # ── 5. Build registry entries ──
     registry = []
-    for filename in sorted(all_downloaded):
+    for filename in sorted(all_filenames):
         is_duplicate = filename in duplicate_map
         parent_image = duplicate_map.get(filename, "")
         db_img = db_by_filename.get(filename)
+        heic_original = jpg_to_heic_map.get(filename)  # e.g. "IMG_0906.HEIC" if this was converted
 
         # Paths
         original_path = (
@@ -1595,6 +1768,16 @@ def get_photo_registry(
             or _file_path_if_exists(unique_dir, filename)
             or ""
         )
+
+        # HEIC original path (in _heic_originals subfolder)
+        heic_original_path = ""
+        if heic_original:
+            heic_originals_dir = download_dir / "_heic_originals"
+            heic_original_path = (
+                _file_path_if_exists(heic_originals_dir, heic_original)
+                or ""
+            )
+
         processed_path = (
             _file_path_if_exists(final_dir, filename)
             or _file_path_if_exists(blurred_dir, filename)
@@ -1613,15 +1796,16 @@ def get_photo_registry(
             if manually_blurred and db_img.annotated_blur_url:
                 annotated_blur_path = db_img.annotated_blur_url
         else:
-            # No DB record — check if blurred file exists on disk
             pipeline_blurred = _file_path_if_exists(blurred_dir, filename) is not None
 
-        # Check annotated_blur folder for manual blur files (any naming convention)
         if not annotated_blur_path and annotated_dir.is_dir():
             for af in annotated_dir.iterdir():
                 if filename in af.name:
                     annotated_blur_path = str(af.relative_to(backend_dir))
                     break
+
+        # Display filename — show HEIC conversion note if applicable
+        display_note = f"(converted from {heic_original})" if heic_original else ""
 
         entry = {
             "filename": filename,
@@ -1639,10 +1823,42 @@ def get_photo_registry(
             "in_database": db_img is not None,
             "is_ai_generated": db_img.is_ai_generated if db_img else None,
             "human_visible": db_img.human_visible if db_img else None,
+            "heic_original": heic_original or "",
+            "heic_original_path": heic_original_path if heic_original else "",
+            "conversion_note": display_note,
+            # DB-tracked format conversion columns
+            "original_filename": (db_img.original_filename or "") if db_img else (heic_original or ""),
+            "original_format": (db_img.original_format or "") if db_img else ("HEIC" if heic_original else ""),
         }
         registry.append(entry)
 
-    # ── 6. Apply filters ──
+    # ── 6. Load Drive metadata (saved during pipeline download) ──
+    drive_metadata = {}
+    drive_metadata_path = workspace / "drive_metadata.json"
+    if drive_metadata_path.exists():
+        try:
+            with open(drive_metadata_path, 'r') as f:
+                drive_metadata = json.load(f)
+        except Exception:
+            pass
+
+    # ── 7. Summary stats (computed BEFORE filtering so they stay constant) ──
+    summary = {
+        "total_in_drive": drive_metadata.get("total_in_drive", 0),
+        "drive_unique_filenames": drive_metadata.get("unique_filenames", 0),
+        "drive_duplicate_filenames": drive_metadata.get("duplicate_filename_count", 0),
+        "drive_duplicate_details": drive_metadata.get("duplicate_filenames", {}),
+        "drive_scanned_at": drive_metadata.get("scanned_at", ""),
+        "total_downloaded": len(registry),
+        "total_unique": sum(1 for r in registry if r["is_unique"]),
+        "total_duplicate": sum(1 for r in registry if r["is_duplicate"]),
+        "total_pipeline_blurred": sum(1 for r in registry if r["pipeline_blurred"]),
+        "total_manually_blurred": sum(1 for r in registry if r["manually_blurred"]),
+        "total_in_database": sum(1 for r in registry if r["in_database"]),
+        "total_clean": sum(1 for r in registry if not r["pipeline_blurred"] and not r["manually_blurred"] and not r["is_duplicate"]),
+    }
+
+    # ── 8. Apply filters ──
     if search:
         search_lower = search.lower()
         registry = [r for r in registry if search_lower in r["filename"].lower()]
@@ -1654,23 +1870,13 @@ def get_photo_registry(
     elif status_filter == "blurred":
         registry = [r for r in registry if r["pipeline_blurred"]]
     elif status_filter == "clean":
-        registry = [r for r in registry if not r["pipeline_blurred"] and not r["is_duplicate"]]
+        registry = [r for r in registry if not r["pipeline_blurred"] and not r["manually_blurred"] and not r["is_duplicate"]]
     elif status_filter == "manually_blurred":
         registry = [r for r in registry if r["manually_blurred"]]
 
-    # ── 7. Summary stats ──
     total = len(registry)
-    summary = {
-        "total_downloaded": len(all_downloaded),
-        "total_unique": sum(1 for r in registry if r["is_unique"]),
-        "total_duplicate": sum(1 for r in registry if r["is_duplicate"]),
-        "total_pipeline_blurred": sum(1 for r in registry if r["pipeline_blurred"]),
-        "total_manually_blurred": sum(1 for r in registry if r["manually_blurred"]),
-        "total_in_database": sum(1 for r in registry if r["in_database"]),
-        "total_clean": sum(1 for r in registry if not r["pipeline_blurred"] and not r["is_duplicate"]),
-    }
 
-    # ── 8. Paginate ──
+    # ── 9. Paginate ──
     start = (page - 1) * per_page
     end = start + per_page
     page_data = registry[start:end]

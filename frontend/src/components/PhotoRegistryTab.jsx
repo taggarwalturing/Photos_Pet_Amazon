@@ -10,11 +10,15 @@ const FILTERS = [
   { key: 'manually_blurred', label: 'Manual Blur', icon: '✋' },
 ];
 
-function StatCard({ icon, label, value, color, active, onClick }) {
+function StatCard({ icon, label, value, color, active, onClick, tooltip }) {
+  const Tag = onClick ? 'button' : 'div';
   return (
-    <button
+    <Tag
       onClick={onClick}
-      className={`relative overflow-hidden p-4 rounded-xl border bg-white text-left transition-all cursor-pointer shadow-sm hover:shadow-md ${
+      title={tooltip || ''}
+      className={`relative overflow-hidden p-4 rounded-xl border bg-white text-left transition-all shadow-sm hover:shadow-md ${
+        onClick ? 'cursor-pointer' : ''
+      } ${
         active ? 'ring-2 ring-offset-2 ' + color.ring : 'border-gray-200'
       }`}
     >
@@ -24,7 +28,7 @@ function StatCard({ icon, label, value, color, active, onClick }) {
       </div>
       <p className="text-xl font-bold text-gray-900">{value}</p>
       <p className="text-[11px] text-gray-500 mt-0.5 font-medium">{label}</p>
-    </button>
+    </Tag>
   );
 }
 
@@ -79,10 +83,15 @@ export default function PhotoRegistryTab() {
 
   const summary = data?.summary || {};
 
+  const driveTotal = summary.total_in_drive || 0;
+  const driveDupFilenames = summary.drive_duplicate_filenames || 0;
+  const driveDupDetails = summary.drive_duplicate_details || {};
+
   const statCards = [
-    { key: 'all', icon: '📋', label: 'Total Downloaded', value: summary.total_downloaded || 0, color: { bg: 'bg-gradient-to-br from-indigo-500 to-purple-500', ring: 'ring-indigo-400' } },
+    { key: null, icon: '☁️', label: 'In Google Drive', value: driveTotal, color: { bg: 'bg-gradient-to-br from-sky-500 to-blue-600', ring: 'ring-sky-400' }, tooltip: driveDupFilenames > 0 ? `${driveDupFilenames} duplicate filenames in Drive` : '' },
+    { key: 'all', icon: '📋', label: 'Downloaded (Unique Names)', value: summary.total_downloaded || 0, color: { bg: 'bg-gradient-to-br from-indigo-500 to-purple-500', ring: 'ring-indigo-400' } },
     { key: 'unique', icon: '✅', label: 'Unique', value: summary.total_unique || 0, color: { bg: 'bg-gradient-to-br from-emerald-500 to-teal-500', ring: 'ring-emerald-400' } },
-    { key: 'duplicate', icon: '📑', label: 'Duplicates', value: summary.total_duplicate || 0, color: { bg: 'bg-gradient-to-br from-amber-500 to-orange-500', ring: 'ring-amber-400' } },
+    { key: 'duplicate', icon: '📑', label: 'Content Duplicates', value: summary.total_duplicate || 0, color: { bg: 'bg-gradient-to-br from-amber-500 to-orange-500', ring: 'ring-amber-400' } },
     { key: 'blurred', icon: '🔒', label: 'Pipeline Blurred', value: summary.total_pipeline_blurred || 0, color: { bg: 'bg-gradient-to-br from-red-500 to-rose-500', ring: 'ring-red-400' } },
     { key: 'manually_blurred', icon: '✋', label: 'Manual Blur', value: summary.total_manually_blurred || 0, color: { bg: 'bg-gradient-to-br from-violet-500 to-fuchsia-500', ring: 'ring-violet-400' } },
     { key: 'clean', icon: '🟢', label: 'Clean', value: summary.total_clean || 0, color: { bg: 'bg-gradient-to-br from-cyan-500 to-blue-500', ring: 'ring-cyan-400' } },
@@ -116,19 +125,34 @@ export default function PhotoRegistryTab() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-6 gap-3">
-        {statCards.map((s) => (
+      <div className="grid grid-cols-7 gap-3">
+        {statCards.map((s, idx) => (
           <StatCard
-            key={s.key}
+            key={s.key || `stat-${idx}`}
             icon={s.icon}
             label={s.label}
             value={s.value}
             color={s.color}
-            active={filter === s.key}
-            onClick={() => handleFilterChange(s.key)}
+            active={s.key !== null && filter === s.key}
+            onClick={s.key !== null ? () => handleFilterChange(s.key) : undefined}
+            tooltip={s.tooltip}
           />
         ))}
       </div>
+
+      {/* Drive Duplicate Filenames info */}
+      {driveDupFilenames > 0 && (
+        <details className="bg-sky-50 border border-sky-200 rounded-lg px-4 py-2 text-xs">
+          <summary className="cursor-pointer text-sky-700 font-medium">
+            ☁️ {driveDupFilenames} files in Google Drive have duplicate filenames (same name in different subfolders) — only one copy is downloaded
+          </summary>
+          <ul className="mt-2 space-y-0.5 text-sky-600 pl-4">
+            {Object.entries(driveDupDetails).map(([name, count]) => (
+              <li key={name}>• <span className="font-mono">{name}</span> — appears {count}× in Drive</li>
+            ))}
+          </ul>
+        </details>
+      )}
 
       {/* Search + Filter Bar */}
       <div className="flex items-center gap-3">
@@ -171,6 +195,7 @@ export default function PhotoRegistryTab() {
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider w-8">#</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Filename</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Format</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Parent Image</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Original Path</th>
@@ -183,7 +208,7 @@ export default function PhotoRegistryTab() {
               {loading ? (
                 Array.from({ length: 10 }).map((_, i) => (
                   <tr key={i}>
-                    {Array.from({ length: 8 }).map((_, j) => (
+                    {Array.from({ length: 9 }).map((_, j) => (
                       <td key={j} className="px-4 py-3">
                         <div className="h-4 bg-gray-100 rounded animate-pulse" style={{ width: `${60 + Math.random() * 40}%` }} />
                       </td>
@@ -192,7 +217,7 @@ export default function PhotoRegistryTab() {
                 ))
               ) : data?.data?.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="px-4 py-12 text-center text-gray-400">
+                  <td colSpan={9} className="px-4 py-12 text-center text-gray-400">
                     No images found matching your criteria
                   </td>
                 </tr>
@@ -215,10 +240,35 @@ export default function PhotoRegistryTab() {
                             onError={(e) => { e.target.style.display = 'none'; }}
                           />
                         )}
-                        <span className="text-xs font-medium text-gray-800 truncate max-w-[200px]" title={row.filename}>
-                          {row.filename}
-                        </span>
+                        <div className="min-w-0">
+                          <span className="text-xs font-medium text-gray-800 truncate max-w-[200px] block" title={row.filename}>
+                            {row.filename}
+                          </span>
+                          {row.heic_original && (
+                            <span className="text-[9px] text-indigo-500 font-medium">
+                              📷 from {row.heic_original}
+                            </span>
+                          )}
+                        </div>
                       </div>
+                    </td>
+
+                    {/* Format */}
+                    <td className="px-4 py-2.5">
+                      {row.original_format ? (
+                        <div className="flex flex-col gap-0.5">
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-100 text-indigo-700">
+                            {row.original_format} → JPG
+                          </span>
+                          <span className="text-[9px] text-gray-400 font-mono truncate max-w-[140px]" title={row.original_filename}>
+                            {row.original_filename}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-gray-400 font-medium">
+                          {row.filename.split('.').pop().toUpperCase()}
+                        </span>
+                      )}
                     </td>
 
                     {/* Status */}

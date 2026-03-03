@@ -63,11 +63,44 @@ function PipelineStatistics() {
         </button>
       </div>
       
+      {/* Google Drive Source */}
+      {stats.total_in_drive > 0 && (
+        <div className="mb-6">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">☁️ Google Drive Source</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="bg-sky-50 rounded-lg p-4">
+              <div className="text-sm text-sky-600 font-medium mb-1">Total in Drive</div>
+              <div className="text-2xl font-bold text-sky-900">{stats.total_in_drive}</div>
+              <div className="text-xs text-sky-600 mt-1">All files found in Drive</div>
+            </div>
+            <div className="bg-blue-50 rounded-lg p-4">
+              <div className="text-sm text-blue-600 font-medium mb-1">Unique Filenames</div>
+              <div className="text-2xl font-bold text-blue-900">{stats.drive_unique_filenames}</div>
+              <div className="text-xs text-blue-600 mt-1">Downloaded to disk</div>
+            </div>
+            {stats.drive_duplicate_filenames > 0 && (
+              <div className="bg-amber-50 rounded-lg p-4">
+                <div className="text-sm text-amber-600 font-medium mb-1">Duplicate Filenames</div>
+                <div className="text-2xl font-bold text-amber-900">{stats.drive_duplicate_filenames}</div>
+                <details className="text-xs text-amber-600 mt-1 cursor-pointer">
+                  <summary>Same name in different subfolders</summary>
+                  <ul className="mt-1 space-y-0.5 pl-2 max-h-32 overflow-y-auto">
+                    {Object.entries(stats.drive_duplicate_details || {}).map(([name, count]) => (
+                      <li key={name} className="font-mono text-[10px]">{name} (×{count})</li>
+                    ))}
+                  </ul>
+                </details>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Main Stats Row */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
         {/* Total Images */}
         <div className="bg-blue-50 rounded-lg p-4">
-          <div className="text-sm text-blue-600 font-medium mb-1">Total Images</div>
+          <div className="text-sm text-blue-600 font-medium mb-1">Total in Database</div>
           <div className="text-3xl font-bold text-blue-900">{stats.total_images}</div>
         </div>
         
