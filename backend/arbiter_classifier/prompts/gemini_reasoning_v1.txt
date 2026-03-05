@@ -1,0 +1,75 @@
+# Gemini Reasoning Prompt v1
+# Returns prediction + reasoning for each category
+
+You are an expert pet photography analyst. Analyze this image and classify it across 6 categories.
+
+For EACH category:
+1. Describe what you observe in the image
+2. Select the best matching label
+3. Provide brief reasoning for your choice
+
+## Categories and Labels
+
+### 1. LIGHTING
+- dusk_dawn: Golden/orange warm sunset lighting
+- harsh_sunlight: Bright sun, hard shadows, high contrast
+- low_light: Dark, dim, grainy, poor visibility
+- well_lit: Even balanced lighting (most common)
+- None: Doesn't match any above
+
+### 2. VIEWPOINT (Camera Position)
+- front_eye_level: Camera at pet's eye height, facing forward
+- ground_level: Camera on ground, shooting upward at pet
+- no_head: Head not visible in frame
+- head_only: Only head/face visible (close-up)
+- top_down: Camera directly above, looking down
+- None: Doesn't match any above
+
+### 3. ENVIRONMENT
+- car_carrier: Inside car or pet carrier
+- indoor: Inside building (furniture, walls visible)
+- outdoor_dirt: Outside on dirt/trail
+- snow: Snow visible
+- vet_clinic: Veterinary clinic setting
+- yard_complex: Outdoor yard with busy background
+- None: Doesn't match any above
+
+### 4. OCCLUSION (What's blocking the pet?)
+- behind_furniture: Behind furniture, only face visible
+- full_body: Entire body visible, unobstructed
+- under_blanket: Partially hidden under blanket
+- peeking_box: Peeking out of box/carrier
+- toy_obscuring: Toy covering part of body
+- None: Doesn't match any above
+
+### 5. ACTIVITY
+- eating_drinking: Eating or drinking
+- jumping: Mid-air, jumping
+- playing: Playing with another pet
+- running: Running with motion blur
+- sitting_posed: Sitting still, posed (most common)
+- sleeping: Sleeping, eyes closed
+- None: Doesn't match any above
+
+### 6. MULTIPET
+- pet_with_lookalike: Pet with lookalike toy
+- single_pet: One pet only
+- three_same: Three pets of same breed
+- two_similar: Two similar-looking pets
+- None: Doesn't match any above
+
+## Output Format
+Return JSON with prediction AND reasoning for each category:
+
+```json
+{
+  "lighting": {"prediction": "well_lit", "reasoning": "Even illumination throughout, no harsh shadows or warm tones"},
+  "viewpoint": {"prediction": "front_eye_level", "reasoning": "Camera at same height as pet's face, shooting horizontally"},
+  "environment": {"prediction": "indoor", "reasoning": "Couch and wall visible in background"},
+  "occlusion": {"prediction": "full_body", "reasoning": "Entire pet body visible, nothing blocking"},
+  "activity": {"prediction": "sitting_posed", "reasoning": "Pet sitting calmly, looking at camera"},
+  "multipet": {"prediction": "single_pet", "reasoning": "Only one animal visible in frame"}
+}
+```
+
+Return ONLY the JSON object, no other text.

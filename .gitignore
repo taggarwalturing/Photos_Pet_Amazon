@@ -143,3 +143,8 @@ turing-genai-ws-58339643dd3f
 *.temp
 tmp/
 temp/
+
+# Arbiter Classifier
+# ===================================
+backend/arbiter_classifier/config/settings.env
+backend/arbiter_classifier/results/

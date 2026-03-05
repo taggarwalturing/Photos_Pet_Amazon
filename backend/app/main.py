@@ -9,7 +9,7 @@ import io
 from contextlib import asynccontextmanager
 from app.config import settings
 from app.database import engine, Base, SessionLocal, get_db
-from app.routers import auth, admin, annotator, compliance, compliance_management, pipeline, public_blur, annotator_blur
+from app.routers import auth, admin, annotator, compliance, compliance_management, pipeline, public_blur, annotator_blur, arbiter
 from app.seed import seed_database
 from app.models.image import Image
 
@@ -174,6 +174,7 @@ app.include_router(compliance.router, prefix="/api")
 app.include_router(compliance_management.router, prefix="/api")
 app.include_router(pipeline.router, prefix="/api")
 app.include_router(public_blur.router, prefix="/api")
+app.include_router(arbiter.router, prefix="/api")
 
 
 @app.get("/api/health")

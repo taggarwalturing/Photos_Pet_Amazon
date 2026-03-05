@@ -153,12 +153,13 @@ def _build_queue(db: Session, user_id: int, category_id: int) -> list[Image]:
 @router.patch("/images/{image_id}/time")
 def save_time_spent(
     image_id: int,
-    payload: dict,  # {"time_spent_seconds": int}
+    payload: dict,  # {"time_spent_seconds": int, "is_rework": bool}
     db: Session = Depends(get_db),
     user: User = Depends(require_annotator),
 ):
     """
-    Lightweight endpoint to persist time_spent_seconds for an image.
+    Lightweight endpoint to persist time for an image.
+    Supports both initial annotation time and rework time.
     Updates all existing annotations for this user+image, or creates
     a placeholder annotation (status='in_progress') for the first
     assigned category if none exist yet.
@@ -169,6 +170,7 @@ def save_time_spent(
         return {"ok": True}  # silently ignore bad data
 
     time_spent = int(time_spent)
+    is_rework = payload.get("is_rework", False)
 
     # Get assigned categories
     assigned_cat_ids = [
@@ -193,7 +195,11 @@ def save_time_spent(
 
     if existing:
         for ann in existing:
-            ann.time_spent_seconds = time_spent
+            if is_rework:
+                # During rework, only update rework_time_seconds — preserve original time
+                ann.rework_time_seconds = time_spent
+            else:
+                ann.time_spent_seconds = time_spent
     else:
         # No annotations yet — create an in_progress placeholder for the first category
         annotation = Annotation(
@@ -470,6 +476,9 @@ def get_image_for_annotation(
                 "is_duplicate": my_ann.is_duplicate,
                 "selected_option_ids": sel_ids,
                 "time_spent_seconds": my_ann.time_spent_seconds,
+                "rework_time_seconds": my_ann.rework_time_seconds or 0,
+                "is_rework": my_ann.is_rework or False,
+                "review_status": my_ann.review_status,
             }
         
         categories_data.append({
@@ -744,7 +753,10 @@ def save_image_annotations(
                 category_id=cat_id,
                 is_duplicate=is_duplicate,
                 status="completed",
-                time_spent_seconds=capped_time,
+                time_spent_seconds=0 if is_rework_submission else capped_time,
+                rework_time_seconds=capped_time if is_rework_submission else 0,
+                is_rework=is_rework_submission,
+                review_status="rework_completed" if is_rework_submission else None,
                 human_validated=True,  # Mark as validated by human
             )
             db.add(annotation)

@@ -245,18 +245,33 @@ export default function ImageAnnotationPage() {
   const [showTimeWarning, setShowTimeWarning] = useState(false);
   const elapsedRef = useRef(0); // mirrors elapsedSeconds for use in non-reactive callbacks
   const imageIdRef = useRef(imageId); // current imageId for use in cleanup/beforeunload
+  const isReworkRef = useRef(false); // mirrors isReworkMode for auto-save
 
   // Compute the current max time based on mode
   const currentMaxTime = isReworkMode ? maxReworkTime : maxAnnotationTime;
 
   // Keep refs in sync with state
   useEffect(() => { elapsedRef.current = elapsedSeconds; }, [elapsedSeconds]);
-  useEffect(() => { imageIdRef.current = imageId; }, [imageId]);
+  useEffect(() => { isReworkRef.current = isReworkMode; }, [isReworkMode]);
+  // When imageId changes, immediately reset timer to prevent bleeding old time to new image
+  useEffect(() => {
+    if (imageIdRef.current !== imageId) {
+      // Save old image's time before resetting
+      // (persistTime handled below in prevImageIdRef effect)
+      // Reset timer immediately so auto-save doesn't write stale value to new image
+      setElapsedSeconds(0);
+      elapsedRef.current = 0;
+    }
+    imageIdRef.current = imageId;
+  }, [imageId]);
 
-  // Persist time to DB (fire-and-forget)
-  const persistTime = useCallback((imgId, seconds) => {
+  // Persist time to DB (fire-and-forget) — sends is_rework flag to save to correct field
+  const persistTime = useCallback((imgId, seconds, rework = false) => {
     if (!imgId || seconds <= 0) return;
-    api.patch(`/annotator/images/${imgId}/time`, { time_spent_seconds: seconds }).catch(() => {});
+    api.patch(`/annotator/images/${imgId}/time`, {
+      time_spent_seconds: seconds,
+      is_rework: rework,
+    }).catch(() => {});
   }, []);
 
   // Persist time using fetch+keepalive (works even during page unload)
@@ -268,7 +283,10 @@ export default function ImageAnnotationPage() {
       fetch(url, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ time_spent_seconds: seconds }),
+        body: JSON.stringify({
+          time_spent_seconds: seconds,
+          is_rework: isReworkRef.current,
+        }),
         keepalive: true,
       }).catch(() => {});
     } catch {
@@ -279,7 +297,7 @@ export default function ImageAnnotationPage() {
   // Auto-save time to DB every 10 seconds
   useEffect(() => {
     const interval = setInterval(() => {
-      persistTime(imageIdRef.current, elapsedRef.current);
+      persistTime(imageIdRef.current, elapsedRef.current, isReworkRef.current);
     }, 10000);
     return () => clearInterval(interval);
   }, [persistTime]);
@@ -295,12 +313,14 @@ export default function ImageAnnotationPage() {
 
   // Save time when navigating away from this image (imageId changes)
   const prevImageIdRef = useRef(imageId);
+  const prevIsReworkRef = useRef(false);
   useEffect(() => {
     const prevId = prevImageIdRef.current;
     if (prevId && prevId !== imageId) {
-      persistTime(prevId, elapsedRef.current);
+      persistTime(prevId, elapsedRef.current, prevIsReworkRef.current);
     }
     prevImageIdRef.current = imageId;
+    prevIsReworkRef.current = isReworkRef.current;
   }, [imageId, persistTime]);
 
   // Fetch time limit settings from API on mount
@@ -360,14 +380,19 @@ export default function ImageAnnotationPage() {
       
       const initial = {};
       let maxSavedTime = 0;
+      let maxReworkSavedTime = 0;
       res.data.categories.forEach((cat) => {
         if (cat.annotation) {
           initial[cat.id] = {
             selected_option_ids: cat.annotation.selected_option_ids,
           };
           // Track the max time_spent_seconds across all categories for this image
-          if (cat.annotation.time_spent_seconds > maxSavedTime) {
-            maxSavedTime = cat.annotation.time_spent_seconds;
+          if ((cat.annotation.time_spent_seconds || 0) > maxSavedTime) {
+            maxSavedTime = cat.annotation.time_spent_seconds || 0;
+          }
+          // Track rework time separately
+          if ((cat.annotation.rework_time_seconds || 0) > maxReworkSavedTime) {
+            maxReworkSavedTime = cat.annotation.rework_time_seconds || 0;
           }
         }
       });
@@ -394,14 +419,17 @@ export default function ImageAnnotationPage() {
         cat.annotation?.review_status === 'rework_requested' || cat.annotation?.is_rework
       );
       setIsReworkMode(hasRework);
+      isReworkRef.current = hasRework;
       
-      // For rework, use rework_time_seconds, otherwise use time_spent_seconds
-      // Resume timer from DB-saved value
-      setElapsedSeconds(maxSavedTime);
+      // For rework, resume from rework_time_seconds (start at 0 if first rework)
+      // For normal annotation, resume from time_spent_seconds
+      const resumeTime = hasRework ? maxReworkSavedTime : maxSavedTime;
+      setElapsedSeconds(resumeTime);
+      elapsedRef.current = resumeTime;
       
       // Check if we're already over the limit
       const effectiveMaxTime = hasRework ? maxReworkTime : maxAnnotationTime;
-      setShowTimeWarning(maxSavedTime >= effectiveMaxTime);
+      setShowTimeWarning(resumeTime >= effectiveMaxTime);
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to load image');
     } finally {
@@ -449,7 +477,11 @@ export default function ImageAnnotationPage() {
     setError('');
     
     try {
-      await api.put(`/annotator/images/${imageId}/annotations`, { annotations: pendingChanges, time_spent_seconds: elapsedSeconds });
+      await api.put(`/annotator/images/${imageId}/annotations`, {
+        annotations: pendingChanges,
+        time_spent_seconds: elapsedSeconds,
+        is_rework: isReworkMode,
+      });
       await loadImage(imageId);
       return true;
     } catch (err) {
@@ -473,13 +505,13 @@ export default function ImageAnnotationPage() {
 
   const handleNavigate = (id) => {
     if (id) {
-      persistTime(imageId, elapsedSeconds);
+      persistTime(imageId, elapsedSeconds, isReworkMode);
       navigate(`/annotator/image/${id}`);
     }
   };
 
   const handleBack = () => {
-    persistTime(imageId, elapsedSeconds);
+    persistTime(imageId, elapsedSeconds, isReworkMode);
     // Use browser back to preserve the page number on the annotator home
     if (window.history.length > 1) {
       navigate(-1);

@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
 import MasterPipelineTab from '../components/MasterPipelineTab';
 import PhotoRegistryTab from '../components/PhotoRegistryTab';
+import ArbiterClassifierTab from '../components/ArbiterClassifierTab';
 import BoundingBoxCanvas from '../components/BoundingBoxCanvas';
 
 const PAGE_SIZE = 10;
@@ -3846,7 +3847,7 @@ export default function AdminDashboard() {
   const { user, logout } = useAuth();
 
   // Derive active tab from URL path: /admin/review -> 'review', /admin -> 'users'
-  const VALID_TABS = ['users', 'progress', 'review', 'completion', 'images', 'improper', 'edit-requests', 'annotation-log', 'settings', 'pipeline', 'photo-registry'];
+  const VALID_TABS = ['users', 'progress', 'review', 'completion', 'images', 'improper', 'edit-requests', 'annotation-log', 'settings', 'pipeline', 'arbiter', 'compliance', 'photo-registry'];
   const pathSegment = location.pathname.replace(/^\/admin\/?/, '').split('/')[0] || 'users';
   const activeTab = VALID_TABS.includes(pathSegment) ? pathSegment : 'users';
 
@@ -3884,6 +3885,9 @@ export default function AdminDashboard() {
     )},
     { key: 'pipeline', label: 'Master Pipeline', icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+    )},
+    { key: 'arbiter', label: 'Arbiter Classifier', icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" /></svg>
     )},
     { key: 'compliance', label: 'Compliance', icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
@@ -3960,6 +3964,7 @@ export default function AdminDashboard() {
           {activeTab === 'annotation-log' && <AnnotationLogTab />}
           {activeTab === 'settings' && <SettingsTab />}
           {activeTab === 'pipeline' && <MasterPipelineTab />}
+          {activeTab === 'arbiter' && <ArbiterClassifierTab />}
           {activeTab === 'compliance' && <ComplianceTab />}
           {activeTab === 'photo-registry' && <PhotoRegistryTab />}
         </div>
