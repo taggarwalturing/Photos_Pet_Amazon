@@ -92,7 +92,7 @@ export default function ArbiterClassifierTab() {
 
   // ─── Lifecycle ────────────────────────────────────────
   useEffect(() => {
-    Promise.all([fetchConfig(), fetchStatus(), fetchResults()]).finally(() => setLoading(false));
+    Promise.all([fetchConfig(), fetchStatus(), fetchResults(), fetchFailed()]).finally(() => setLoading(false));
   }, []);
 
   // Auto-refresh when running
@@ -101,6 +101,7 @@ export default function ArbiterClassifierTab() {
     const interval = setInterval(() => {
       fetchStatus();
       fetchResults();
+      fetchFailed();
     }, 3000);
     return () => clearInterval(interval);
   }, [status?.is_running]);
@@ -132,6 +133,9 @@ export default function ArbiterClassifierTab() {
 
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
+  const [failedImages, setFailedImages] = useState(null);
+  const [retrying, setRetrying] = useState(false);
+  const [showFailed, setShowFailed] = useState(false);
 
   const importLabels = async () => {
     if (!confirm('This will import AI-predicted labels into the database. Annotators will see them as pre-filled suggestions. Continue?')) return;
@@ -147,10 +151,32 @@ export default function ArbiterClassifierTab() {
     }
   };
 
+  const fetchFailed = async () => {
+    try {
+      const res = await api.get('/admin/arbiter/failed');
+      setFailedImages(res.data);
+    } catch (e) { console.error('Failed to fetch failed images', e); }
+  };
+
+  const retryFailed = async () => {
+    if (!confirm(`Retry classification for ${failedImages?.total || 0} failed images?`)) return;
+    setRetrying(true);
+    try {
+      await api.post('/admin/arbiter/retry-failed');
+      fetchStatus();
+      fetchFailed();
+    } catch (e) {
+      alert(e.response?.data?.detail || 'Failed to start retry');
+    } finally {
+      setRetrying(false);
+    }
+  };
+
   // ─── Derived data ─────────────────────────────────────
   const summary = results?.summary || {};
   const catStats = summary.category_stats || {};
   const pct = status?.total > 0 ? Math.round((status.processed / status.total) * 100) : 0;
+  const failedCount = summary.failed_count || status?.failed_count || failedImages?.total || 0;
 
   if (loading) {
     return (
@@ -250,8 +276,10 @@ export default function ArbiterClassifierTab() {
           <div className="flex items-center justify-between mb-3">
             <div>
               <h3 className="font-semibold text-lg">
-                {status?.is_running ? '⏳ Classifying images…' :
-                 status?.current_step === 'completed' ? '✅ Classification Complete' : '⏸️ Stopped'}
+                {status?.is_running && status?.current_step === 'retrying_failed'
+                  ? '🔄 Retrying failed images…'
+                  : status?.is_running ? '⏳ Classifying images…'
+                  : status?.current_step === 'completed' ? '✅ Classification Complete' : '⏸️ Stopped'}
               </h3>
               {status?.current_image && (
                 <p className="text-sm text-white/70 mt-0.5">Current: {status.current_image}</p>
@@ -274,27 +302,98 @@ export default function ArbiterClassifierTab() {
         </div>
       )}
 
-      {/* ─── Errors ──────────────────────────────── */}
-      {status?.errors?.length > 0 && (
+      {/* ─── Failed / Errored Images ──────────────── */}
+      {(failedCount > 0 || status?.errors?.length > 0) && (
         <div className="bg-red-50 border border-red-200 rounded-xl p-4">
-          <h3 className="font-semibold text-red-700 mb-2">⚠️ Errors ({status.errors.length})</h3>
-          <div className="max-h-32 overflow-y-auto space-y-1">
-            {status.errors.map((e, i) => (
-              <p key={i} className="text-sm text-red-600 font-mono">{e}</p>
-            ))}
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-semibold text-red-700">
+              ⚠️ Failed Images ({failedCount})
+              {status?.errors?.length > 0 && failedCount === 0 && ` — ${status.errors.length} errors in current run`}
+            </h3>
+            <div className="flex items-center gap-2">
+              {failedCount > 0 && (
+                <>
+                  <button
+                    onClick={() => { fetchFailed(); setShowFailed(v => !v); }}
+                    className="px-3 py-1.5 bg-white border border-red-300 text-red-700 text-xs font-medium rounded-lg hover:bg-red-50 transition cursor-pointer"
+                  >
+                    {showFailed ? 'Hide Details' : 'Show Details'}
+                  </button>
+                  <button
+                    onClick={retryFailed}
+                    disabled={retrying || status?.is_running}
+                    className="px-3 py-1.5 bg-red-600 text-white text-xs font-semibold rounded-lg hover:bg-red-700 transition disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                    {retrying ? 'Starting…' : `Retry ${failedCount} Failed`}
+                  </button>
+                </>
+              )}
+            </div>
           </div>
+
+          {/* Current run errors (in-memory) */}
+          {status?.errors?.length > 0 && (
+            <div className="max-h-24 overflow-y-auto space-y-1 mb-2">
+              {status.errors.slice(0, 10).map((e, i) => (
+                <p key={i} className="text-xs text-red-600 font-mono truncate">{e}</p>
+              ))}
+              {status.errors.length > 10 && (
+                <p className="text-xs text-red-500 italic">… and {status.errors.length - 10} more</p>
+              )}
+            </div>
+          )}
+
+          {/* Expandable failed images list from file */}
+          {showFailed && failedImages?.failed?.length > 0 && (
+            <div className="mt-3 border-t border-red-200 pt-3">
+              <div className="max-h-64 overflow-y-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-left text-red-700 border-b border-red-200">
+                      <th className="pb-1.5 font-semibold">Image</th>
+                      <th className="pb-1.5 font-semibold">Error</th>
+                      <th className="pb-1.5 font-semibold text-center">Retries</th>
+                      <th className="pb-1.5 font-semibold">Last Failed</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-red-100">
+                    {failedImages.failed.map((f, i) => (
+                      <tr key={i} className="text-red-800">
+                        <td className="py-1.5 font-mono font-medium truncate max-w-[180px]" title={f.image}>{f.image}</td>
+                        <td className="py-1.5 text-red-600 truncate max-w-[250px]" title={f.error}>{f.error}</td>
+                        <td className="py-1.5 text-center">
+                          <span className="px-1.5 py-0.5 bg-red-200 text-red-800 rounded-full text-[10px] font-bold">
+                            {f.retry_count || 1}
+                          </span>
+                        </td>
+                        <td className="py-1.5 text-red-500">
+                          {f.failed_at ? new Date(f.failed_at).toLocaleString() : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {/* ─── Summary Stats ─────────────────────── */}
       {summary.total_images > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <StatCard label="Total Classified" value={summary.total_images} icon="📊" />
           <StatCard label="Agreement Rate" value={`${summary.agreement_rate}%`}
             sub={`${summary.total_agreements} / ${summary.total_categories} categories`} icon="🤝" />
           <StatCard label="Arbiter Called" value={summary.total_arbiter_calls}
             sub={`for ${summary.total_categories - summary.total_agreements} disagreements`} icon="⚖️" />
           <StatCard label="Categories" value={CATEGORIES.length} sub="per image" icon="📋" />
+          <StatCard label="Failed" value={failedCount}
+            sub={failedCount > 0 ? 'can retry ↑' : 'none'}
+            icon={failedCount > 0 ? '❌' : '✅'} />
         </div>
       )}
 

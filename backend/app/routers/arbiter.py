@@ -38,6 +38,7 @@ FINAL_OUTPUT_DIR = PIPELINE_WORKSPACE / "04_final_output"
 RESULTS_DIR = ARBITER_DIR / "results"
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 RESULTS_FILE = RESULTS_DIR / "final_images_results.json"
+ERRORS_FILE = RESULTS_DIR / "failed_images.json"
 
 CATEGORIES = ["lighting", "viewpoint", "environment", "occlusion", "activity", "multipet"]
 
@@ -50,6 +51,7 @@ arbiter_status = {
     "agreements": 0,
     "arbiter_calls": 0,
     "errors": [],
+    "failed_count": 0,
     "started_at": None,
     "completed_at": None,
     "current_step": None,   # "idle" | "running" | "completed" | "failed"
@@ -252,6 +254,42 @@ Model B (OpenAI):
     }
 
 
+# ─── Helpers for error tracking ───────────────────────────────
+
+def _get_retry_count(failed_list, image_name):
+    """Get the highest retry_count for a given image in the failed list."""
+    for entry in reversed(failed_list):
+        if entry.get("image") == image_name:
+            return entry.get("retry_count", 0)
+    return 0
+
+
+def _save_results_and_errors(results, failed_images, cfg):
+    """Save both results and errors files atomically."""
+    save_data = {
+        "results": results,
+        "metadata": {
+            "gemini_model": cfg["gemini_model"],
+            "openai_model": cfg["openai_model"],
+            "arbiter_model": cfg["arbiter_model"],
+            "total_images": len(results),
+            "failed_count": len(failed_images),
+            "source": "04_final_output",
+            "last_updated": datetime.now().isoformat(),
+        },
+    }
+    with open(RESULTS_FILE, "w") as f:
+        json.dump(save_data, f, indent=2)
+
+    # Save failed images
+    errors_data = {
+        "failed": failed_images,
+        "last_updated": datetime.now().isoformat(),
+    }
+    with open(ERRORS_FILE, "w") as f:
+        json.dump(errors_data, f, indent=2)
+
+
 # ─── Background runner ───────────────────────────────────────
 def run_arbiter_background():
     global arbiter_status
@@ -316,11 +354,29 @@ def run_arbiter_background():
         results = existing.get("results", [])
         results_lock = threading.Lock()
 
+        # Load existing errors for resume
+        failed_images = []
+        if ERRORS_FILE.exists():
+            try:
+                with open(ERRORS_FILE) as f:
+                    existing_errors = json.load(f)
+                    failed_images = existing_errors.get("failed", [])
+            except json.JSONDecodeError:
+                pass
+
+        # Remove previously-failed images from the skip list (so they get retried)
+        previously_failed_names = {f["image"] for f in failed_images}
+
         if not to_process:
+            # Check if there are failed images that need to be tracked
             arbiter_status["is_running"] = False
             arbiter_status["current_step"] = "completed"
             arbiter_status["completed_at"] = datetime.now().isoformat()
+            arbiter_status["failed_count"] = len(failed_images)
             return
+
+        # Clear previously-failed entries that are being retried
+        failed_images = [f for f in failed_images if f["image"] not in {p.name for p in to_process}]
 
         def process_one(img_path):
             if _stop_event.is_set():
@@ -351,59 +407,43 @@ def run_arbiter_background():
                 with results_lock:
                     if "error" in result:
                         arbiter_status["errors"].append(f"{result['image']}: {result['error']}")
+                        # Persist to failed images list
+                        failed_images.append({
+                            "image": result["image"],
+                            "error": result["error"],
+                            "failed_at": datetime.now().isoformat(),
+                            "retry_count": _get_retry_count(failed_images, result["image"]) + 1,
+                        })
                     else:
                         results.append(result)
                         arbiter_status["agreements"] += result.get("agreement_count", 0)
                         arbiter_status["arbiter_calls"] += result.get("arbiter_calls", 0)
 
                     arbiter_status["processed"] = len(results)
+                    arbiter_status["failed_count"] = len(failed_images)
                     arbiter_status["current_image"] = result.get("image", "")
                     count += 1
 
                     # Save periodically
                     if count % batch_size == 0 or count == len(to_process):
-                        save_data = {
-                            "results": results,
-                            "metadata": {
-                                "gemini_model": cfg["gemini_model"],
-                                "openai_model": cfg["openai_model"],
-                                "arbiter_model": cfg["arbiter_model"],
-                                "total_images": len(results),
-                                "source": "04_final_output",
-                                "last_updated": datetime.now().isoformat(),
-                            },
-                        }
-                        with open(RESULTS_FILE, "w") as f:
-                            json.dump(save_data, f, indent=2)
-
+                        _save_results_and_errors(results, failed_images, cfg)
                         # Also save to database
                         _save_predictions_to_db(results[-batch_size:])
 
         # Final save
-        save_data = {
-            "results": results,
-            "metadata": {
-                "gemini_model": cfg["gemini_model"],
-                "openai_model": cfg["openai_model"],
-                "arbiter_model": cfg["arbiter_model"],
-                "total_images": len(results),
-                "source": "04_final_output",
-                "last_updated": datetime.now().isoformat(),
-            },
-        }
-        with open(RESULTS_FILE, "w") as f:
-            json.dump(save_data, f, indent=2)
+        _save_results_and_errors(results, failed_images, cfg)
 
         # Save all results to database (final pass to catch any missed)
         _save_predictions_to_db(results)
 
         arbiter_status["is_running"] = False
+        arbiter_status["failed_count"] = len(failed_images)
         if _stop_event.is_set():
             arbiter_status["current_step"] = "stopped"
         else:
             arbiter_status["current_step"] = "completed"
         arbiter_status["completed_at"] = datetime.now().isoformat()
-        print(f"[ARBITER] Classification complete. {len(results)} images processed.")
+        print(f"[ARBITER] Classification complete. {len(results)} succeeded, {len(failed_images)} failed.")
 
     except Exception as e:
         import traceback
@@ -551,8 +591,11 @@ def start_arbiter(
     if not FINAL_OUTPUT_DIR.exists():
         raise HTTPException(status_code=400, detail="No final output directory found. Run the master pipeline first.")
 
-    if request.reset and RESULTS_FILE.exists():
-        RESULTS_FILE.unlink()
+    if request.reset:
+        if RESULTS_FILE.exists():
+            RESULTS_FILE.unlink()
+        if ERRORS_FILE.exists():
+            ERRORS_FILE.unlink()
 
     # Reset status
     arbiter_status = {
@@ -563,6 +606,7 @@ def start_arbiter(
         "agreements": 0,
         "arbiter_calls": 0,
         "errors": [],
+        "failed_count": 0,
         "started_at": datetime.now().isoformat(),
         "completed_at": None,
         "current_step": "initializing",
@@ -640,12 +684,22 @@ def get_arbiter_results(
             "arbiter_count": arbiter_count,
         }
 
+    # Load failed count from errors file
+    failed_count = 0
+    if ERRORS_FILE.exists():
+        try:
+            with open(ERRORS_FILE) as ef:
+                failed_count = len(json.load(ef).get("failed", []))
+        except (json.JSONDecodeError, OSError):
+            pass
+
     summary = {
         "total_images": total_images,
         "total_agreements": total_agreements,
         "total_arbiter_calls": total_arbiter_calls,
         "total_categories": total_categories,
         "agreement_rate": round(total_agreements / total_categories * 100, 1) if total_categories > 0 else 0,
+        "failed_count": failed_count,
         "category_stats": cat_stats,
     }
 
@@ -710,3 +764,205 @@ def import_labels_to_db(
         "not_found_count": len(not_found),
         "not_found": not_found[:20],  # Show first 20
     }
+
+
+@router.get("/failed")
+def get_failed_images(admin: User = Depends(require_admin)):
+    """Return the list of images that failed/errored during classification."""
+    if not ERRORS_FILE.exists():
+        return {"failed": [], "total": 0}
+
+    try:
+        with open(ERRORS_FILE) as f:
+            data = json.load(f)
+    except json.JSONDecodeError:
+        return {"failed": [], "total": 0}
+
+    failed = data.get("failed", [])
+    return {
+        "failed": failed,
+        "total": len(failed),
+        "last_updated": data.get("last_updated"),
+    }
+
+
+@router.post("/retry-failed")
+def retry_failed_images(
+    background_tasks: BackgroundTasks,
+    admin: User = Depends(require_admin),
+):
+    """
+    Retry classification for images that previously failed/errored.
+    Removes them from the failed list and re-runs classification only on those images.
+    """
+    global arbiter_status
+
+    if arbiter_status["is_running"]:
+        raise HTTPException(status_code=400, detail="Arbiter pipeline is already running")
+
+    if not ERRORS_FILE.exists():
+        raise HTTPException(status_code=400, detail="No failed images to retry")
+
+    try:
+        with open(ERRORS_FILE) as f:
+            errors_data = json.load(f)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Could not read errors file")
+
+    failed = errors_data.get("failed", [])
+    if not failed:
+        raise HTTPException(status_code=400, detail="No failed images to retry")
+
+    failed_names = [f["image"] for f in failed]
+
+    # Reset status for retry run
+    arbiter_status = {
+        "is_running": True,
+        "current_image": None,
+        "processed": 0,
+        "total": len(failed_names),
+        "agreements": 0,
+        "arbiter_calls": 0,
+        "errors": [],
+        "failed_count": 0,
+        "started_at": datetime.now().isoformat(),
+        "completed_at": None,
+        "current_step": "retrying_failed",
+    }
+
+    background_tasks.add_task(run_retry_failed_background, failed_names)
+
+    return {
+        "message": f"Retrying {len(failed_names)} failed images",
+        "retrying": failed_names,
+        "status": arbiter_status,
+    }
+
+
+def run_retry_failed_background(failed_names: list):
+    """Background task: retry only the failed images."""
+    global arbiter_status
+    _stop_event.clear()
+
+    try:
+        config = load_arbiter_config()
+        cfg = {
+            "api_url": config.get("TURING_API_URL", "https://kong.turing.com/api/v2/chat"),
+            "headers": {
+                "Content-Type": "application/json",
+                "x-api-key": os.environ.get("TURING_API_KEY", config.get("TURING_API_KEY", "")),
+                "x-api-gw-key": config.get("TURING_GW_KEY", ""),
+                "Authorization": config.get("TURING_AUTH", ""),
+            },
+            "gemini_model": config.get("GEMINI_MODEL", "gemini-2.5-pro"),
+            "gemini_provider": config.get("GEMINI_PROVIDER", "google"),
+            "openai_model": config.get("OPENAI_MODEL", "gpt-4o"),
+            "openai_provider": config.get("OPENAI_PROVIDER", "openai"),
+            "arbiter_model": config.get("ARBITER_MODEL", "o3"),
+            "arbiter_provider": config.get("ARBITER_PROVIDER", "openai"),
+            "timeout": int(config.get("TIMEOUT_SECONDS", "120")),
+            "gemini_prompt": load_prompt("gemini_reasoning", config.get("GEMINI_PROMPT_VERSION", "1")),
+            "openai_prompt": load_prompt("openai_reasoning", config.get("OPENAI_PROMPT_VERSION", "1")),
+            "arbiter_prompt": load_prompt("arbiter", config.get("ARBITER_PROMPT_VERSION", "1")),
+        }
+        workers = int(config.get("PARALLEL_WORKERS", "5"))
+
+        # Resolve failed image names to actual file paths
+        supported_exts = {".jpg", ".jpeg", ".png"}
+        failed_set = set(failed_names)
+        to_retry = [
+            p for p in FINAL_OUTPUT_DIR.iterdir()
+            if p.is_file() and p.suffix.lower() in supported_exts and p.name in failed_set
+        ]
+
+        if not to_retry:
+            arbiter_status["is_running"] = False
+            arbiter_status["current_step"] = "completed"
+            arbiter_status["completed_at"] = datetime.now().isoformat()
+            arbiter_status["errors"].append("No matching image files found for retry")
+            return
+
+        # Load existing results to append successes
+        existing = {"results": [], "metadata": {}}
+        if RESULTS_FILE.exists():
+            try:
+                with open(RESULTS_FILE) as f:
+                    existing = json.load(f)
+            except json.JSONDecodeError:
+                pass
+
+        results = existing.get("results", [])
+        new_failed = []
+        results_lock = threading.Lock()
+
+        arbiter_status["total"] = len(to_retry)
+        arbiter_status["current_step"] = "retrying_failed"
+
+        def process_one(img_path):
+            if _stop_event.is_set():
+                return None
+            result = classify_single_image(str(img_path), cfg)
+            if "error" in result:
+                return {"image": img_path.name, "error": result["error"]}
+            return {
+                "image": img_path.name,
+                "predictions": {cat: result["predictions"][cat]["final"] for cat in CATEGORIES},
+                "agreement_count": result["agreement_count"],
+                "arbiter_calls": result["arbiter_calls"],
+                "details": result["predictions"],
+            }
+
+        succeeded_count = 0
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {executor.submit(process_one, p): p for p in to_retry}
+
+            for future in as_completed(futures):
+                if _stop_event.is_set():
+                    break
+
+                result = future.result()
+                if result is None:
+                    continue
+
+                with results_lock:
+                    if "error" in result:
+                        arbiter_status["errors"].append(f"{result['image']}: {result['error']}")
+                        new_failed.append({
+                            "image": result["image"],
+                            "error": result["error"],
+                            "failed_at": datetime.now().isoformat(),
+                            "retry_count": _get_retry_count([], result["image"]) + 1,
+                        })
+                    else:
+                        results.append(result)
+                        succeeded_count += 1
+                        arbiter_status["agreements"] += result.get("agreement_count", 0)
+                        arbiter_status["arbiter_calls"] += result.get("arbiter_calls", 0)
+
+                    arbiter_status["processed"] = succeeded_count + len(new_failed)
+                    arbiter_status["failed_count"] = len(new_failed)
+                    arbiter_status["current_image"] = result.get("image", "")
+
+        # Save results and errors
+        _save_results_and_errors(results, new_failed, cfg)
+
+        # Save successful retries to database
+        if succeeded_count > 0:
+            _save_predictions_to_db(results[-succeeded_count:])
+
+        arbiter_status["is_running"] = False
+        arbiter_status["failed_count"] = len(new_failed)
+        if _stop_event.is_set():
+            arbiter_status["current_step"] = "stopped"
+        else:
+            arbiter_status["current_step"] = "completed"
+        arbiter_status["completed_at"] = datetime.now().isoformat()
+        print(f"[ARBITER RETRY] {succeeded_count} succeeded, {len(new_failed)} still failing.")
+
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        arbiter_status["is_running"] = False
+        arbiter_status["current_step"] = "failed"
+        arbiter_status["completed_at"] = datetime.now().isoformat()
+        arbiter_status["errors"].append(f"Exception: {str(e)}")
