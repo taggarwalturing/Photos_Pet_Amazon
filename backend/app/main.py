@@ -124,7 +124,12 @@ def _migrate():
                 conn.execute(text("ALTER TABLE images ADD COLUMN marked_ai_by INTEGER REFERENCES users(id)"))
             if "marked_ai_at" not in existing_img:
                 conn.execute(text("ALTER TABLE images ADD COLUMN marked_ai_at TIMESTAMPTZ"))
-        print("[MIGRATE] Checked/added improper and AI-generated columns to images table")
+            # Add arbiter classifier columns
+            if "arbiter_labels" not in existing_img:
+                conn.execute(text("ALTER TABLE images ADD COLUMN arbiter_labels JSON"))
+            if "arbiter_classified_at" not in existing_img:
+                conn.execute(text("ALTER TABLE images ADD COLUMN arbiter_classified_at TIMESTAMPTZ"))
+        print("[MIGRATE] Checked/added improper, AI-generated, and arbiter columns to images table")
 
 _migrate()
 

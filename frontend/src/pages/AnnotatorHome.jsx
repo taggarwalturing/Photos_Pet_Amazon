@@ -452,8 +452,13 @@ export default function AnnotatorHome() {
                           )}
                         </div>
                         
-                        {/* Filename - top right */}
-                        <div className="absolute top-3 right-3 max-w-[50%]">
+                        {/* Filename + AI badge - top right */}
+                        <div className="absolute top-3 right-3 flex items-center gap-1.5 max-w-[60%]">
+                          {img.has_ai_labels && !isComplete && (
+                            <span className="px-1.5 py-0.5 bg-purple-600/90 text-white text-[10px] font-bold rounded-md backdrop-blur-sm shrink-0" title="AI-predicted labels pre-filled">
+                              🤖 AI
+                            </span>
+                          )}
                           <span className="px-2 py-1 bg-black/50 text-white text-[10px] font-medium rounded-lg backdrop-blur-sm truncate block">
                             {img.filename}
                           </span>

@@ -130,6 +130,23 @@ export default function ArbiterClassifierTab() {
     }
   };
 
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
+
+  const importLabels = async () => {
+    if (!confirm('This will import AI-predicted labels into the database. Annotators will see them as pre-filled suggestions. Continue?')) return;
+    setImporting(true);
+    setImportResult(null);
+    try {
+      const res = await api.post('/admin/arbiter/import-labels');
+      setImportResult(res.data);
+    } catch (e) {
+      alert(e.response?.data?.detail || 'Failed to import labels');
+    } finally {
+      setImporting(false);
+    }
+  };
+
   // ─── Derived data ─────────────────────────────────────
   const summary = results?.summary || {};
   const catStats = summary.category_stats || {};
@@ -171,6 +188,14 @@ export default function ArbiterClassifierTab() {
                 className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
               Reset previous results
             </label>
+            {results?.total > 0 && (
+              <button onClick={importLabels} disabled={importing}
+                className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition flex items-center gap-2 disabled:opacity-50 cursor-pointer"
+                title="Import predictions as initial labels for annotators">
+                <span>🤖</span>
+                {importing ? 'Importing…' : 'Import Labels to DB'}
+              </button>
+            )}
             <button onClick={startPipeline} disabled={starting || !config?.available_images}
               className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition flex items-center gap-2 disabled:opacity-50 cursor-pointer">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -182,6 +207,28 @@ export default function ArbiterClassifierTab() {
           </div>
         )}
       </div>
+
+      {/* ─── Import result banner ─────────────────── */}
+      {importResult && (
+        <div className="rounded-xl p-4 bg-purple-50 border border-purple-200 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🤖</span>
+            <div>
+              <p className="text-sm font-semibold text-purple-900">{importResult.message}</p>
+              {importResult.not_found_count > 0 && (
+                <p className="text-xs text-purple-600 mt-0.5">
+                  {importResult.not_found_count} images not found in DB (not yet imported to pipeline)
+                </p>
+              )}
+            </div>
+          </div>
+          <button onClick={() => setImportResult(null)} className="text-purple-400 hover:text-purple-600 cursor-pointer">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+      )}
 
       {/* ─── Config cards ──────────────────────────── */}
       {config && (

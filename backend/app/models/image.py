@@ -50,6 +50,10 @@ class Image(Base):
     manually_blurred_at = Column(DateTime(timezone=True), nullable=True)
     annotated_blur_url = Column(Text, nullable=True)  # URL to manually blurred version
 
+    # Arbiter classifier AI-predicted labels (pre-filled for annotators)
+    arbiter_labels = Column(JSON, nullable=True)  # {"lighting": "dusk_dawn", "viewpoint": "ground_level", ...}
+    arbiter_classified_at = Column(DateTime(timezone=True), nullable=True)
+
     # Relationships
     annotations = relationship("Annotation", back_populates="image")
     improper_marker = relationship("User", foreign_keys=[marked_improper_by])

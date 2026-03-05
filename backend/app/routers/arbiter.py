@@ -24,9 +24,10 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
-from app.database import get_db
+from app.database import get_db, SessionLocal
 from app.dependencies import require_admin
 from app.models.user import User
+from app.models.image import Image as ImageModel
 
 router = APIRouter(prefix="/admin/arbiter", tags=["Arbiter Classifier"])
 
@@ -375,6 +376,9 @@ def run_arbiter_background():
                         with open(RESULTS_FILE, "w") as f:
                             json.dump(save_data, f, indent=2)
 
+                        # Also save to database
+                        _save_predictions_to_db(results[-batch_size:])
+
         # Final save
         save_data = {
             "results": results,
@@ -389,6 +393,9 @@ def run_arbiter_background():
         }
         with open(RESULTS_FILE, "w") as f:
             json.dump(save_data, f, indent=2)
+
+        # Save all results to database (final pass to catch any missed)
+        _save_predictions_to_db(results)
 
         arbiter_status["is_running"] = False
         if _stop_event.is_set():
@@ -405,6 +412,86 @@ def run_arbiter_background():
         arbiter_status["current_step"] = "failed"
         arbiter_status["completed_at"] = datetime.now().isoformat()
         arbiter_status["errors"].append(f"Exception: {str(e)}")
+
+
+# ─── Save predictions to database ─────────────────────────────
+
+# Mapping: arbiter short labels → option labels in the database
+ARBITER_TO_OPTION_LABEL = {
+    # lighting
+    "dusk_dawn": "Dusk-dawn lighting",
+    "harsh_sunlight": "Harsh outdoor sunlight with shadows",
+    "low_light": "Low light conditions",
+    "well_lit": "Well-lit conditions (typical)",
+    # viewpoint
+    "front_eye_level": "Front-facing at eye level (typical)",
+    "ground_level": "Ground-level view",
+    "no_head": "No head showing",
+    "head_only": "Partial view (head only)",
+    "top_down": "Top-down view",
+    # environment
+    "car_carrier": "In car-carrier",
+    "indoor": "Indoor setting (typical)",
+    "outdoor_dirt": "Outdoor dirt road",
+    "snow": "Snow environment",
+    "vet_clinic": "Vet clinic",
+    "yard_complex": "Yard with a complex background",
+    # occlusion
+    "behind_furniture": "Behind furniture (face only)",
+    "full_body": "Full-body, unobstructed (typical)",
+    "under_blanket": "Partially hidden under a blanket",
+    "peeking_box": "Peeking out of box-carrier",
+    "toy_obscuring": "Toy obscuring part of body",
+    # activity
+    "eating_drinking": "Eating-drinking",
+    "jumping": "Jumping to catch toy",
+    "playing": "Playing with another pet",
+    "running": "Running with motion blur",
+    "sitting_posed": "Sitting still-posed (typical)",
+    "sleeping": "Sleeping-curled up",
+    # multipet
+    "pet_with_lookalike": "Pet with breed lookalike",
+    "single_pet": "Single pet (typical)",
+    "three_same": "Three pets of same breed",
+    "two_similar": "Two similar-looking pets together",
+    # fallback
+    "None": "None of the Above",
+}
+
+# Mapping: arbiter category name → DB category name
+ARBITER_CAT_TO_DB_CAT = {
+    "lighting": "Lighting Variation",
+    "viewpoint": "Angle & Perspective Variation",
+    "environment": "Environmental Context Variation",
+    "occlusion": "Occlusion & Partial Visibility",
+    "activity": "Activity & Motion",
+    "multipet": "Multi-Pet Disambiguation",
+}
+
+
+def _save_predictions_to_db(results_batch):
+    """Save arbiter predictions to Image.arbiter_labels in the database."""
+    try:
+        db = SessionLocal()
+        now = datetime.now()
+        for result in results_batch:
+            filename = result.get("image")
+            predictions = result.get("predictions", {})
+            if not filename or not predictions:
+                continue
+            image = db.query(ImageModel).filter(ImageModel.filename == filename).first()
+            if image:
+                image.arbiter_labels = predictions
+                image.arbiter_classified_at = now
+        db.commit()
+        db.close()
+    except Exception as e:
+        print(f"[ARBITER] Error saving to DB: {e}")
+        try:
+            db.rollback()
+            db.close()
+        except Exception:
+            pass
 
 
 # ─── Request / Response Models ────────────────────────────────
@@ -575,4 +662,51 @@ def get_arbiter_results(
         "page": page,
         "page_size": page_size,
         "summary": summary,
+    }
+
+
+@router.post("/import-labels")
+def import_labels_to_db(
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """
+    Import arbiter predictions from results JSON into the Image table.
+    Stores predictions as arbiter_labels so annotators see them as pre-filled suggestions.
+    """
+    if not RESULTS_FILE.exists():
+        raise HTTPException(status_code=404, detail="No results file found. Run the classifier first.")
+
+    with open(RESULTS_FILE) as f:
+        data = json.load(f)
+
+    results = data.get("results", [])
+    if not results:
+        raise HTTPException(status_code=400, detail="Results file is empty.")
+
+    now = datetime.now()
+    updated = 0
+    not_found = []
+
+    for result in results:
+        filename = result.get("image")
+        predictions = result.get("predictions", {})
+        if not filename or not predictions:
+            continue
+
+        image = db.query(ImageModel).filter(ImageModel.filename == filename).first()
+        if image:
+            image.arbiter_labels = predictions
+            image.arbiter_classified_at = now
+            updated += 1
+        else:
+            not_found.append(filename)
+
+    db.commit()
+
+    return {
+        "message": f"Imported labels for {updated} images",
+        "updated": updated,
+        "not_found_count": len(not_found),
+        "not_found": not_found[:20],  # Show first 20
     }

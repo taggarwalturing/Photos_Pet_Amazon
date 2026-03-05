@@ -11,23 +11,40 @@ const getImageUrl = (imageId) => {
   return `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/images/proxy/${imageId}?t=${Date.now()}`;
 };
 
-function CategoryDropdown({ category, annotation, completedByOther, onChange, disabled }) {
+function CategoryDropdown({ category, annotation, completedByOther, onChange, disabled, aiSuggestion }) {
   const [isOpen, setIsOpen] = useState(false);
-  // Single selection - store only one option ID (or null)
-  const [selectedOption, setSelectedOption] = useState(
-    annotation?.selected_option_ids?.[0] || null
+
+  // Determine initial selection: existing annotation > AI suggestion (for new images)
+  const getInitialSelection = () => {
+    if (annotation?.selected_option_ids?.[0]) return annotation.selected_option_ids[0];
+    // Pre-fill AI suggestion if no human annotation exists yet
+    if (aiSuggestion?.option_id && !annotation) return aiSuggestion.option_id;
+    return null;
+  };
+
+  const [selectedOption, setSelectedOption] = useState(getInitialSelection);
+  const [aiPreFilled, setAiPreFilled] = useState(
+    !annotation && aiSuggestion?.option_id ? true : false
   );
 
   useEffect(() => {
-    setSelectedOption(annotation?.selected_option_ids?.[0] || null);
-  }, [annotation]);
+    if (annotation?.selected_option_ids?.[0]) {
+      setSelectedOption(annotation.selected_option_ids[0]);
+      setAiPreFilled(false);
+    } else if (!annotation && aiSuggestion?.option_id) {
+      setSelectedOption(aiSuggestion.option_id);
+      setAiPreFilled(true);
+    } else {
+      setSelectedOption(null);
+      setAiPreFilled(false);
+    }
+  }, [annotation, aiSuggestion]);
 
   const selectOption = (optionId) => {
     if (disabled) return;
-    // Single selection - clicking the same option deselects it, otherwise select the new one
     const newSelected = selectedOption === optionId ? null : optionId;
     setSelectedOption(newSelected);
-    // Still pass as array for API compatibility
+    setAiPreFilled(false); // Human made a selection, no longer AI pre-filled
     onChange(category.id, { selected_option_ids: newSelected ? [newSelected] : [] });
   };
 
@@ -40,6 +57,7 @@ function CategoryDropdown({ category, annotation, completedByOther, onChange, di
   const isCompleted = annotation?.status === 'completed' || completedByOther;
   const hasSelection = selectedOption !== null;
   const selectedLabel = category.options.find((o) => o.id === selectedOption)?.label || null;
+  const isAiSuggested = (optId) => aiSuggestion?.option_id === optId;
 
   return (
     <div className={`border border-gray-200 rounded-xl overflow-hidden bg-white shadow-sm transition-all hover:shadow-md ${disabled ? 'opacity-50' : ''}`}>
@@ -56,10 +74,17 @@ function CategoryDropdown({ category, annotation, completedByOther, onChange, di
             }`}
           />
           <div className="text-left">
-            <h3 className="font-medium text-gray-900 text-sm">{category.name}</h3>
+            <h3 className="font-medium text-gray-900 text-sm">
+              {category.name}
+              {aiSuggestion && (
+                <span className="ml-2 inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-purple-100 text-purple-700 text-[10px] font-semibold rounded-full align-middle">
+                  🤖 AI
+                </span>
+              )}
+            </h3>
             {selectedLabel ? (
-              <p className="text-xs text-gray-500 mt-0.5 truncate max-w-xs">
-                {selectedLabel}
+              <p className={`text-xs mt-0.5 truncate max-w-xs ${aiPreFilled ? 'text-purple-600' : 'text-gray-500'}`}>
+                {aiPreFilled ? '🤖 ' : ''}{selectedLabel}
               </p>
             ) : completedByOther ? (
               <p className="text-xs text-green-600 mt-0.5">Completed by another annotator</p>
@@ -69,7 +94,10 @@ function CategoryDropdown({ category, annotation, completedByOther, onChange, di
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {hasSelection && (
+          {aiPreFilled && (
+            <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 text-[10px] font-bold rounded-full">AI</span>
+          )}
+          {hasSelection && !aiPreFilled && (
             <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded-full">✓</span>
           )}
           <svg
@@ -90,10 +118,20 @@ function CategoryDropdown({ category, annotation, completedByOther, onChange, di
               Completed by another annotator. You can still add your own annotation.
             </p>
           ) : null}
+
+          {aiSuggestion && (
+            <div className="mb-2 px-2.5 py-1.5 bg-purple-50 border border-purple-200 rounded-lg">
+              <p className="text-[11px] text-purple-700 font-medium">
+                🤖 AI predicted: <span className="font-semibold">{aiSuggestion.label}</span>
+                <span className="text-purple-400 ml-1">— Validate or correct below</span>
+              </p>
+            </div>
+          )}
           
           <div className="space-y-2">
             {category.options.map((opt) => {
               const isSelected = selectedOption === opt.id;
+              const isAiPick = isAiSuggested(opt.id);
               return (
                 <div
                   key={opt.id}
@@ -105,8 +143,12 @@ function CategoryDropdown({ category, annotation, completedByOther, onChange, di
                   className={`
                     flex items-center gap-3 px-3 py-2.5 rounded-lg border-2 cursor-pointer transition-all select-none
                     ${disabled ? 'cursor-not-allowed' : ''}
-                    ${isSelected
+                    ${isSelected && aiPreFilled
+                      ? 'border-purple-400 bg-purple-50 text-purple-900'
+                      : isSelected
                       ? 'border-indigo-500 bg-indigo-50 text-indigo-900'
+                      : isAiPick
+                      ? 'border-purple-200 hover:border-purple-300 bg-white text-gray-700'
                       : 'border-gray-200 hover:border-gray-300 bg-white text-gray-700'
                     }
                   `}
@@ -115,17 +157,24 @@ function CategoryDropdown({ category, annotation, completedByOther, onChange, di
                   <div
                     className={`
                       w-5 h-5 rounded-full flex items-center justify-center border-2 shrink-0 transition-all
-                      ${isSelected ? 'border-indigo-500' : 'border-gray-300'}
+                      ${isSelected && aiPreFilled ? 'border-purple-500' : isSelected ? 'border-indigo-500' : 'border-gray-300'}
                     `}
                   >
                     {isSelected && (
-                      <div className="w-2.5 h-2.5 rounded-full bg-indigo-500" />
+                      <div className={`w-2.5 h-2.5 rounded-full ${aiPreFilled ? 'bg-purple-500' : 'bg-indigo-500'}`} />
                     )}
                   </div>
                   <span className="text-sm font-medium flex-1">{opt.label}</span>
-                  {opt.is_typical && (
-                    <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">typical</span>
-                  )}
+                  <div className="flex items-center gap-1.5">
+                    {isAiPick && (
+                      <span className="text-[10px] bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded-full font-medium">
+                        🤖 AI pick
+                      </span>
+                    )}
+                    {opt.is_typical && (
+                      <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">typical</span>
+                    )}
+                  </div>
                 </div>
               );
             })}
@@ -394,6 +443,11 @@ export default function ImageAnnotationPage() {
           if ((cat.annotation.rework_time_seconds || 0) > maxReworkSavedTime) {
             maxReworkSavedTime = cat.annotation.rework_time_seconds || 0;
           }
+        } else if (cat.ai_suggestion?.option_id) {
+          // Pre-fill from AI suggestion if no human annotation exists
+          initial[cat.id] = {
+            selected_option_ids: [cat.ai_suggestion.option_id],
+          };
         }
       });
       setPendingChanges(initial);
@@ -964,6 +1018,7 @@ export default function ImageAnnotationPage() {
                   completedByOther={cat.completed_by_other}
                   onChange={handleCategoryChange}
                   disabled={!canEdit}
+                  aiSuggestion={cat.ai_suggestion}
                 />
               ))}
             </div>

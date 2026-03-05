@@ -20,6 +20,52 @@ from app.utils.blur import blur_image_regions
 import os
 
 
+# Mapping: DB category name → arbiter category key
+_DB_CAT_TO_ARBITER = {
+    "Lighting Variation": "lighting",
+    "Angle & Perspective Variation": "viewpoint",
+    "Environmental Context Variation": "environment",
+    "Occlusion & Partial Visibility": "occlusion",
+    "Activity & Motion": "activity",
+    "Multi-Pet Disambiguation": "multipet",
+}
+
+# Mapping: arbiter short label → option label text in the database
+_ARBITER_LABEL_TO_OPTION = {
+    "dusk_dawn": "Dusk-dawn lighting",
+    "harsh_sunlight": "Harsh outdoor sunlight with shadows",
+    "low_light": "Low light conditions",
+    "well_lit": "Well-lit conditions (typical)",
+    "front_eye_level": "Front-facing at eye level (typical)",
+    "ground_level": "Ground-level view",
+    "no_head": "No head showing",
+    "head_only": "Partial view (head only)",
+    "top_down": "Top-down view",
+    "car_carrier": "In car-carrier",
+    "indoor": "Indoor setting (typical)",
+    "outdoor_dirt": "Outdoor dirt road",
+    "snow": "Snow environment",
+    "vet_clinic": "Vet clinic",
+    "yard_complex": "Yard with a complex background",
+    "behind_furniture": "Behind furniture (face only)",
+    "full_body": "Full-body, unobstructed (typical)",
+    "under_blanket": "Partially hidden under a blanket",
+    "peeking_box": "Peeking out of box-carrier",
+    "toy_obscuring": "Toy obscuring part of body",
+    "eating_drinking": "Eating-drinking",
+    "jumping": "Jumping to catch toy",
+    "playing": "Playing with another pet",
+    "running": "Running with motion blur",
+    "sitting_posed": "Sitting still-posed (typical)",
+    "sleeping": "Sleeping-curled up",
+    "pet_with_lookalike": "Pet with breed lookalike",
+    "single_pet": "Single pet (typical)",
+    "three_same": "Three pets of same breed",
+    "two_similar": "Two similar-looking pets together",
+    "None": "None of the Above",
+}
+
+
 def _check_original_exists(image: Image) -> bool:
     """Check if the original (unblurred) image file actually exists on disk with content."""
     backend_dir = os.path.join(os.path.dirname(__file__), "..", "..")
@@ -363,6 +409,7 @@ def list_images_for_annotator(
             "improper_reason": img.improper_reason,
             "has_rework": has_rework,  # True if any annotation needs rework
             "is_human_validated": is_human_validated,  # True if validated by human (locked)
+            "has_ai_labels": bool(img.arbiter_labels),  # True if arbiter predictions exist
         })
     
     # Paginate
@@ -462,6 +509,9 @@ def get_image_for_annotation(
     )
     completed_by_others_cat_ids = {a.category_id for a in completed_by_others}
     
+    # Build option label → option id lookup for AI suggestion mapping
+    arbiter_labels = image.arbiter_labels or {}  # e.g. {"lighting": "dusk_dawn", ...}
+
     # Build category data with annotations
     categories_data = []
     for cat in categories:
@@ -480,6 +530,23 @@ def get_image_for_annotation(
                 "is_rework": my_ann.is_rework or False,
                 "review_status": my_ann.review_status,
             }
+
+        # Resolve AI suggestion from arbiter labels
+        ai_suggestion = None
+        arbiter_cat_key = _DB_CAT_TO_ARBITER.get(cat.name)
+        if arbiter_cat_key and arbiter_cat_key in arbiter_labels:
+            arbiter_pred = arbiter_labels[arbiter_cat_key]
+            option_label = _ARBITER_LABEL_TO_OPTION.get(arbiter_pred)
+            if option_label:
+                # Find matching option id
+                for o in cat.options:
+                    if o.label == option_label:
+                        ai_suggestion = {
+                            "option_id": o.id,
+                            "label": o.label,
+                            "arbiter_label": arbiter_pred,
+                        }
+                        break
         
         categories_data.append({
             "id": cat.id,
@@ -491,6 +558,7 @@ def get_image_for_annotation(
             ],
             "annotation": annotation_data,
             "completed_by_other": cat.id in completed_by_others_cat_ids and not my_ann,
+            "ai_suggestion": ai_suggestion,
         })
     
     # Get prev/next image IDs for navigation (within assigned images only)
