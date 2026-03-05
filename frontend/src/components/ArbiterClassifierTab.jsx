@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, Fragment } from 'react';
 import api from '../api/client';
 
 const CATEGORIES = ['lighting', 'viewpoint', 'environment', 'occlusion', 'activity', 'multipet'];
@@ -543,6 +543,11 @@ export default function ArbiterClassifierTab() {
         </div>
       )}
 
+      {/* ─── Prediction Tracking Table ────────── */}
+      {summary.total_images > 0 && (
+        <PredictionTrackingSection />
+      )}
+
       {/* Empty state */}
       {(!results || results.total === 0) && !status?.is_running && (
         <div className="py-16 text-center">
@@ -561,6 +566,309 @@ export default function ArbiterClassifierTab() {
     </div>
   );
 }
+
+/* ───────────────────────────────────────────────────────────── */
+/* Prediction Tracking Section                                  */
+/* ───────────────────────────────────────────────────────────── */
+
+function PredictionTrackingSection() {
+  const [tracking, setTracking] = useState(null);
+  const [trackingLoading, setTrackingLoading] = useState(true);
+  const [trackingPage, setTrackingPage] = useState(1);
+  const [trackingFilter, setTrackingFilter] = useState(null); // matched | mismatched | corrected | pending
+  const [trackingCategory, setTrackingCategory] = useState(null);
+  const [trackingSearch, setTrackingSearch] = useState('');
+  const [expandedRow, setExpandedRow] = useState(null);
+  const TRACKING_PAGE_SIZE = 15;
+
+  const fetchTracking = async () => {
+    try {
+      const params = { page: trackingPage, page_size: TRACKING_PAGE_SIZE };
+      if (trackingFilter) params.filter_status = trackingFilter;
+      if (trackingCategory) params.category = trackingCategory;
+      if (trackingSearch) params.search = trackingSearch;
+      const res = await api.get('/admin/arbiter/prediction-tracking', { params });
+      setTracking(res.data);
+    } catch (e) {
+      console.error('Failed to fetch prediction tracking', e);
+    } finally {
+      setTrackingLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchTracking();
+  }, [trackingPage, trackingFilter, trackingCategory, trackingSearch]);
+
+  const tSummary = tracking?.summary || {};
+  const rows = tracking?.rows || [];
+
+  const STATUS_BADGE = {
+    matched: { bg: 'bg-green-100 text-green-700 border-green-200', icon: '✅', label: 'Matched' },
+    mismatched: { bg: 'bg-red-100 text-red-700 border-red-200', icon: '❌', label: 'Mismatched' },
+    corrected: { bg: 'bg-amber-100 text-amber-700 border-amber-200', icon: '✏️', label: 'Corrected' },
+    pending: { bg: 'bg-gray-100 text-gray-500 border-gray-200', icon: '⏳', label: 'Pending' },
+  };
+
+  const CELL_STATUS = {
+    matched: 'bg-green-50 text-green-700 border-green-200',
+    mismatched: 'bg-red-50 text-red-700 border-red-200',
+    pending: 'bg-gray-50 text-gray-400 border-gray-200',
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* Section header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+            📋 Prediction Tracking
+            <span className="text-sm font-normal text-gray-500">AI Predictions vs Annotator Decisions</span>
+          </h2>
+        </div>
+        <button onClick={fetchTracking} className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 transition cursor-pointer">
+          🔄 Refresh
+        </button>
+      </div>
+
+      {/* Summary cards */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="bg-white rounded-xl border border-gray-200 p-3">
+          <p className="text-[11px] text-gray-400 font-medium">AI Predicted</p>
+          <p className="text-xl font-bold text-gray-900">{tSummary.total_predicted || 0}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-3">
+          <p className="text-[11px] text-gray-400 font-medium">Annotator Reviewed</p>
+          <p className="text-xl font-bold text-gray-900">{tSummary.total_annotated || 0}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-green-200 p-3">
+          <p className="text-[11px] text-green-600 font-medium">✅ Matched</p>
+          <p className="text-xl font-bold text-green-700">{tSummary.total_matched || 0}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-red-200 p-3">
+          <p className="text-[11px] text-red-500 font-medium">❌ Corrected</p>
+          <p className="text-xl font-bold text-red-700">{tSummary.total_mismatched || 0}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-indigo-200 p-3">
+          <p className="text-[11px] text-indigo-500 font-medium">🎯 Match Rate</p>
+          <p className="text-xl font-bold text-indigo-700">{tSummary.match_rate || 0}%</p>
+        </div>
+      </div>
+
+      {/* Per-category accuracy bars */}
+      {tSummary.per_category && Object.keys(tSummary.per_category).length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <h3 className="text-sm font-semibold text-gray-700 mb-3">Per-Category Accuracy</h3>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {CATEGORIES.map(cat => {
+              const stats = tSummary.per_category[cat] || {};
+              const total = (stats.matched || 0) + (stats.mismatched || 0);
+              const pct = total > 0 ? Math.round((stats.matched / total) * 100) : 0;
+              const isActive = trackingCategory === cat;
+              return (
+                <div key={cat}
+                  onClick={() => { setTrackingCategory(isActive ? null : cat); setTrackingPage(1); }}
+                  className={`rounded-lg border p-2.5 cursor-pointer transition-all ${
+                    isActive ? 'border-indigo-400 ring-2 ring-indigo-200 bg-indigo-50' : 'border-gray-200 hover:border-gray-300'
+                  }`}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-xs font-medium text-gray-700">{CATEGORY_ICONS[cat]} {formatLabel(cat)}</span>
+                    <span className={`text-xs font-bold ${
+                      pct >= 80 ? 'text-green-600' : pct >= 50 ? 'text-amber-600' : total === 0 ? 'text-gray-400' : 'text-red-600'
+                    }`}>{total > 0 ? `${pct}%` : '—'}</span>
+                  </div>
+                  <div className="w-full bg-gray-100 rounded-full h-1.5">
+                    <div className={`h-1.5 rounded-full transition-all ${
+                      pct >= 80 ? 'bg-green-500' : pct >= 50 ? 'bg-amber-500' : 'bg-red-500'
+                    }`} style={{ width: `${pct}%` }} />
+                  </div>
+                  <div className="flex justify-between text-[10px] text-gray-400 mt-1">
+                    <span>{stats.matched || 0} matched</span>
+                    <span>{stats.mismatched || 0} corrected</span>
+                    <span>{stats.pending || 0} pending</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Filters + search */}
+      <div className="flex flex-wrap items-center gap-2">
+        {[null, 'matched', 'corrected', 'pending'].map(f => (
+          <button key={f || 'all'}
+            onClick={() => { setTrackingFilter(f); setTrackingPage(1); }}
+            className={`px-3 py-1.5 text-xs font-medium rounded-full border transition cursor-pointer ${
+              trackingFilter === f
+                ? 'bg-indigo-600 text-white border-indigo-600'
+                : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'
+            }`}>
+            {f === null ? 'All' : f === 'matched' ? '✅ Matched' : f === 'corrected' ? '✏️ Corrected' : '⏳ Pending'}
+          </button>
+        ))}
+        <div className="flex-1" />
+        <input
+          type="text"
+          placeholder="Search by filename…"
+          value={trackingSearch}
+          onChange={e => { setTrackingSearch(e.target.value); setTrackingPage(1); }}
+          className="px-3 py-1.5 text-xs border border-gray-300 rounded-lg w-48 focus:ring-2 focus:ring-indigo-200 focus:border-indigo-400 outline-none"
+        />
+      </div>
+
+      {/* Table */}
+      {trackingLoading ? (
+        <div className="py-8 text-center text-gray-400">Loading tracking data…</div>
+      ) : rows.length === 0 ? (
+        <div className="py-8 text-center text-gray-400">
+          {tSummary.total_predicted > 0
+            ? 'No results match the current filter.'
+            : 'No predictions imported yet. Run the classifier and import labels first.'}
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="px-4 py-3 text-left font-semibold text-gray-600 w-[180px]">Image</th>
+                  {CATEGORIES.map(cat => (
+                    <th key={cat} className="px-2 py-3 text-center font-semibold text-gray-600 text-xs">
+                      {CATEGORY_ICONS[cat]}<br/>{formatLabel(cat)}
+                    </th>
+                  ))}
+                  <th className="px-3 py-3 text-center font-semibold text-gray-600">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {rows.map((row) => {
+                  const badge = STATUS_BADGE[row.overall_status] || STATUS_BADGE.pending;
+                  const isExpanded = expandedRow === row.image_id;
+                  return (
+                    <Fragment key={row.image_id}>
+                      <tr className="hover:bg-gray-50/50 transition-colors cursor-pointer"
+                        onClick={() => setExpandedRow(isExpanded ? null : row.image_id)}>
+                        <td className="px-4 py-2.5">
+                          <span className="font-medium text-gray-900 truncate block max-w-[180px]" title={row.filename}>
+                            {row.filename}
+                          </span>
+                        </td>
+                        {CATEGORIES.map(cat => {
+                          const catData = row.categories?.find(c => c.category_key === cat);
+                          const cellStatus = catData?.status || 'pending';
+                          const cellClass = CELL_STATUS[cellStatus] || CELL_STATUS.pending;
+                          return (
+                            <td key={cat} className="px-2 py-2.5 text-center">
+                              {catData?.status === 'matched' ? (
+                                <span className={`inline-block px-1.5 py-0.5 text-[10px] rounded border ${cellClass} font-medium`}>
+                                  ✅ {formatLabel(catData.ai_prediction_short || '')}
+                                </span>
+                              ) : catData?.status === 'mismatched' ? (
+                                <span className={`inline-block px-1.5 py-0.5 text-[10px] rounded border ${cellClass} font-medium`}>
+                                  ✏️ {formatLabel(catData.human_label?.split(' ')[0] || '')}
+                                </span>
+                              ) : (
+                                <span className="inline-block px-1.5 py-0.5 text-[10px] rounded border border-gray-200 text-gray-400">
+                                  ⏳
+                                </span>
+                              )}
+                            </td>
+                          );
+                        })}
+                        <td className="px-3 py-2.5 text-center">
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full border ${badge.bg}`}>
+                            {badge.icon} {row.matched_count}/{row.matched_count + row.mismatched_count + row.pending_count}
+                          </span>
+                        </td>
+                      </tr>
+
+                      {/* Expanded detail row */}
+                      {isExpanded && (
+                        <tr className="bg-indigo-50/30">
+                          <td colSpan={CATEGORIES.length + 2} className="px-4 py-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                              {row.categories?.map((catData) => (
+                                <div key={catData.category_key}
+                                  className={`rounded-lg border p-3 text-sm ${
+                                    catData.status === 'matched' ? 'border-green-200 bg-green-50/50' :
+                                    catData.status === 'mismatched' ? 'border-red-200 bg-red-50/50' :
+                                    'border-gray-200 bg-white'
+                                  }`}>
+                                  <div className="flex items-center justify-between mb-2">
+                                    <span className="font-semibold text-gray-700 text-xs">
+                                      {CATEGORY_ICONS[catData.category_key]} {catData.category_name}
+                                    </span>
+                                    <span className={`px-1.5 py-0.5 text-[10px] rounded-full font-medium ${
+                                      catData.status === 'matched' ? 'bg-green-100 text-green-700' :
+                                      catData.status === 'mismatched' ? 'bg-red-100 text-red-700' :
+                                      'bg-gray-100 text-gray-500'
+                                    }`}>
+                                      {catData.status === 'matched' ? '✅ Match' : catData.status === 'mismatched' ? '❌ Corrected' : '⏳ Pending'}
+                                    </span>
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[10px] text-gray-400 w-14 shrink-0">🤖 AI:</span>
+                                      <span className="text-xs font-medium text-purple-700 bg-purple-50 px-2 py-0.5 rounded">
+                                        {catData.ai_prediction || '—'}
+                                      </span>
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[10px] text-gray-400 w-14 shrink-0">👤 Human:</span>
+                                      {catData.human_label ? (
+                                        <span className={`text-xs font-medium px-2 py-0.5 rounded ${
+                                          catData.status === 'matched'
+                                            ? 'text-green-700 bg-green-50'
+                                            : 'text-red-700 bg-red-50'
+                                        }`}>
+                                          {catData.human_label}
+                                        </span>
+                                      ) : (
+                                        <span className="text-xs text-gray-400 italic">Not annotated yet</span>
+                                      )}
+                                    </div>
+                                    {catData.annotator && (
+                                      <p className="text-[10px] text-gray-400 mt-1">by {catData.annotator}</p>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination */}
+          {tracking.total > TRACKING_PAGE_SIZE && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200 bg-gray-50">
+              <span className="text-sm text-gray-500">
+                Page {tracking.page} of {Math.ceil(tracking.total / TRACKING_PAGE_SIZE)} · {tracking.total} images
+              </span>
+              <div className="flex gap-2">
+                <button disabled={trackingPage <= 1} onClick={() => setTrackingPage(p => p - 1)}
+                  className="px-3 py-1 text-sm rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-40 cursor-pointer">
+                  ← Prev
+                </button>
+                <button disabled={trackingPage * TRACKING_PAGE_SIZE >= tracking.total} onClick={() => setTrackingPage(p => p + 1)}
+                  className="px-3 py-1 text-sm rounded border border-gray-300 bg-white hover:bg-gray-50 disabled:opacity-40 cursor-pointer">
+                  Next →
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 /* ───────────────────────────────────────────────────────────── */
 /* Sub-components                                               */

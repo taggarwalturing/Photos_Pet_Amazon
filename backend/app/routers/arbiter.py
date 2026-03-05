@@ -24,10 +24,16 @@ from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
+from sqlalchemy.orm import joinedload
+from sqlalchemy import func as sa_func
+
 from app.database import get_db, SessionLocal
 from app.dependencies import require_admin
 from app.models.user import User
 from app.models.image import Image as ImageModel
+from app.models.annotation import Annotation, AnnotationSelection
+from app.models.category import Category
+from app.models.option import Option
 
 router = APIRouter(prefix="/admin/arbiter", tags=["Arbiter Classifier"])
 
@@ -965,4 +971,206 @@ def run_retry_failed_background(failed_names: list):
         arbiter_status["is_running"] = False
         arbiter_status["current_step"] = "failed"
         arbiter_status["completed_at"] = datetime.now().isoformat()
-        arbiter_status["errors"].append(f"Exception: {str(e)}")
+        arbiter_status["errors"].append(f"Retry exception: {str(e)}")
+
+
+# ─── Prediction Tracking ─────────────────────────────────────
+
+@router.get("/prediction-tracking")
+def get_prediction_tracking(
+    page: int = 1,
+    page_size: int = 20,
+    filter_status: Optional[str] = None,  # "matched" | "mismatched" | "pending" | "corrected"
+    category: Optional[str] = None,  # filter by arbiter category key
+    search: Optional[str] = None,
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """
+    Comparison table: AI predictions vs. annotator-approved labels.
+    Each row = one image with per-category comparison.
+    """
+    # Get all images that have arbiter labels
+    query = db.query(ImageModel).filter(ImageModel.arbiter_labels.isnot(None))
+
+    if search:
+        query = query.filter(ImageModel.filename.ilike(f"%{search}%"))
+
+    images = query.order_by(ImageModel.id).all()
+
+    if not images:
+        return {
+            "rows": [],
+            "total": 0,
+            "page": page,
+            "page_size": page_size,
+            "summary": {
+                "total_predicted": 0,
+                "total_annotated": 0,
+                "total_matched": 0,
+                "total_mismatched": 0,
+                "total_pending": 0,
+                "match_rate": 0,
+                "per_category": {},
+            },
+        }
+
+    # Load categories with options
+    categories = db.query(Category).options(joinedload(Category.options)).order_by(Category.display_order).all()
+    cat_by_name = {c.name: c for c in categories}
+
+    # Option ID → label lookup
+    option_label_by_id = {}
+    for c in categories:
+        for o in c.options:
+            option_label_by_id[o.id] = o.label
+
+    # Get all completed human-validated annotations for these images
+    image_ids = [img.id for img in images]
+    annotations = (
+        db.query(Annotation)
+        .filter(
+            Annotation.image_id.in_(image_ids),
+            Annotation.status == "completed",
+            Annotation.human_validated == True,
+        )
+        .options(joinedload(Annotation.selections), joinedload(Annotation.annotator))
+        .all()
+    )
+
+    # Index: {image_id: {category_id: annotation}}
+    ann_by_image_cat = {}
+    for ann in annotations:
+        ann_by_image_cat.setdefault(ann.image_id, {})[ann.category_id] = ann
+
+    # Summary counters
+    total_matched = 0
+    total_mismatched = 0
+    total_pending = 0
+    per_category_stats = {cat: {"matched": 0, "mismatched": 0, "pending": 0} for cat in CATEGORIES}
+
+    rows = []
+    for img in images:
+        arbiter_labels = img.arbiter_labels or {}
+        img_annotations = ann_by_image_cat.get(img.id, {})
+
+        category_comparisons = []
+        img_matched = 0
+        img_mismatched = 0
+        img_pending = 0
+
+        for arb_cat_key in CATEGORIES:
+            db_cat_name = ARBITER_CAT_TO_DB_CAT.get(arb_cat_key)
+            db_cat = cat_by_name.get(db_cat_name)
+            if not db_cat:
+                continue
+
+            ai_pred_short = arbiter_labels.get(arb_cat_key)
+            ai_pred_label = ARBITER_TO_OPTION_LABEL.get(ai_pred_short, ai_pred_short) if ai_pred_short else None
+
+            # Get human annotation
+            ann = img_annotations.get(db_cat.id)
+            human_label = None
+            annotator_name = None
+            annotation_status = "pending"
+
+            if ann:
+                sel_ids = [s.option_id for s in ann.selections]
+                if sel_ids:
+                    human_label = option_label_by_id.get(sel_ids[0])
+                annotator_name = ann.annotator.username if ann.annotator else None
+
+                if human_label and ai_pred_label:
+                    if human_label == ai_pred_label:
+                        annotation_status = "matched"
+                        img_matched += 1
+                        total_matched += 1
+                        per_category_stats[arb_cat_key]["matched"] += 1
+                    else:
+                        annotation_status = "mismatched"
+                        img_mismatched += 1
+                        total_mismatched += 1
+                        per_category_stats[arb_cat_key]["mismatched"] += 1
+                elif human_label:
+                    annotation_status = "mismatched"
+                    img_mismatched += 1
+                    total_mismatched += 1
+                    per_category_stats[arb_cat_key]["mismatched"] += 1
+                else:
+                    annotation_status = "pending"
+                    img_pending += 1
+                    total_pending += 1
+                    per_category_stats[arb_cat_key]["pending"] += 1
+            else:
+                annotation_status = "pending"
+                img_pending += 1
+                total_pending += 1
+                per_category_stats[arb_cat_key]["pending"] += 1
+
+            category_comparisons.append({
+                "category_key": arb_cat_key,
+                "category_name": db_cat_name,
+                "ai_prediction": ai_pred_label,
+                "ai_prediction_short": ai_pred_short,
+                "human_label": human_label,
+                "annotator": annotator_name,
+                "status": annotation_status,
+            })
+
+        # Overall image status
+        if img_matched + img_mismatched == 0:
+            overall = "pending"
+        elif img_mismatched == 0:
+            overall = "matched"
+        else:
+            overall = "corrected"
+
+        row = {
+            "image_id": img.id,
+            "filename": img.filename,
+            "classified_at": img.arbiter_classified_at.isoformat() if img.arbiter_classified_at else None,
+            "categories": category_comparisons,
+            "matched_count": img_matched,
+            "mismatched_count": img_mismatched,
+            "pending_count": img_pending,
+            "overall_status": overall,
+        }
+
+        # Apply filters
+        if filter_status == "matched" and overall != "matched":
+            continue
+        if filter_status == "mismatched" and img_mismatched == 0:
+            continue
+        if filter_status == "corrected" and overall != "corrected":
+            continue
+        if filter_status == "pending" and overall != "pending":
+            continue
+        if category:
+            cat_data = next((c for c in category_comparisons if c["category_key"] == category), None)
+            if not cat_data:
+                continue
+
+        rows.append(row)
+
+    # Paginate
+    total = len(rows)
+    start = (page - 1) * page_size
+    paginated = rows[start:start + page_size]
+
+    total_annotated = total_matched + total_mismatched
+
+    return {
+        "rows": paginated,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "summary": {
+            "total_predicted": len(images),
+            "total_annotated": total_annotated,
+            "total_matched": total_matched,
+            "total_mismatched": total_mismatched,
+            "total_pending": total_pending,
+            "match_rate": round(total_matched / total_annotated * 100, 1) if total_annotated > 0 else 0,
+            "per_category": per_category_stats,
+        },
+    }
