@@ -80,15 +80,10 @@ function CategoryDropdown({ category, annotation, completedByOther, onChange, di
           <div className="text-left">
             <h3 className="font-medium text-gray-900 text-sm">
               {category.name}
-              {aiSuggestion && (
-                <span className="ml-2 inline-flex items-center gap-0.5 px-1.5 py-0.5 bg-purple-100 text-purple-700 text-[10px] font-semibold rounded-full align-middle">
-                  🤖 AI
-                </span>
-              )}
             </h3>
             {selectedLabel ? (
               <p className={`text-xs mt-0.5 truncate max-w-xs ${aiPreFilled ? 'text-purple-600' : 'text-gray-500'}`}>
-                {aiPreFilled ? '🤖 ' : ''}{selectedLabel}
+                {selectedLabel}
               </p>
             ) : completedByOther ? (
               <p className="text-xs text-green-600 mt-0.5">Completed by another annotator</p>
@@ -98,10 +93,7 @@ function CategoryDropdown({ category, annotation, completedByOther, onChange, di
           </div>
         </div>
         <div className="flex items-center gap-2">
-          {aiPreFilled && (
-            <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 text-[10px] font-bold rounded-full">AI</span>
-          )}
-          {hasSelection && !aiPreFilled && (
+          {hasSelection && (
             <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded-full">✓</span>
           )}
           <svg
@@ -123,14 +115,6 @@ function CategoryDropdown({ category, annotation, completedByOther, onChange, di
             </p>
           ) : null}
 
-          {aiSuggestion && (
-            <div className="mb-2 px-2.5 py-1.5 bg-purple-50 border border-purple-200 rounded-lg">
-              <p className="text-[11px] text-purple-700 font-medium">
-                🤖 AI predicted: <span className="font-semibold">{aiSuggestion.label}</span>
-                <span className="text-purple-400 ml-1">— Validate or correct below</span>
-              </p>
-            </div>
-          )}
           
           <div className="space-y-2">
             {category.options.map((opt) => {
@@ -170,11 +154,6 @@ function CategoryDropdown({ category, annotation, completedByOther, onChange, di
                   </div>
                   <span className="text-sm font-medium flex-1">{opt.label}</span>
                   <div className="flex items-center gap-1.5">
-                    {isAiPick && (
-                      <span className="text-[10px] bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded-full font-medium">
-                        🤖 AI pick
-                      </span>
-                    )}
                     {opt.is_typical && (
                       <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">typical</span>
                     )}
