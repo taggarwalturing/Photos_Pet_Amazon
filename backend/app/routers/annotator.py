@@ -90,16 +90,29 @@ def _check_original_exists(image: Image) -> bool:
 def _get_available_image_ids(db: Session, user_id: int) -> set[int]:
     """
     Get the set of image IDs available to this user.
-    An image is available if:
-    1. It has no annotations from anyone (unclaimed), OR
-    2. It has at least one annotation from this user (claimed by this user)
-    
-    Images claimed by other users (have annotations from others but not this user) are excluded.
+
+    Uses the AnnotatorImageAssignment table to enforce strict assignment:
+    - If the assignment table has ANY records → strict mode:
+        each annotator sees ONLY their assigned images.
+    - If the assignment table is empty (admin hasn't assigned yet) →
+        legacy mode: annotation-based first-come-first-served.
     """
-    # Get all image IDs
+    # Check if assignment table has any records at all
+    assignment_count = db.query(AnnotatorImageAssignment).count()
+
+    if assignment_count > 0:
+        # ── Strict mode: respect admin assignments ──────────────────
+        my_assigned_ids = set(
+            row.image_id
+            for row in db.query(AnnotatorImageAssignment.image_id)
+            .filter(AnnotatorImageAssignment.user_id == user_id)
+            .all()
+        )
+        return my_assigned_ids
+
+    # ── Legacy mode: annotation-based availability ──────────────────
     all_image_ids = set(row.id for row in db.query(Image.id).all())
-    
-    # Get image IDs that this user has annotated (claimed by this user)
+
     my_image_ids = set(
         row.image_id
         for row in db.query(Annotation.image_id)
@@ -107,8 +120,7 @@ def _get_available_image_ids(db: Session, user_id: int) -> set[int]:
         .distinct()
         .all()
     )
-    
-    # Get image IDs that others have annotated (claimed by others)
+
     others_image_ids = set(
         row.image_id
         for row in db.query(Annotation.image_id)
@@ -116,17 +128,15 @@ def _get_available_image_ids(db: Session, user_id: int) -> set[int]:
         .distinct()
         .all()
     )
-    
-    # Available = (all images) - (claimed by others but not by me)
-    # In other words: my images + unclaimed images
+
     unclaimed_image_ids = all_image_ids - others_image_ids - my_image_ids
     available_image_ids = my_image_ids | unclaimed_image_ids
-    
+
     return available_image_ids
 
 
 def _get_assigned_image_ids(db: Session, user_id: int) -> set[int]:
-    """Alias for backward compatibility - now returns available images."""
+    """Alias for backward compatibility."""
     return _get_available_image_ids(db, user_id)
 
 router = APIRouter(prefix="/annotator", tags=["Annotator"])
@@ -152,16 +162,25 @@ def _build_queue(db: Session, user_id: int, category_id: int) -> list[Image]:
     """
     Build the annotator's image queue for a category.
 
-    The queue contains:
+    Uses the assignment table when available:
+    - Strict mode (assignments exist): only assigned images appear in the queue.
+    - Legacy mode (no assignments): annotation-based availability.
+
+    Within the user's available images, the queue contains:
     1. Images this annotator has already touched (any status) — so they can go back
     2. Images NOT yet completed by ANY annotator for this category — the remaining work
 
-    Images already completed by someone else (but not touched by this annotator)
-    are excluded.
-
     Ordered by image.id for consistency.
     """
-    all_images = db.query(Image).order_by(Image.id).all()
+    # Get the set of image IDs this user is allowed to work on
+    available_ids = _get_available_image_ids(db, user_id)
+
+    all_images = (
+        db.query(Image)
+        .filter(Image.id.in_(available_ids))
+        .order_by(Image.id)
+        .all()
+    )
 
     # IDs of images this annotator has already annotated for this category
     my_annotation_image_ids = set(
@@ -217,6 +236,20 @@ def save_time_spent(
 
     time_spent = int(time_spent)
     is_rework = payload.get("is_rework", False)
+
+    # Auto-claim: create assignment record if it doesn't exist
+    # This is the first periodic call (every 10s) when an annotator opens an image
+    existing_assignment = (
+        db.query(AnnotatorImageAssignment)
+        .filter(AnnotatorImageAssignment.image_id == image_id)
+        .first()
+    )
+    if not existing_assignment:
+        try:
+            db.add(AnnotatorImageAssignment(user_id=user.id, image_id=image_id))
+            db.flush()
+        except Exception:
+            db.rollback()
 
     # Get assigned categories
     assigned_cat_ids = [
@@ -462,10 +495,24 @@ def get_image_for_annotation(
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
     
-    # Verify this image is assigned to the user
+    # Verify this image is assigned/available to the user
     assigned_image_ids = _get_assigned_image_ids(db, user.id)
     if image_id not in assigned_image_ids:
         raise HTTPException(status_code=403, detail="This image is not assigned to you")
+    
+    # Auto-claim: if no assignment record exists for this image, create one
+    # This prevents another annotator from picking it up in legacy mode
+    existing_assignment = (
+        db.query(AnnotatorImageAssignment)
+        .filter(AnnotatorImageAssignment.image_id == image_id)
+        .first()
+    )
+    if not existing_assignment:
+        try:
+            db.add(AnnotatorImageAssignment(user_id=user.id, image_id=image_id))
+            db.flush()  # flush to catch unique constraint violations immediately
+        except Exception:
+            db.rollback()  # another annotator claimed it at the exact same moment
     
     # Get assigned categories
     assigned_cat_ids = [
