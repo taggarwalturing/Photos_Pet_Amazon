@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
+import CategoryGuideModal from '../components/CategoryGuideModal';
 
 const PAGE_SIZE = 20;
 
@@ -83,6 +84,9 @@ export default function AnnotatorHome() {
     setPageState(1);
     setSearchParams((prev) => { prev.set('page', '1'); prev.set('filter', f); return prev; }, { replace: true });
   };
+
+  // Guide modal state
+  const [showGuideModal, setShowGuideModal] = useState(false);
 
   // Notifications state
   const [notifications, setNotifications] = useState([]);
@@ -332,11 +336,20 @@ export default function AnnotatorHome() {
 
             {/* Filters & Categories */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 animate-fade-in">
-              <div>
-                <h2 className="text-lg font-bold text-gray-800">Your Images</h2>
-                <p className="text-sm text-gray-500">
-                  {data.total} images &middot; {data.assigned_categories.length} categories assigned
-                </p>
+              <div className="flex items-center gap-3">
+                <div>
+                  <h2 className="text-lg font-bold text-gray-800">Your Images</h2>
+                  <p className="text-sm text-gray-500">
+                    {data.total} images &middot; {data.assigned_categories.length} categories assigned
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowGuideModal(true)}
+                  className="px-3 py-1.5 bg-indigo-50 text-indigo-600 border border-indigo-200 rounded-lg text-xs font-semibold hover:bg-indigo-100 transition cursor-pointer flex items-center gap-1.5 self-start mt-0.5"
+                  title="View category definitions"
+                >
+                  📖 Guide
+                </button>
               </div>
               
               <div className="flex items-center gap-2">
@@ -529,6 +542,8 @@ export default function AnnotatorHome() {
           </>
         )}
       </main>
+
+      <CategoryGuideModal isOpen={showGuideModal} onClose={() => setShowGuideModal(false)} />
     </div>
   );
 }

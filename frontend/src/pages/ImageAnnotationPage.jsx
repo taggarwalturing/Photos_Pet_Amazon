@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
 import BoundingBoxCanvas from '../components/BoundingBoxCanvas';
+import CategoryGuideModal from '../components/CategoryGuideModal';
 
 // Helper to get proxied image URL for Google Drive images
 const getImageUrl = (imageId) => {
@@ -267,6 +268,7 @@ export default function ImageAnnotationPage() {
   const [pendingChanges, setPendingChanges] = useState({});
   
   const [showImproperModal, setShowImproperModal] = useState(false);
+  const [showGuideModal, setShowGuideModal] = useState(false);
   const [markingImproper, setMarkingImproper] = useState(false);
   
   const [showEditRequestModal, setShowEditRequestModal] = useState(false);
@@ -945,11 +947,20 @@ export default function ImageAnnotationPage() {
           </div>
 
           <div className="bg-white border-l border-gray-200 flex flex-col overflow-hidden min-h-0">
-            <div className="px-5 py-4 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white shrink-0">
-              <h2 className="font-bold text-gray-900">Categories</h2>
-              <p className="text-xs text-gray-500 mt-0.5">
-                {isLocked && !canEdit ? 'View your annotations (read-only)' : 'Select one option for each category'}
-              </p>
+            <div className="px-5 py-4 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white shrink-0 flex items-center justify-between">
+              <div>
+                <h2 className="font-bold text-gray-900">Categories</h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {isLocked && !canEdit ? 'View your annotations (read-only)' : 'Select one option for each category'}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowGuideModal(true)}
+                className="px-3 py-1.5 bg-indigo-50 text-indigo-600 border border-indigo-200 rounded-lg text-xs font-semibold hover:bg-indigo-100 transition cursor-pointer flex items-center gap-1.5"
+                title="View category definitions"
+              >
+                📖 Guide
+              </button>
             </div>
 
             {error && <div className="mx-4 mt-3 bg-red-50 text-red-700 px-4 py-2 rounded-lg text-sm">{error}</div>}
@@ -1142,6 +1153,7 @@ export default function ImageAnnotationPage() {
 
       <MarkImproperModal isOpen={showImproperModal} onClose={() => setShowImproperModal(false)} onConfirm={handleMarkImproper} loading={markingImproper} />
       <RequestEditModal isOpen={showEditRequestModal} onClose={() => setShowEditRequestModal(false)} onConfirm={handleRequestEdit} loading={requestingEdit} />
+      <CategoryGuideModal isOpen={showGuideModal} onClose={() => setShowGuideModal(false)} />
     </div>
   );
 }
