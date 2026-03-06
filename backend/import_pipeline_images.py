@@ -181,48 +181,48 @@ def import_images_from_pipeline():
                 orig_format = "HEIC" if heic_original else None
                 
                 # Insert new image
-                db.execute(text('''
-                    INSERT INTO images (
-                        filename, 
+            db.execute(text('''
+                INSERT INTO images (
+                    filename, 
                         original_filename,
                         original_format,
-                        url, 
-                        compliance_processed,
-                        compliance_status,
-                        original_url,
-                        processed_url,
-                        is_improper,
-                        human_faces_detected,
+                    url, 
+                    compliance_processed,
+                    compliance_status,
+                    original_url,
+                    processed_url,
+                    is_improper,
+                    human_faces_detected,
                         is_using_processed,
                         processing_log
-                    )
-                    VALUES (
-                        :filename, 
+                )
+                VALUES (
+                    :filename, 
                         :original_filename,
                         :original_format,
-                        :url, 
-                        TRUE,
+                    :url, 
+                    TRUE,
                         :compliance_status,
-                        :original_url,
-                        :processed_url,
-                        FALSE,
+                    :original_url,
+                    :processed_url,
+                    FALSE,
                         :face_count,
                         TRUE,
                         :processing_log
-                    )
-                '''), {
-                    'filename': filename,
+                )
+            '''), {
+                'filename': filename,
                     'original_filename': heic_original,
                     'original_format': orig_format,
-                    'url': url,
+                'url': url,
                     'compliance_status': compliance_status,
                     'face_count': face_count,
-                    'original_url': relative_path,
+                'original_url': relative_path,
                     'processed_url': relative_path,
                     'processing_log': f"Action: {action}, Faces: {face_count}"
-                })
-                
-                new_count += 1
+            })
+            
+            new_count += 1
             
             if (new_count + updated_count) % 100 == 0:
                 print(f"   Processed {new_count + updated_count} images...")

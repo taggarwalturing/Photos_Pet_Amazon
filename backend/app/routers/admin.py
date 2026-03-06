@@ -415,7 +415,7 @@ def list_images(
                     (img.compliance_status or "") in ("blurred", "processed", "obfuscated")
                 ),
             }
-            for img in images
+        for img in images
         ],
     }
 

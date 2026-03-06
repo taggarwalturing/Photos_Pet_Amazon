@@ -312,15 +312,15 @@ export default function AnnotationPage() {
 
       {/* Main Content - takes ALL remaining space */}
       <div className="flex-1 min-h-0 flex gap-3 px-3 py-2">
-        {/* Left: Image — fills all remaining space */}
+          {/* Left: Image — fills all remaining space */}
         <div className="flex-1 min-w-0 bg-gray-900 rounded-xl overflow-hidden relative ring-1 ring-gray-800">
-          <img
-            src={getImageUrl(task?.image_id)}
-            alt={task?.image_filename}
-            className="absolute inset-0 w-full h-full object-contain"
-            loading="eager"
-          />
-        </div>
+            <img
+              src={getImageUrl(task?.image_id)}
+              alt={task?.image_filename}
+              className="absolute inset-0 w-full h-full object-contain"
+              loading="eager"
+            />
+          </div>
 
         {/* Right: Options form — fixed width sidebar, MUST NOT exceed parent height */}
         <div className="w-[380px] shrink-0 flex flex-col bg-white rounded-xl shadow-sm border border-gray-200/80 overflow-hidden">
@@ -346,57 +346,57 @@ export default function AnnotationPage() {
                 </div>
               )}
 
-              {error && (
+            {error && (
                 <div className="bg-red-50 text-red-700 px-3 py-2 rounded-lg text-xs mb-3">
-                  {error}
-                </div>
-              )}
+                {error}
+              </div>
+            )}
 
-              {/* Options as pill-like checkboxes */}
+            {/* Options as pill-like checkboxes */}
               <div className="space-y-1.5">
-                {task?.options.map((opt) => {
-                  const isSelected = selectedOptions.includes(opt.id);
-                  return (
-                    <label
-                      key={opt.id}
-                      className={`
+              {task?.options.map((opt) => {
+                const isSelected = selectedOptions.includes(opt.id);
+                return (
+                  <label
+                    key={opt.id}
+                    className={`
                         flex items-center gap-2.5 px-3 py-2 rounded-lg border-2 cursor-pointer transition-all
-                        ${isSelected
+                      ${isSelected
                           ? 'border-indigo-500 bg-indigo-50/80 text-indigo-900'
-                          : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50/50 bg-white text-gray-700'
-                        }
+                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50/50 bg-white text-gray-700'
+                      }
+                    `}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={isSelected}
+                      onChange={() => toggleOption(opt.id)}
+                      className="sr-only"
+                    />
+                    <div
+                      className={`
+                          w-4 h-4 rounded flex items-center justify-center border-2 shrink-0 transition-all
+                        ${isSelected ? 'bg-indigo-500 border-indigo-500' : 'border-gray-300'}
                       `}
                     >
-                      <input
-                        type="checkbox"
-                        checked={isSelected}
-                        onChange={() => toggleOption(opt.id)}
-                        className="sr-only"
-                      />
-                      <div
-                        className={`
-                          w-4 h-4 rounded flex items-center justify-center border-2 shrink-0 transition-all
-                          ${isSelected ? 'bg-indigo-500 border-indigo-500' : 'border-gray-300'}
-                        `}
-                      >
-                        {isSelected && (
+                      {isSelected && (
                           <svg className="w-2.5 h-2.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                          </svg>
-                        )}
-                      </div>
-                      <span className="text-xs font-medium">{opt.label}</span>
-                      {opt.is_typical && (
-                        <span className="ml-auto text-[9px] font-semibold bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full uppercase">
-                          typical
-                        </span>
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                        </svg>
                       )}
-                    </label>
-                  );
-                })}
+                    </div>
+                      <span className="text-xs font-medium">{opt.label}</span>
+                    {opt.is_typical && (
+                        <span className="ml-auto text-[9px] font-semibold bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded-full uppercase">
+                        typical
+                      </span>
+                    )}
+                  </label>
+                );
+              })}
               </div>
             </div>
-          </div>
+            </div>
 
           {/* Fixed Footer Section - ALWAYS VISIBLE at bottom of sidebar */}
           <div className="shrink-0 border-t-2 border-gray-200 p-3 bg-gray-50">
@@ -406,14 +406,14 @@ export default function AnnotationPage() {
               <div className="flex items-center">
                 <span className="text-[9px] font-bold text-gray-400 uppercase tracking-wider w-14 shrink-0">Dup</span>
                 <div className="flex rounded-md overflow-hidden border border-gray-200 flex-1">
-                  {[
+                {[
                     { value: null, label: '?', activeClass: 'bg-gray-500 text-white' },
                     { value: false, label: 'No', activeClass: 'bg-green-500 text-white' },
                     { value: true, label: 'Yes', activeClass: 'bg-red-500 text-white' },
                   ].map((opt, idx) => (
-                    <button
-                      key={String(opt.value)}
-                      onClick={() => setIsDuplicate(opt.value)}
+                  <button
+                    key={String(opt.value)}
+                    onClick={() => setIsDuplicate(opt.value)}
                       className={`flex-1 py-1 text-[10px] font-bold transition-all cursor-pointer
                         ${idx > 0 ? 'border-l border-gray-200' : ''}
                         ${isDuplicate === opt.value ? opt.activeClass : 'bg-white text-gray-400 hover:bg-gray-50'}
@@ -440,11 +440,11 @@ export default function AnnotationPage() {
                       className={`flex-1 py-1 text-[10px] font-bold transition-all cursor-pointer
                         ${idx > 0 ? 'border-l border-gray-200' : ''}
                         ${isAIGenerated === opt.value ? opt.activeClass : 'bg-white text-gray-400 hover:bg-gray-50'}
-                      `}
-                    >
-                      {opt.label}
-                    </button>
-                  ))}
+                    `}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
                 </div>
               </div>
 
@@ -471,7 +471,7 @@ export default function AnnotationPage() {
                 </div>
               </div>
             </div>
-            
+
             {/* Already annotated indicator */}
             {task?.current_annotation?.status === 'completed' && (
               <div className="mb-2 flex items-center gap-1.5 px-2 py-1 bg-green-50 border border-green-200 rounded text-[9px] text-green-700 font-medium">

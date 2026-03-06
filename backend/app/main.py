@@ -62,20 +62,20 @@ def get_drive_service():
     private_key = getattr(settings, 'GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY', '')
     if private_key:
         private_key = private_key.replace('\\n', '\n')
-        credentials_info = {
+    credentials_info = {
             "type": getattr(settings, 'GOOGLE_SERVICE_ACCOUNT_TYPE', 'service_account'),
             "project_id": getattr(settings, 'GOOGLE_SERVICE_ACCOUNT_PROJECT_ID', ''),
             "private_key_id": getattr(settings, 'GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY_ID', ''),
-            "private_key": private_key,
+        "private_key": private_key,
             "client_email": getattr(settings, 'GOOGLE_SERVICE_ACCOUNT_CLIENT_EMAIL', ''),
             "client_id": getattr(settings, 'GOOGLE_SERVICE_ACCOUNT_CLIENT_ID', ''),
-            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-            "token_uri": "https://oauth2.googleapis.com/token",
-        }
-        credentials = service_account.Credentials.from_service_account_info(
-            credentials_info, scopes=SCOPES
-        )
-        return build('drive', 'v3', credentials=credentials)
+        "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+        "token_uri": "https://oauth2.googleapis.com/token",
+    }
+    credentials = service_account.Credentials.from_service_account_info(
+        credentials_info, scopes=SCOPES
+    )
+    return build('drive', 'v3', credentials=credentials)
     
     raise ValueError("No Google Drive credentials configured. Set GOOGLE_SERVICE_ACCOUNT_FILE in .env")
 
@@ -375,7 +375,7 @@ def proxy_image(image_id: int):
                     except Exception as gdrive_err:
                         print(f"[Proxy] Google Drive fallback failed for {filename}: {gdrive_err}")
                     
-                    raise HTTPException(status_code=404, detail=f"Local image file not found: {local_path}")
+                raise HTTPException(status_code=404, detail=f"Local image file not found: {local_path}")
             
             # Read local file
             with open(local_path, 'rb') as f:

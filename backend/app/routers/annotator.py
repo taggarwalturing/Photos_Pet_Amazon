@@ -337,6 +337,15 @@ def list_images_for_annotator(
         .all()
     )
     
+    # Pre-load categories for AI label resolution
+    categories_for_ai = (
+        db.query(Category)
+        .filter(Category.id.in_(assigned_cat_ids))
+        .options(joinedload(Category.options))
+        .all()
+    )
+    cat_by_id = {c.id: c for c in categories_for_ai}
+
     # Build image data with annotation status per category
     images_data = []
     for img in all_images:
@@ -362,12 +371,17 @@ def list_images_for_annotator(
             .all()
         )
         completed_cat_ids = {a.category_id for a in completed_by_anyone}
+
+        # Resolve AI labels for this image (if available)
+        arbiter_labels = img.arbiter_labels or {}
         
         # Build status per category and collect selected labels
         category_status = {}
         category_labels = {}  # category_id -> list of selected option labels
+        category_label_source = {}  # category_id -> "human" | "ai" | None
         for cat_id in assigned_cat_ids:
             my_ann = next((a for a in my_annotations if a.category_id == cat_id), None)
+            has_human_selection = False
             if my_ann:
                 category_status[str(cat_id)] = my_ann.status
                 # Get selected option labels
@@ -380,6 +394,8 @@ def list_images_for_annotator(
                 if selected_option_ids:
                     options = db.query(Option).filter(Option.id.in_(selected_option_ids)).all()
                     category_labels[str(cat_id)] = [o.label for o in options]
+                    category_label_source[str(cat_id)] = "human"
+                    has_human_selection = True
                 else:
                     category_labels[str(cat_id)] = []
             elif cat_id in completed_cat_ids:
@@ -396,6 +412,8 @@ def list_images_for_annotator(
                     if selected_option_ids:
                         options = db.query(Option).filter(Option.id.in_(selected_option_ids)).all()
                         category_labels[str(cat_id)] = [o.label for o in options]
+                        category_label_source[str(cat_id)] = "human"
+                        has_human_selection = True
                     else:
                         category_labels[str(cat_id)] = []
                 else:
@@ -403,6 +421,20 @@ def list_images_for_annotator(
             else:
                 category_status[str(cat_id)] = "pending"
                 category_labels[str(cat_id)] = []
+
+            # Fill with AI label if no human selection exists
+            if not has_human_selection and arbiter_labels:
+                cat_obj = cat_by_id.get(cat_id)
+                if cat_obj:
+                    arb_key = _DB_CAT_TO_ARBITER.get(cat_obj.name)
+                    if arb_key and arb_key in arbiter_labels:
+                        pred_data = arbiter_labels[arb_key]
+                        pred = pred_data.get("final", pred_data) if isinstance(pred_data, dict) else str(pred_data) if pred_data else None
+                        if pred:
+                            option_label = _ARBITER_LABEL_TO_OPTION.get(pred)
+                            if option_label:
+                                category_labels[str(cat_id)] = [option_label]
+                                category_label_source[str(cat_id)] = "ai"
         
         # Determine overall status
         statuses = list(category_status.values())
@@ -434,7 +466,8 @@ def list_images_for_annotator(
             "filename": img.filename,
             "url": img.url,
             "category_status": category_status,
-            "category_labels": category_labels,  # Selected labels per category
+            "category_labels": category_labels,  # Selected labels per category (human or AI)
+            "category_label_source": category_label_source,  # "human" | "ai" per category
             "overall_status": overall_status,
             "completed_count": sum(1 for s in statuses if s in ("completed", "completed_by_other")),
             "total_categories": len(assigned_cat_ids),

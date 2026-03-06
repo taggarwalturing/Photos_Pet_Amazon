@@ -910,7 +910,7 @@ function ImagesTab() {
     } catch (err) {
       console.error('Failed to load images:', err);
     }
-    setLoading(false);
+      setLoading(false);
   }, [filter, search]);
 
   useEffect(() => { fetchImages(); }, [fetchImages]);
@@ -1020,16 +1020,16 @@ function ImagesTab() {
 
       {/* Image Grid */}
       {loading ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
           {Array.from({ length: 20 }).map((_, i) => (
             <div key={i} className="bg-gray-100 rounded-xl aspect-[4/3] animate-pulse" />
           ))}
-        </div>
+            </div>
       ) : images.length === 0 ? (
         <div className="py-16 text-center text-gray-400">
           <p className="text-lg">No images found</p>
           <p className="text-sm mt-1">Try adjusting your filter or search.</p>
-        </div>
+          </div>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
           {paginatedImages.map((img) => {
@@ -1054,8 +1054,8 @@ function ImagesTab() {
                         <span key={i} className={`px-1.5 py-0.5 text-[9px] font-bold text-white rounded-md shadow-sm ${b.className}`}>
                           {b.label}
                         </span>
-                      ))}
-                    </div>
+        ))}
+      </div>
                   )}
                   {/* Hover overlay */}
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all flex items-center justify-center">
@@ -1076,9 +1076,9 @@ function ImagesTab() {
 
       {/* Pagination */}
       {images.length > 0 && (
-        <div className="flex items-center justify-between text-sm text-gray-500">
-          <span>Showing {((safePage - 1) * imagesPerPage) + 1}–{Math.min(safePage * imagesPerPage, images.length)} of {images.length}</span>
-          <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />
+      <div className="flex items-center justify-between text-sm text-gray-500">
+        <span>Showing {((safePage - 1) * imagesPerPage) + 1}–{Math.min(safePage * imagesPerPage, images.length)} of {images.length}</span>
+        <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />
         </div>
       )}
 
@@ -1611,7 +1611,7 @@ function ImageDetailModal({ row, categories, tableImages, onApprove, onSaveEdits
                   )}
                 </span>
               )}
-            </div>
+          </div>
             <span className="text-white/50 text-xs shrink-0">{currentIdx + 1} / {tableImages.length}</span>
           </div>
           <div className="flex-1 min-h-0 flex items-center justify-center p-4 relative">
@@ -1639,7 +1639,7 @@ function ImageDetailModal({ row, categories, tableImages, onApprove, onSaveEdits
                 <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-600 text-white text-xs font-semibold shadow-lg">
                   <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                   Processing on server…
-                </div>
+          </div>
               ) : (
                 <>
                   <button
@@ -1689,7 +1689,7 @@ function ImageDetailModal({ row, categories, tableImages, onApprove, onSaveEdits
                   )}
                 </>
               )}
-            </div>
+        </div>
 
             {/* Blur error */}
             {blurError && (
@@ -1770,8 +1770,8 @@ function ImageDetailModal({ row, categories, tableImages, onApprove, onSaveEdits
                             · {new Date(cell.reviewed_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                           </span>
                         )}
-                      </span>
-                    </div>
+                    </span>
+                  </div>
                   )}
                   <div className="space-y-0.5">
                     {cell.all_options.map((opt) => {
@@ -1809,13 +1809,13 @@ function ImageDetailModal({ row, categories, tableImages, onApprove, onSaveEdits
               </button>
             ) : pendingAnnotations.length > 0 ? (
               <>
-                <button
-                  onClick={handleApproveAll}
-                  disabled={saving}
+              <button
+                onClick={handleApproveAll}
+                disabled={saving}
                   className="flex-1 px-3 py-2 bg-green-500 text-white text-xs font-medium rounded-lg hover:bg-green-600 disabled:opacity-50 cursor-pointer"
-                >
+              >
                   {saving ? 'Approving...' : `Approve All (${pendingAnnotations.length})`}
-                </button>
+              </button>
                 <button
                   onClick={() => onRework(pendingAnnotations[0]?.annotation_id)}
                   disabled={saving}
@@ -2301,13 +2301,13 @@ function ReviewTab() {
                     return cell && (cell.review_status === 'rework_requested' || cell.review_status === 'rework_completed');
                   });
 
-                  return (
+                        return (
                     <div
-                      key={row.image_id}
+                            key={row.image_id}
                       className={`group relative rounded-xl overflow-hidden shadow-md hover:shadow-xl transition-all duration-300 ${
                         hasRework ? 'ring-3 ring-orange-400' : allApproved ? 'ring-2 ring-green-400' : 'ring-1 ring-gray-200 hover:ring-indigo-400'
                       }`}
-                    >
+                          >
                       {/* Image */}
                       <div className="relative aspect-[4/3]">
                         <img
@@ -2339,7 +2339,7 @@ function ReviewTab() {
                               {approvedCount}/{totalAnnotated}
                             </span>
                           )}
-                        </div>
+                              </div>
 
                         {/* Filename - top right */}
                         <div className="absolute top-3 right-3 max-w-[50%]">
@@ -2374,7 +2374,7 @@ function ReviewTab() {
                                 >
                                   {cat.name.split(' ')[0]}: <span className="italic">none</span>
                                 </span>
-                              ) : (
+                                      ) : (
                                 cell.selected_options.map((opt, i) => (
                                   <span
                                     key={`${cat.id}-${i}`}
@@ -2387,9 +2387,9 @@ function ReviewTab() {
                                     }`}
                                     title={`${cat.name} — by ${cell.annotator_username}`}
                                   >
-                                    {opt.label}
-                                  </span>
-                                ))
+                                            {opt.label}
+                                          </span>
+                                        ))
                               );
                             })}
                           </div>
@@ -2448,8 +2448,8 @@ function ReviewTab() {
                             </svg>
                             <span className="text-[10px] font-semibold">View</span>
                           </button>
-                        </div>
-                      </div>
+                                    </div>
+                                  </div>
 
                       {/* Annotator + Reviewer info bar */}
                       <div className="bg-white px-3 py-2 space-y-1">
@@ -2482,13 +2482,13 @@ function ReviewTab() {
                                 {new Date(row.reviewed_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}{' '}
                                 {new Date(row.reviewed_at).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
                               </span>
-                            )}
+                                  )}
                           </div>
                         )}
                       </div>
                     </div>
-                  );
-                })}
+                              );
+                            })}
               </div>
               {/* Pagination */}
               <div className="flex items-center justify-between text-sm text-gray-500 mt-4">
