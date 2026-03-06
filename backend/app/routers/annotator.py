@@ -112,7 +112,7 @@ def _get_available_image_ids(db: Session, user_id: int) -> set[int]:
 
     # ── Legacy mode: annotation-based availability ──────────────────
     all_image_ids = set(row.id for row in db.query(Image.id).all())
-
+    
     my_image_ids = set(
         row.image_id
         for row in db.query(Annotation.image_id)
@@ -120,7 +120,7 @@ def _get_available_image_ids(db: Session, user_id: int) -> set[int]:
         .distinct()
         .all()
     )
-
+    
     others_image_ids = set(
         row.image_id
         for row in db.query(Annotation.image_id)
@@ -128,10 +128,10 @@ def _get_available_image_ids(db: Session, user_id: int) -> set[int]:
         .distinct()
         .all()
     )
-
+    
     unclaimed_image_ids = all_image_ids - others_image_ids - my_image_ids
     available_image_ids = my_image_ids | unclaimed_image_ids
-
+    
     return available_image_ids
 
 
@@ -344,7 +344,7 @@ def list_images_for_annotator(
         .all()
     )
     cat_by_id = {c.id: c for c in categories_for_ai}
-
+    
     # Build image data with annotation status per category
     images_data = []
     for img in all_images:
@@ -591,7 +591,7 @@ def get_image_for_annotation(
     # Build option label → option id lookup for AI suggestion mapping
     # arbiter_labels format: {"lighting": {"final": "well_lit", "status": "agree", ...}, ...}
     arbiter_labels = image.arbiter_labels or {}
-
+    
     # Build category data with annotations
     categories_data = []
     for cat in categories:

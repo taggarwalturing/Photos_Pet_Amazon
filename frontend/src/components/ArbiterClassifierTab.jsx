@@ -178,6 +178,20 @@ export default function ArbiterClassifierTab() {
   const pct = status?.total > 0 ? Math.round((status.processed / status.total) * 100) : 0;
   const failedCount = summary.failed_count || status?.failed_count || failedImages?.total || 0;
 
+  // API error detection — surface from status, results summary, or failed images
+  const apiErrorSummary =
+    status?.api_error_summary?.is_api_issue ? status.api_error_summary :
+    summary?.api_error_summary?.is_api_issue ? summary.api_error_summary :
+    failedImages?.error_summary?.is_api_issue ? failedImages.error_summary :
+    null;
+
+  // Any error summary (even non-API) for enhanced display
+  const anyErrorSummary =
+    status?.api_error_summary?.total_errors > 0 ? status.api_error_summary :
+    summary?.api_error_summary?.total_errors > 0 ? summary.api_error_summary :
+    failedImages?.error_summary?.total_errors > 0 ? failedImages.error_summary :
+    null;
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-24">
@@ -256,6 +270,56 @@ export default function ArbiterClassifierTab() {
         </div>
       )}
 
+      {/* ─── API Error Banner ─────────────────────── */}
+      {apiErrorSummary && (
+        <div className="rounded-xl border-2 border-red-300 bg-red-50 p-5 shadow-sm">
+          <div className="flex items-start gap-4">
+            <div className="shrink-0 w-12 h-12 rounded-xl bg-red-100 flex items-center justify-center text-2xl">
+              {apiErrorSummary.dominant_type === 'budget_exceeded' ? '💳' :
+               apiErrorSummary.dominant_type === 'forbidden' ? '🔒' :
+               apiErrorSummary.dominant_type === 'rate_limited' ? '⏱️' : '🚨'}
+            </div>
+            <div className="flex-1">
+              <h3 className="text-base font-bold text-red-800 mb-1">
+                {apiErrorSummary.dominant_type === 'budget_exceeded' ? 'API Budget Exceeded' :
+                 apiErrorSummary.dominant_type === 'forbidden' ? 'API Access Forbidden' :
+                 apiErrorSummary.dominant_type === 'rate_limited' ? 'API Rate Limited' : 'API Error Detected'}
+              </h3>
+              <p className="text-sm text-red-700 leading-relaxed">
+                {apiErrorSummary.actionable_message}
+              </p>
+              {apiErrorSummary.categories && Object.keys(apiErrorSummary.categories).length > 0 && (
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {Object.entries(apiErrorSummary.categories).map(([type, count]) => (
+                    <span key={type}
+                      className={`px-2.5 py-1 text-xs font-semibold rounded-full ${
+                        type === 'budget_exceeded' ? 'bg-red-200 text-red-800' :
+                        type === 'forbidden' ? 'bg-orange-200 text-orange-800' :
+                        type === 'rate_limited' ? 'bg-amber-200 text-amber-800' :
+                        type === 'timeout' ? 'bg-yellow-200 text-yellow-800' :
+                        type === 'server_error' ? 'bg-pink-200 text-pink-800' :
+                        'bg-gray-200 text-gray-700'
+                      }`}>
+                      {type === 'budget_exceeded' ? '💳 Budget (402)' :
+                       type === 'forbidden' ? '🔒 Forbidden (403)' :
+                       type === 'rate_limited' ? '⏱️ Rate Limit (429)' :
+                       type === 'timeout' ? '⏰ Timeout' :
+                       type === 'server_error' ? '🔥 Server Error' :
+                       type === 'parse_error' ? '📄 Parse Error' :
+                       `⚠️ ${type}`}: {count}
+                    </span>
+                  ))}
+                </div>
+              )}
+              <p className="text-xs text-red-500 mt-2 italic">
+                ⚠️ Images that failed due to API errors will show as "Failed" — not as predictions.
+                Predictions shown in the results table are only from successful API calls.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ─── Config cards ──────────────────────────── */}
       {config && (
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -293,22 +357,46 @@ export default function ArbiterClassifierTab() {
           <div className="w-full bg-white/20 rounded-full h-3">
             <div className="bg-white h-3 rounded-full transition-all duration-500" style={{ width: `${pct}%` }} />
           </div>
-          {status?.started_at && (
-            <p className="text-xs text-white/60 mt-2">
-              Started: {new Date(status.started_at).toLocaleString()}
-              {status?.completed_at && ` · Finished: ${new Date(status.completed_at).toLocaleString()}`}
-            </p>
-          )}
+          <div className="flex items-center justify-between mt-2">
+            {status?.started_at && (
+              <p className="text-xs text-white/60">
+                Started: {new Date(status.started_at).toLocaleString()}
+                {status?.completed_at && ` · Finished: ${new Date(status.completed_at).toLocaleString()}`}
+              </p>
+            )}
+            {status?.failed_count > 0 && (
+              <span className="px-2.5 py-0.5 text-xs font-semibold rounded-full bg-white/20 text-white">
+                ⚠️ {status.failed_count} failed
+                {status?.api_error_summary?.is_api_issue && ' (API error)'}
+              </span>
+            )}
+          </div>
         </div>
       )}
 
       {/* ─── Failed / Errored Images ──────────────── */}
       {(failedCount > 0 || status?.errors?.length > 0) && (
-        <div className="bg-red-50 border border-red-200 rounded-xl p-4">
+        <div className={`rounded-xl p-4 ${
+          apiErrorSummary ? 'bg-red-50 border-2 border-red-300' : 'bg-red-50 border border-red-200'
+        }`}>
           <div className="flex items-center justify-between mb-2">
-            <h3 className="font-semibold text-red-700">
+            <h3 className="font-semibold text-red-700 flex items-center gap-2">
               ⚠️ Failed Images ({failedCount})
-              {status?.errors?.length > 0 && failedCount === 0 && ` — ${status.errors.length} errors in current run`}
+              {anyErrorSummary?.dominant_type && (
+                <span className={`px-2 py-0.5 text-[10px] font-bold rounded-full ${
+                  anyErrorSummary.dominant_type === 'budget_exceeded' ? 'bg-red-200 text-red-800' :
+                  anyErrorSummary.dominant_type === 'forbidden' ? 'bg-orange-200 text-orange-800' :
+                  anyErrorSummary.dominant_type === 'rate_limited' ? 'bg-amber-200 text-amber-800' :
+                  'bg-gray-200 text-gray-700'
+                }`}>
+                  {anyErrorSummary.dominant_type === 'budget_exceeded' ? '💳 BUDGET EXCEEDED' :
+                   anyErrorSummary.dominant_type === 'forbidden' ? '🔒 FORBIDDEN' :
+                   anyErrorSummary.dominant_type === 'rate_limited' ? '⏱️ RATE LIMITED' :
+                   anyErrorSummary.dominant_type === 'timeout' ? '⏰ TIMEOUT' :
+                   anyErrorSummary.dominant_type === 'server_error' ? '🔥 SERVER ERROR' :
+                   anyErrorSummary.dominant_type.toUpperCase()}
+                </span>
+              )}
             </h3>
             <div className="flex items-center gap-2">
               {failedCount > 0 && (
@@ -323,6 +411,7 @@ export default function ArbiterClassifierTab() {
                     onClick={retryFailed}
                     disabled={retrying || status?.is_running}
                     className="px-3 py-1.5 bg-red-600 text-white text-xs font-semibold rounded-lg hover:bg-red-700 transition disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                    title={apiErrorSummary ? 'Fix the API issue first before retrying' : 'Retry failed images'}
                   >
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
@@ -333,6 +422,24 @@ export default function ArbiterClassifierTab() {
               )}
             </div>
           </div>
+
+          {/* Error category breakdown badges */}
+          {anyErrorSummary?.categories && Object.keys(anyErrorSummary.categories).length > 1 && (
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {Object.entries(anyErrorSummary.categories).map(([type, count]) => (
+                <span key={type}
+                  className="px-2 py-0.5 text-[10px] font-medium rounded-full bg-white border border-red-200 text-red-700">
+                  {type === 'budget_exceeded' ? '💳 Budget' :
+                   type === 'forbidden' ? '🔒 Forbidden' :
+                   type === 'rate_limited' ? '⏱️ Rate Limit' :
+                   type === 'timeout' ? '⏰ Timeout' :
+                   type === 'server_error' ? '🔥 Server' :
+                   type === 'parse_error' ? '📄 Parse' :
+                   `⚠️ ${type}`}: {count}
+                </span>
+              ))}
+            </div>
+          )}
 
           {/* Current run errors (in-memory) */}
           {status?.errors?.length > 0 && (
@@ -354,26 +461,46 @@ export default function ArbiterClassifierTab() {
                   <thead>
                     <tr className="text-left text-red-700 border-b border-red-200">
                       <th className="pb-1.5 font-semibold">Image</th>
-                      <th className="pb-1.5 font-semibold">Error</th>
+                      <th className="pb-1.5 font-semibold">Error Type</th>
+                      <th className="pb-1.5 font-semibold">Error Detail</th>
                       <th className="pb-1.5 font-semibold text-center">Retries</th>
                       <th className="pb-1.5 font-semibold">Last Failed</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-red-100">
-                    {failedImages.failed.map((f, i) => (
-                      <tr key={i} className="text-red-800">
-                        <td className="py-1.5 font-mono font-medium truncate max-w-[180px]" title={f.image}>{f.image}</td>
-                        <td className="py-1.5 text-red-600 truncate max-w-[250px]" title={f.error}>{f.error}</td>
-                        <td className="py-1.5 text-center">
-                          <span className="px-1.5 py-0.5 bg-red-200 text-red-800 rounded-full text-[10px] font-bold">
-                            {f.retry_count || 1}
-                          </span>
-                        </td>
-                        <td className="py-1.5 text-red-500">
-                          {f.failed_at ? new Date(f.failed_at).toLocaleString() : '—'}
-                        </td>
-                      </tr>
-                    ))}
+                    {failedImages.failed.map((f, i) => {
+                      const errLower = (f.error || '').toLowerCase();
+                      const errType = errLower.includes('402') || errLower.includes('budget')
+                        ? { label: '💳 Budget', cls: 'bg-red-200 text-red-800' }
+                        : errLower.includes('403') || errLower.includes('forbidden')
+                        ? { label: '🔒 Forbidden', cls: 'bg-orange-200 text-orange-800' }
+                        : errLower.includes('429') || errLower.includes('rate')
+                        ? { label: '⏱️ Rate Limit', cls: 'bg-amber-200 text-amber-800' }
+                        : errLower.includes('timeout')
+                        ? { label: '⏰ Timeout', cls: 'bg-yellow-200 text-yellow-800' }
+                        : errLower.includes('500') || errLower.includes('502') || errLower.includes('503')
+                        ? { label: '🔥 Server', cls: 'bg-pink-200 text-pink-800' }
+                        : { label: '⚠️ Other', cls: 'bg-gray-200 text-gray-700' };
+                      return (
+                        <tr key={i} className="text-red-800">
+                          <td className="py-1.5 font-mono font-medium truncate max-w-[160px]" title={f.image}>{f.image}</td>
+                          <td className="py-1.5">
+                            <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded-full ${errType.cls}`}>
+                              {errType.label}
+                            </span>
+                          </td>
+                          <td className="py-1.5 text-red-600 truncate max-w-[220px]" title={f.error}>{f.error}</td>
+                          <td className="py-1.5 text-center">
+                            <span className="px-1.5 py-0.5 bg-red-200 text-red-800 rounded-full text-[10px] font-bold">
+                              {f.retry_count || 1}
+                            </span>
+                          </td>
+                          <td className="py-1.5 text-red-500">
+                            {f.failed_at ? new Date(f.failed_at).toLocaleString() : '—'}
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -392,7 +519,12 @@ export default function ArbiterClassifierTab() {
             sub={`for ${summary.total_categories - summary.total_agreements} disagreements`} icon="⚖️" />
           <StatCard label="Categories" value={CATEGORIES.length} sub="per image" icon="📋" />
           <StatCard label="Failed" value={failedCount}
-            sub={failedCount > 0 ? 'can retry ↑' : 'none'}
+            sub={failedCount > 0
+              ? (apiErrorSummary?.dominant_type === 'budget_exceeded' ? '💳 API budget issue'
+                : apiErrorSummary?.dominant_type === 'forbidden' ? '🔒 API access issue'
+                : apiErrorSummary?.dominant_type === 'rate_limited' ? '⏱️ rate limited'
+                : 'can retry ↑')
+              : 'none'}
             icon={failedCount > 0 ? '❌' : '✅'} />
         </div>
       )}
@@ -552,10 +684,28 @@ export default function ArbiterClassifierTab() {
       {(!results || results.total === 0) && !status?.is_running && (
         <div className="py-16 text-center">
           <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-indigo-100 to-purple-100 rounded-2xl flex items-center justify-center">
-            <span className="text-2xl">⚖️</span>
+            <span className="text-2xl">{apiErrorSummary ? '🚨' : '⚖️'}</span>
           </div>
-          <p className="text-lg font-medium text-gray-700">No classification results yet</p>
-          <p className="text-sm text-gray-500 mt-1">Click "Run Classifier" to classify the final pipeline images.</p>
+          {apiErrorSummary ? (
+            <>
+              <p className="text-lg font-medium text-red-700">All images failed due to API errors</p>
+              <p className="text-sm text-red-500 mt-1">
+                {apiErrorSummary.dominant_type === 'budget_exceeded'
+                  ? 'The Turing API has no remaining budget. Please top up credits before running again.'
+                  : apiErrorSummary.dominant_type === 'forbidden'
+                  ? 'API access is forbidden. Check your API keys and authorization.'
+                  : 'Resolve the API errors shown above, then retry.'}
+              </p>
+              <p className="text-xs text-gray-400 mt-3">
+                No predictions were stored — there are no misleading "None" results.
+              </p>
+            </>
+          ) : (
+            <>
+              <p className="text-lg font-medium text-gray-700">No classification results yet</p>
+              <p className="text-sm text-gray-500 mt-1">Click "Run Classifier" to classify the final pipeline images.</p>
+            </>
+          )}
         </div>
       )}
 

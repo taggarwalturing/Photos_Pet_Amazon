@@ -3,18 +3,23 @@
 Complete Image Processing Pipeline
 ===================================
 
-Workflow:
-1. Download all images from Google Drive
-2. Run deduplicator (with optional LLM validation)
+Workflow (runs per folder_id in isolation):
+1. Download all images from a single Google Drive folder
+2. Run deduplicator (within that folder only — no cross-folder comparison)
 3. Run biometric pipeline on unique images only
-4. Upload to S3 (optional)
+4. Consolidate final output
 
-This saves time by:
-- Not processing duplicates through expensive biometric pipeline
-- Organizing images before annotation
+Each folder_id gets its own workspace:
+  pipeline_workspace/folders/{folder_id}/
+    ├── 01_downloaded_from_drive/
+    ├── 02_unique_images/
+    ├── 02_duplicate_clusters/
+    ├── 03_biometric_processed/
+    ├── 04_final_output/
+    └── drive_metadata.json
 
 Usage:
-    python master_pipeline.py --download --deduplicate --pipeline --s3
+    python master_pipeline.py --download --deduplicate --pipeline --folder-ids ID1,ID2
 """
 
 import os
@@ -25,7 +30,10 @@ from pathlib import Path
 from typing import List, Dict, Optional
 import argparse
 from datetime import datetime
-from tqdm import tqdm
+from tqdm import tqdm as _tqdm
+import functools
+# Force tqdm to write to stdout so subprocess can capture progress
+tqdm = functools.partial(_tqdm, file=sys.stdout, mininterval=1)
 
 # Setup paths
 SCRIPT_DIR = Path(__file__).parent
@@ -70,7 +78,9 @@ except ImportError:
 
 class MasterPipeline:
     """
-    Complete pipeline orchestrator
+    Complete pipeline orchestrator.
+    Each instance operates on a single workspace directory.
+    For per-folder isolation, create a new instance per folder.
     """
     
     def __init__(self, workspace_dir: Optional[str] = None, config=None):
@@ -90,15 +100,15 @@ class MasterPipeline:
         else:
             self.workspace = self.config.workspace
         
-        self.workspace.mkdir(exist_ok=True)
+        self.workspace.mkdir(parents=True, exist_ok=True)
         
-        # Define folder structure from config
+        # Derive folder structure from workspace path (not config) so per-folder workspaces work
         self.folders = {
-            'downloaded': self.config.downloaded_dir,
-            'unique': self.config.unique_dir,
-            'duplicate_clusters': self.config.duplicate_clusters_dir,
-            'processed_unique': self.config.biometric_processed_dir,
-            'final_output': self.config.final_output_dir,
+            'downloaded': self.workspace / '01_downloaded_from_drive',
+            'unique': self.workspace / '02_unique_images',
+            'duplicate_clusters': self.workspace / '02_duplicate_clusters',
+            'processed_unique': self.workspace / '03_biometric_processed',
+            'final_output': self.workspace / '04_final_output',
         }
         
         # Create all folders
@@ -110,79 +120,68 @@ class MasterPipeline:
         for name, path in self.folders.items():
             print(f"     • {name}: {path.name}")
     
-    def step1_download_from_drive(self) -> int:
-        """
-        Step 1: Download all images from Google Drive
-        Returns: Number of images downloaded
-        """
-        print("\n" + "=" * 70)
-        print("📥 STEP 1: Download Images from Google Drive")
-        print("=" * 70)
-        
+    def _get_drive_service(self):
+        """Get authenticated Google Drive service."""
         if not GDRIVE_AVAILABLE:
-            print("❌ Google Drive libraries not available")
-            return 0
+            raise RuntimeError("Google Drive libraries not available")
         
-        # Get Drive service - use config first, fallback to settings
         if self.config.google_service_account_file:
-            import json
             creds_file = Path(self.config.google_service_account_file)
             if creds_file.exists():
                 with open(creds_file, 'r') as f:
                     creds_dict = json.load(f)
             else:
-                print(f"❌ Service account file not found: {creds_file}")
-                return 0
+                raise FileNotFoundError(f"Service account file not found: {creds_file}")
         elif APP_AVAILABLE and settings:
             creds_dict = settings.google_service_account_credentials
         else:
-            print("❌ Google Drive credentials not configured")
-            print("   Set GOOGLE_SERVICE_ACCOUNT_FILE in .env or configure app settings")
-            return 0
-            print("❌ Google Drive credentials not configured")
-            print("   Set GOOGLE_SERVICE_ACCOUNT_FILE in .env or configure app settings")
-            return 0
+            raise RuntimeError("Google Drive credentials not configured")
         
         if not creds_dict.get('client_email'):
-            print("❌ Invalid Google Drive credentials")
-            return 0
+            raise ValueError("Invalid Google Drive credentials")
         
         creds = service_account.Credentials.from_service_account_info(
             creds_dict,
             scopes=['https://www.googleapis.com/auth/drive.readonly']
         )
-        service = build('drive', 'v3', credentials=creds)
+        return build('drive', 'v3', credentials=creds)
         
-        # Get folder ID from config
-        folder_id = self.config.google_drive_folder_id
-        if not folder_id:
-            print("❌ Google Drive folder ID not configured")
-            print("   Set GOOGLE_DRIVE_FOLDER_ID in .env")
-            return 0
+    def step1_download_from_drive(self, folder_id: str) -> int:
+        """
+        Step 1: Download all images from a single Google Drive folder.
         
-        # List all images recursively
-        print("🔍 Scanning Google Drive folders...")
-        images = self._list_all_drive_images(service, folder_id)
+        Args:
+            folder_id: Google Drive folder ID to download from.
         
-        print(f"✅ Found {len(images)} images")
+        Returns: Number of images in the download folder after completion
+        """
+        print("\n" + "=" * 70)
+        print("📥 STEP 1: Download Images from Google Drive")
+        print(f"   Folder ID: {folder_id}")
+        print("=" * 70)
         
-        if len(images) == 0:
+        service = self._get_drive_service()
+        
+        # List all images recursively in this single folder
+        print(f"🔍 Scanning folder: {folder_id}")
+        all_images = self._list_all_drive_images(service, folder_id)
+        print(f"✅ Found {len(all_images)} images")
+        
+        if len(all_images) == 0:
             print("⚠️  No images found")
             return 0
         
-        # Save Drive metadata (total files, unique names, duplicate filenames)
-        self._save_drive_metadata(images)
+        # Save Drive metadata for this folder
+        self._save_drive_metadata(all_images, folder_id)
         
         # Download images
         download_folder = self.folders['downloaded']
         print(f"\n📥 Downloading to: {download_folder}")
         
         downloaded = 0
-        for img in tqdm(images, desc="Downloading"):
+        for img in tqdm(all_images, desc="Downloading"):
             try:
-                # Download
-                request = service.files().get_media(fileId=img['id'])
-                
+                request = service.files().get_media(fileId=img['id'], supportsAllDrives=True)
                 output_path = download_folder / img['name']
                 
                 # Skip if already downloaded
@@ -214,20 +213,34 @@ class MasterPipeline:
         
         return len(list(download_folder.glob('*')))
     
-    def _save_drive_metadata(self, images: List[Dict]):
-        """Save metadata about what was found in Google Drive."""
+    def _save_drive_metadata(self, images: List[Dict], folder_id: str):
+        """Save metadata about what was found in this Google Drive folder."""
         from collections import Counter
         all_names = [img['name'] for img in images]
         name_counts = Counter(all_names)
         unique_names = set(all_names)
         dup_names = {n: c for n, c in name_counts.items() if c > 1}
 
+        # Build filename → folder_id mapping (all images belong to this folder)
+        filename_folder_map = {}
+        # Build filename → Drive file ID mapping (first-wins for duplicate names)
+        filename_to_drive_id = {}
+        for img in images:
+            name = img['name']
+            if name not in filename_folder_map:
+                filename_folder_map[name] = folder_id
+            if name not in filename_to_drive_id:
+                filename_to_drive_id[name] = img['id']  # Google Drive file ID
+
         metadata = {
+            "folder_id": folder_id,
             "total_in_drive": len(images),
             "unique_filenames": len(unique_names),
             "duplicate_filename_count": sum(c - 1 for c in name_counts.values() if c > 1),
             "duplicate_filenames": {n: c for n, c in sorted(dup_names.items())},
             "scanned_at": datetime.now().isoformat(),
+            "filename_folder_map": filename_folder_map,
+            "filename_to_drive_id": filename_to_drive_id,
         }
 
         metadata_path = self.workspace / "drive_metadata.json"
@@ -329,7 +342,7 @@ class MasterPipeline:
         return converted
     
     def _list_all_drive_images(self, service, folder_id: str) -> List[Dict]:
-        """Recursively list all images from Google Drive"""
+        """Recursively list all images from Google Drive, tagging each with its root folder_id."""
         extensions = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif', '.avif', '.bmp', '.tiff', '.tif'}
         images = []
         folders_to_process = [folder_id]
@@ -345,7 +358,9 @@ class MasterPipeline:
                     spaces='drive',
                     fields='nextPageToken, files(id, name, mimeType)',
                     pageToken=page_token,
-                    pageSize=100
+                    pageSize=100,
+                    includeItemsFromAllDrives=True,
+                    supportsAllDrives=True,
                 ).execute()
                 
                 items = results.get('files', [])
@@ -356,6 +371,7 @@ class MasterPipeline:
                     else:
                         ext = os.path.splitext(item['name'])[1].lower()
                         if ext in extensions:
+                            item['source_folder_id'] = folder_id  # tag with root folder ID
                             images.append(item)
                 
                 page_token = results.get('nextPageToken')
@@ -371,18 +387,11 @@ class MasterPipeline:
         max_llm_validations: int = None
     ) -> Dict:
         """
-        Step 2: Run deduplication
+        Step 2: Run deduplication (within this folder's workspace only).
         
         Creates:
         - 02_unique_images/ - Unique images (originals)
         - 02_duplicate_clusters/ - Folders for each duplicate group
-        
-        Args:
-            use_llm: Use LLM validation (uses config if None)
-            threshold: Deduplication threshold (uses config if None)
-            max_llm_validations: Max LLM calls (uses config if None)
-        
-        Returns: Statistics
         """
         print("\n" + "=" * 70)
         print("🔍 STEP 2: Deduplication")
@@ -401,10 +410,8 @@ class MasterPipeline:
         if use_llm:
             print("🤖 Using LLM-enhanced validation")
             
-            # Check for OpenAI API key
             if not self.config.openai_api_key:
                 print("❌ OpenAI API key not configured")
-                print("   Set OPENAI_API_KEY in .env")
                 return {}
             
             from llm_duplicate_validator import LLMDuplicateValidator
@@ -420,12 +427,10 @@ class MasterPipeline:
                 max_validations=max_llm_validations
             )
             
-            # Load validated duplicates
             with open(self.workspace / "deduplication_results" / "validated_duplicates.json") as f:
                 duplicate_pairs = json.load(f)
             
-            # Build duplicate mapping
-            duplicate_map = {}  # duplicate -> original
+            duplicate_map = {}
             for pair in duplicate_pairs:
                 original = Path(pair['original']).name
                 duplicate = Path(pair['duplicate']).name
@@ -434,62 +439,67 @@ class MasterPipeline:
         else:
             print("⚡ Using advanced deduplicator only (no LLM)")
             
-            # Import and run deduplicator
             sys.path.insert(0, str(SCRIPT_DIR / 'FaceDetectionBlur'))
             from image_deduplicator_advanced import AdvancedDeduplicator
             
-            # Note: AdvancedDeduplicator uses similarity_threshold (higher = more similar required)
-            # Pass threshold directly - higher values mean stricter matching
-            similarity_threshold = threshold  # 0.85 means 85% similarity required
-            
-            # Initialize deduplicator
+            similarity_threshold = threshold
             deduplicator = AdvancedDeduplicator(similarity_threshold=similarity_threshold)
-            
-            # Scan and analyze images
             deduplicator.scan_images(input_folder)
             
             if not deduplicator.images:
                 print("❌ No images found!")
                 return {}
             
-            # Find duplicates
             deduplicator.find_duplicates()
             
-            # Create temporary output for deduplicator
             temp_dedup_output = self.workspace / 'temp_dedup'
-            temp_dedup_output.mkdir(exist_ok=True)
-            
-            # Segregate into originals and duplicates
+            temp_dedup_output.mkdir(parents=True, exist_ok=True)
+            (temp_dedup_output / 'originals').mkdir(parents=True, exist_ok=True)
+            (temp_dedup_output / 'duplicates').mkdir(parents=True, exist_ok=True)
             deduplicator.segregate_images(temp_dedup_output)
             
-            # Build duplicate mapping from deduplicator results
-            duplicate_map = {}  # duplicate -> original
+            duplicate_map = {}
             for img in deduplicator.images:
                 if img.is_duplicate and img.duplicate_of:
                     duplicate_map[img.filename] = img.duplicate_of
         
         print(f"\n✅ Found {len(duplicate_map)} duplicate images")
         
+        # Load HEIC conversion manifest to map JPG duplicates back to their HEIC sources
+        heic_manifest_path = input_folder / "_heic_conversions.json"
+        jpg_to_heic = {}  # e.g. {"IMG_2771.jpg": "IMG_2771.HEIC"}
+        if heic_manifest_path.exists():
+            try:
+                with open(heic_manifest_path, 'r') as f:
+                    heic_manifest = json.load(f)
+                for jpg_name, info in heic_manifest.items():
+                    jpg_to_heic[jpg_name] = info.get('original_filename', '')
+            except Exception:
+                pass
+        
+        # Build extended duplicate set: include HEIC sources of duplicate JPGs
+        extended_duplicates = set(duplicate_map.keys())
+        for dup_jpg in list(duplicate_map.keys()):
+            heic_source = jpg_to_heic.get(dup_jpg)
+            if heic_source:
+                extended_duplicates.add(heic_source)
+                print(f"  ℹ️  Also excluding HEIC source: {heic_source} (conversion of duplicate {dup_jpg})")
+        
         # Organize into clusters
         print("\n📂 Creating cluster structure...")
         
-        # Copy unique images and create clusters
         all_images = list(input_folder.glob('*'))
         originals = set()
         duplicates = set()
         
         for img_path in all_images:
             img_name = img_path.name
+            if img_name.startswith('_') or img_name.startswith('.'):
+                continue  # skip manifests/hidden files
             
-            if img_name in duplicate_map:
-                # It's a duplicate
+            if img_name in extended_duplicates:
                 duplicates.add(img_name)
             else:
-                # Check if it's an original (has duplicates pointing to it)
-                if img_name in duplicate_map.values():
-                    originals.add(img_name)
-                else:
-                    # Truly unique (no duplicates)
                     originals.add(img_name)
         
         # Copy originals to unique folder
@@ -497,13 +507,12 @@ class MasterPipeline:
         for img_name in tqdm(originals, desc="Copying unique"):
             src = input_folder / img_name
             dst = unique_folder / img_name
-            if not dst.exists():
+            if not dst.exists() and src.is_file():
                 shutil.copy2(src, dst)
         
         # Create duplicate clusters
         print(f"\n📁 Creating duplicate clusters...")
         
-        # Group duplicates by original
         clusters = {}
         for dup, orig in duplicate_map.items():
             if orig not in clusters:
@@ -514,28 +523,28 @@ class MasterPipeline:
             cluster_folder = clusters_folder / f"cluster_{cluster_id:04d}_{Path(original).stem}"
             cluster_folder.mkdir(exist_ok=True)
             
-            # Copy original
             src = input_folder / original
             if src.exists():
                 shutil.copy2(src, cluster_folder / f"ORIGINAL_{original}")
             
-            # Copy duplicates
             for dup in duplicates_list:
                 src = input_folder / dup
                 if src.exists():
                     shutil.copy2(src, cluster_folder / f"duplicate_{dup}")
         
         # Clean up temp folder
-        if not use_llm and temp_dedup_output.exists():
+        if not use_llm:
+            temp_dedup_output = self.workspace / 'temp_dedup'
+            if temp_dedup_output.exists():
             shutil.rmtree(temp_dedup_output)
         
         stats = {
-            'total_images': len(all_images),
+            'total_images': len([f for f in all_images if f.is_file() and not f.name.startswith(('_', '.'))]),
             'unique_images': len(originals),
             'duplicate_images': len(duplicates),
             'duplicate_pairs': len(duplicate_map),
             'clusters': len(clusters),
-            'compression_ratio': f"{(1 - len(originals) / len(all_images)) * 100:.1f}%" if len(all_images) > 0 else "0%"
+            'compression_ratio': f"{(1 - len(originals) / max(len(originals) + len(duplicates), 1)) * 100:.1f}%"
         }
         
         print("\n📊 Deduplication Results:")
@@ -545,7 +554,6 @@ class MasterPipeline:
         print(f"   Clusters created: {stats['clusters']}")
         print(f"   Compression: {stats['compression_ratio']}")
         
-        # Save stats
         with open(self.workspace / 'deduplication_stats.json', 'w') as f:
             json.dump(stats, f, indent=2)
         
@@ -553,7 +561,7 @@ class MasterPipeline:
     
     def step3_biometric_pipeline(self) -> Dict:
         """
-        Step 3: Run biometric compliance pipeline on unique images only
+        Step 3: Run biometric compliance pipeline on unique images only.
         
         Processes: 02_unique_images/ → 03_biometric_processed/
         """
@@ -605,9 +613,7 @@ class MasterPipeline:
         
         try:
             import subprocess
-            import sys
             
-            # Run pipeline with live output streaming
             process = subprocess.Popen(
                 [
                     'python3',
@@ -623,28 +629,21 @@ class MasterPipeline:
                 universal_newlines=True
             )
             
-            # Stream output line by line
             print("📊 Pipeline Progress:")
             print("-" * 70)
             
             output_lines = []
             for line in process.stdout:
-                # Print progress bars and important lines
                 line = line.rstrip()
                 if line:
-                    # Show progress bars (contains % or 'it/s')
                     if '%' in line or 'it/s' in line or 'Obfuscating:' in line:
                         print(f"\r{line}", end='', flush=True)
-                    # Show stage headers
                     elif 'STAGE' in line or '===' in line:
                         print(f"\n{line}")
-                    # Show summary lines
                     elif any(keyword in line for keyword in ['Successfully', 'Clean images', 'No faces', 'Verification', 'QA review']):
                         print(f"\n   {line}")
-                    
                     output_lines.append(line)
             
-            # Wait for process to complete
             return_code = process.wait(timeout=3600)
             
             print("\n" + "-" * 70)
@@ -669,19 +668,14 @@ class MasterPipeline:
             traceback.print_exc()
             return {'blurred': 0, 'clean': 0, 'qa_required': 0, 'skipped': 0, 'failed': len(images)}
         
-        # The pipeline uses the paths we provided:
-        # - temp_pipeline_output (--output parameter) - images with blurred faces that passed verification
-        # - temp_qa (--qa-dir parameter) - images with blurred faces that need QA review
-        # - biometric_clean_dir (from config) - images without any faces detected
-        
-        pipeline_obfuscated_folder = temp_pipeline_output  # Use the temp folder we passed
-        pipeline_clean_folder = self.config.biometric_clean_dir  # Clean images go to permanent location
-        pipeline_qa_folder = temp_qa_dir  # Use the temp QA folder we passed
+        # The biometric pipeline writes clean images to a fixed location
+        pipeline_obfuscated_folder = temp_pipeline_output
+        pipeline_clean_folder = self.config.biometric_clean_dir
+        pipeline_qa_folder = temp_qa_dir
         
         processed_stats = {'blurred': 0, 'clean': 0, 'qa_required': 0, 'skipped': 0, 'failed': 0}
         
         print("\n📂 Organizing processed images...")
-        print(f"   Reading from pipeline output folders...")
         
         # Copy blurred/obfuscated images
         if pipeline_obfuscated_folder.exists():
@@ -729,6 +723,11 @@ class MasterPipeline:
                     processed_stats['failed'] = pipeline_stats.get('failed', 0)
                     processed_stats['skipped'] = pipeline_stats.get('skipped', 0)
                     print(f"   ✓ Loaded pipeline statistics from results file")
+                
+                # Save a copy of biometric results in this folder's workspace
+                results_copy_path = self.workspace / 'obfuscation_results.json'
+                shutil.copy2(pipeline_results_file, results_copy_path)
+                print(f"   ✓ Saved biometric results to workspace")
             except Exception as e:
                 print(f"   ⚠️  Could not read pipeline results: {e}")
         
@@ -736,7 +735,6 @@ class MasterPipeline:
         total_output = processed_stats['blurred'] + processed_stats['clean'] + processed_stats['qa_required']
         input_count = len(images)
         
-        # If we didn't get stats from JSON, calculate from difference
         if processed_stats['failed'] == 0 and processed_stats['skipped'] == 0:
             unaccounted = input_count - total_output
             if unaccounted > 0:
@@ -744,7 +742,6 @@ class MasterPipeline:
                 print(f"   ⚠️  {unaccounted} images unaccounted for (marked as failed)")
         
         print(f"\n🧹 Cleaning up pipeline output folders...")
-        # Clean up pipeline folders after copying
         for folder in [pipeline_obfuscated_folder, pipeline_clean_folder, pipeline_qa_folder]:
             if folder.exists():
                 for img_path in folder.glob('*'):
@@ -762,31 +759,14 @@ class MasterPipeline:
         failed_log = self.config.biometric_results_dir / 'failed_images.log'
         if failed_log.exists():
             shutil.copy2(failed_log, self.workspace / 'failed_images.log')
-            print(f"\n📋 Failed images log copied to: {self.workspace / 'failed_images.log'}")
         
         print("\n📊 Pipeline Results:")
         print(f"   📥 Input images: {input_count}")
         print(f"   🔐 Blurred (faces detected): {processed_stats['blurred']}")
-        print(f"     ↳ Obfuscated (passed verification): {processed_stats['blurred'] - processed_stats['qa_required']}")
-        print(f"     ↳ QA Review (needs manual check): {processed_stats['qa_required']}")
         print(f"   ✅ Clean (no faces): {processed_stats['clean']}")
         print(f"   ❌ Failed to process: {processed_stats['failed']}")
         print(f"   ⏭️  Skipped: {processed_stats['skipped']}")
         
-        # QA images are already included in blurred count, so don't double-count
-        total_accounted = processed_stats['blurred'] + processed_stats['clean'] + processed_stats['failed'] + processed_stats['skipped']
-        print(f"   📦 Total processed: {total_accounted}")
-        
-        # Validate counts
-        if total_accounted != input_count:
-            print(f"\n⚠️  WARNING: Count mismatch detected!")
-            print(f"   Expected: {input_count} images")
-            print(f"   Accounted: {total_accounted} images")
-            print(f"   Difference: {input_count - total_accounted} images")
-        else:
-            print(f"   ✅ All {input_count} images accounted for!")
-        
-        # Save stats
         with open(self.workspace / 'pipeline_stats.json', 'w') as f:
             json.dump(processed_stats, f, indent=2)
         
@@ -794,11 +774,9 @@ class MasterPipeline:
     
     def step4_consolidate_output(self) -> Dict:
         """
-        Step 4: Consolidate final output
+        Step 4: Consolidate final output.
         
-        Creates final_output/ with:
-        - All processed images (blurred + clean)
-        - manifest.json with metadata
+        Creates final_output/ with all processed images (blurred + clean).
         """
         print("\n" + "=" * 70)
         print("📦 STEP 4: Consolidate Final Output")
@@ -807,26 +785,19 @@ class MasterPipeline:
         final_folder = self.folders['final_output']
         processed_folder = self.folders['processed_unique']
         
-        # Copy all processed images to final output
         for subfolder in ['blurred', 'clean']:
             src_folder = processed_folder / subfolder
             if src_folder.exists():
                 for img in src_folder.glob('*'):
+                    if img.is_file():
                     shutil.copy2(img, final_folder / img.name)
         
-        final_count = len(list(final_folder.glob('*')))
+        final_count = len([f for f in final_folder.glob('*') if f.is_file() and f.name != 'manifest.json'])
         
-        # Create manifest
         manifest = {
             'processing_date': datetime.now().isoformat(),
             'total_final_images': final_count,
             'workspace': str(self.workspace),
-            'folders': {
-                'downloaded': len(list(self.folders['downloaded'].glob('*'))),
-                'unique': len(list(self.folders['unique'].glob('*'))),
-                'processed': final_count,
-                'clusters': len(list(self.folders['duplicate_clusters'].glob('*')))
-            }
         }
         
         with open(final_folder / 'manifest.json', 'w') as f:
@@ -843,29 +814,32 @@ class MasterPipeline:
         deduplicate: bool = True,
         pipeline: bool = True,
         use_llm: bool = None,
-        dedup_threshold: float = None
+        dedup_threshold: float = None,
+        folder_id: str = None
     ):
         """
-        Run the complete pipeline.
+        Run the complete pipeline for a single folder.
         
         Args:
             download: Run download step
             deduplicate: Run deduplication step
             pipeline: Run biometric pipeline step
-            use_llm: Use LLM validation (uses config if None)
-            dedup_threshold: Deduplication threshold (uses config if None)
+            use_llm: Use LLM validation
+            dedup_threshold: Deduplication threshold
+            folder_id: Google Drive folder ID to process
         """
-        # Use config values if not provided
         use_llm = use_llm if use_llm is not None else self.config.use_llm_validation
         dedup_threshold = dedup_threshold if dedup_threshold is not None else self.config.dedup_threshold
         
         print("\n" + "=" * 70)
-        print("🚀 MASTER PIPELINE START")
-        print("=" * 70)
+        print("🚀 PIPELINE START")
+        if folder_id:
+            print(f"   Folder: {folder_id}")
         print(f"   Download: {download}")
         print(f"   Deduplicate: {deduplicate} (LLM: {use_llm})")
         print(f"   Biometric: {pipeline}")
         print(f"   Threshold: {dedup_threshold}")
+        print("=" * 70)
         
         if self.config.dry_run:
             print(f"\n⚠️  DRY RUN MODE - No actual processing will occur")
@@ -875,24 +849,38 @@ class MasterPipeline:
         
         # Step 1: Download
         if download:
-            downloaded_count = self.step1_download_from_drive()
+            if not folder_id:
+                folder_id = self.config.google_drive_folder_id
+            if not folder_id:
+                print("❌ No folder ID provided and none configured in .env")
+                return
+            downloaded_count = self.step1_download_from_drive(folder_id=folder_id)
             if downloaded_count == 0:
                 print("❌ No images to process")
                 return
         
-        # Step 2: Deduplicate
+        # Step 2: Deduplicate (within this folder only)
         if deduplicate:
-            dedup_stats = self.step2_deduplicate(
-                use_llm=use_llm,
-                threshold=dedup_threshold
-            )
+            self.step2_deduplicate(use_llm=use_llm, threshold=dedup_threshold)
+        else:
+            # If skipping dedup, copy downloaded images directly to unique
+            print("\n⏭️  Skipping deduplication — copying all downloaded to unique...")
+            downloaded_dir = self.folders['downloaded']
+            unique_dir = self.folders['unique']
+            image_exts = {'.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif', '.avif', '.bmp', '.tiff', '.tif'}
+            copied = 0
+            for f in downloaded_dir.iterdir():
+                if f.is_file() and f.suffix.lower() in image_exts and not (unique_dir / f.name).exists():
+                    shutil.copy2(f, unique_dir / f.name)
+                    copied += 1
+            print(f"   Copied {copied} images to unique folder")
         
         # Step 3: Biometric Pipeline
         if pipeline:
-            pipeline_stats = self.step3_biometric_pipeline()
+            self.step3_biometric_pipeline()
         
         # Step 4: Consolidate
-        manifest = self.step4_consolidate_output()
+        self.step4_consolidate_output()
         
         # Final summary
         end_time = datetime.now()
@@ -902,15 +890,89 @@ class MasterPipeline:
         print("✅ PIPELINE COMPLETE")
         print("=" * 70)
         print(f"⏱️  Total time: {duration / 60:.1f} minutes")
-        print(f"\n📁 Final output: {self.folders['final_output']}")
-        print(f"   Ready for annotation: {manifest['total_final_images']} images")
+        print(f"📁 Final output: {self.folders['final_output']}")
+
+
+def run_for_folders(
+    folder_ids: List[str],
+    download: bool = True,
+    deduplicate: bool = True,
+    pipeline: bool = True,
+    use_llm: bool = False,
+    dedup_threshold: float = 0.85,
+    config=None
+):
+    """
+    Run the complete pipeline for each folder_id in isolation.
+    
+    Each folder gets its own workspace:
+      pipeline_workspace/folders/{folder_id}/
+    
+    No cross-folder deduplication or comparison.
+    """
+    config = config or get_config()
+    root_workspace = config.workspace
+    
+    print("\n" + "=" * 70)
+    print(f"🚀 MASTER PIPELINE — Processing {len(folder_ids)} folder(s)")
+    print("=" * 70)
+    for i, fid in enumerate(folder_ids, 1):
+        print(f"   {i}. {fid}")
+    print()
+    
+    all_start = datetime.now()
+    results = {}
+    
+    for idx, folder_id in enumerate(folder_ids, 1):
+        print("\n" + "▓" * 70)
+        print(f"▓  FOLDER {idx}/{len(folder_ids)}: {folder_id}")
+        print("▓" * 70)
         
-        print(f"\n📂 Workspace structure:")
-        print(f"   • Downloaded: {self.folders['downloaded']}")
-        print(f"   • Unique: {self.folders['unique']}")
-        print(f"   • Duplicate clusters: {self.folders['duplicate_clusters']}")
-        print(f"   • Processed: {self.folders['processed_unique']}")
-        print(f"   • Final output: {self.folders['final_output']}")
+        # Create isolated per-folder workspace
+        folder_workspace = root_workspace / "folders" / folder_id
+        
+        # Create pipeline instance for this folder
+        p = MasterPipeline(workspace_dir=str(folder_workspace), config=config)
+        
+        try:
+            p.run_complete_pipeline(
+                download=download,
+                deduplicate=deduplicate,
+                pipeline=pipeline,
+                use_llm=use_llm,
+                dedup_threshold=dedup_threshold,
+                folder_id=folder_id
+            )
+            results[folder_id] = "completed"
+        except Exception as e:
+            print(f"\n❌ Folder {folder_id} failed: {e}")
+            import traceback
+            traceback.print_exc()
+            results[folder_id] = f"failed: {str(e)}"
+    
+    all_end = datetime.now()
+    total_duration = (all_end - all_start).total_seconds()
+    
+    # Save combined summary
+    summary = {
+        "processed_at": datetime.now().isoformat(),
+        "total_folders": len(folder_ids),
+        "total_duration_seconds": total_duration,
+        "results": results,
+    }
+    summary_path = root_workspace / "run_summary.json"
+    with open(summary_path, 'w') as f:
+        json.dump(summary, f, indent=2)
+    
+    print("\n" + "=" * 70)
+    print(f"✅ ALL FOLDERS PROCESSED")
+    print("=" * 70)
+    print(f"⏱️  Total time: {total_duration / 60:.1f} minutes")
+    for fid, status in results.items():
+        icon = "✅" if status == "completed" else "❌"
+        print(f"   {icon} {fid}: {status}")
+    
+    return results
 
 
 def main():
@@ -926,17 +988,16 @@ def main():
     parser.add_argument('--max-llm', type=int, help='Max LLM validations (cost control)')
     parser.add_argument('--config', action='store_true', help='Show configuration and exit')
     parser.add_argument('--dry-run', action='store_true', help='Dry run mode (no processing)')
+    parser.add_argument('--folder-ids', type=str, help='Comma-separated Google Drive folder IDs')
     
     args = parser.parse_args()
     
     # Get configuration
     config = get_config()
     
-    # Override config with command-line args
     if args.dry_run:
         config.dry_run = True
     
-    # Show config if requested
     if args.config:
         config.print_config()
         is_valid, errors = config.validate()
@@ -947,13 +1008,11 @@ def main():
             return 1
         return 0
     
-    # Validate config
     is_valid, errors = config.validate()
     if not is_valid:
         print("❌ Configuration errors:")
         for error in errors:
             print(f"   • {error}")
-        print("\nRun with --config to see full configuration")
         return 1
     
     # If --all, enable everything
@@ -964,7 +1023,6 @@ def main():
     
     # Apply defaults from config if no flags were specified
     if not any([args.download, args.deduplicate, args.pipeline, args.all]):
-        # No flags specified, use config defaults
         if config.run_all_by_default:
             args.download = True
             args.deduplicate = True
@@ -974,16 +1032,34 @@ def main():
             args.deduplicate = config.run_deduplicate_by_default
             args.pipeline = config.run_biometric_by_default
     
-    # Create pipeline with config
-    pipeline = MasterPipeline(workspace_dir=args.workspace, config=config)
+    # Parse folder IDs
+    folder_ids = None
+    if args.folder_ids:
+        folder_ids = [fid.strip() for fid in args.folder_ids.split(',') if fid.strip()]
     
-    # Run pipeline
+    threshold = args.threshold if args.threshold else config.dedup_threshold
+    
+    if folder_ids:
+        # Run per-folder in isolation
+        run_for_folders(
+            folder_ids=folder_ids,
+            download=args.download,
+            deduplicate=args.deduplicate,
+            pipeline=args.pipeline,
+            use_llm=args.use_llm,
+            dedup_threshold=threshold,
+            config=config
+        )
+    else:
+        # Legacy: single folder from config (or no download)
+    pipeline = MasterPipeline(workspace_dir=args.workspace, config=config)
     pipeline.run_complete_pipeline(
         download=args.download,
         deduplicate=args.deduplicate,
         pipeline=args.pipeline,
         use_llm=args.use_llm,
-        dedup_threshold=args.threshold
+            dedup_threshold=threshold,
+            folder_id=config.google_drive_folder_id
     )
     
     return 0

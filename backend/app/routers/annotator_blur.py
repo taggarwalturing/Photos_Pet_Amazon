@@ -47,20 +47,30 @@ def _get_image_bytes(image: Image) -> bytes:
         with open(cache_path, "rb") as f:
             return f.read()
 
-    # 2. Try pipeline workspace (original or processed)
+    # 2. Try pipeline workspace (original or processed) — per-folder + legacy
     workspace = os.path.join(
         os.path.dirname(__file__), "..", "..",
         "master_pipeline", "pipeline_workspace"
     )
-    for sub in ["04_final_output", "03_biometric_processed", "02_unique_images", "02_deduplicated", "01_downloaded_from_drive", "01_downloaded"]:
-        folder = os.path.join(workspace, sub)
-        if os.path.isdir(folder):
-            for fname in os.listdir(folder):
-                if fname == image.filename:
-                    fpath = os.path.join(folder, fname)
-                    if os.path.getsize(fpath) > 0:
-                        with open(fpath, "rb") as f:
-                            return f.read()
+    search_roots = []
+    folders_dir = os.path.join(workspace, "folders")
+    if os.path.isdir(folders_dir):
+        for fd in sorted(os.listdir(folders_dir)):
+            fd_path = os.path.join(folders_dir, fd)
+            if os.path.isdir(fd_path):
+                search_roots.append(fd_path)
+    search_roots.append(workspace)  # legacy flat workspace as fallback
+    
+    for search_root in search_roots:
+        for sub in ["04_final_output", "03_biometric_processed", "02_unique_images", "02_deduplicated", "01_downloaded_from_drive", "01_downloaded"]:
+            folder = os.path.join(search_root, sub)
+            if os.path.isdir(folder):
+                for fname in os.listdir(folder):
+                    if fname == image.filename:
+                        fpath = os.path.join(folder, fname)
+                        if os.path.getsize(fpath) > 0:
+                            with open(fpath, "rb") as f:
+                                return f.read()
 
     # 3. Download from URL
     import httpx
@@ -259,19 +269,30 @@ def _find_original_image_bytes(image: Image) -> bytes | None:
                     return f.read()
 
     # Search pipeline folders (earlier stages have the original unblurred version)
-    search_folders = [
-        os.path.join(workspace, "01_downloaded_from_drive"),
-        os.path.join(workspace, "01_downloaded"),
-        os.path.join(workspace, "02_unique_images"),
-        os.path.join(workspace, "02_deduplicated"),
-        os.path.join(workspace, "03_biometric_processed", "clean"),
-    ]
-    for folder in search_folders:
-        if os.path.isdir(folder):
-            fpath = os.path.join(folder, image.filename)
-            if os.path.exists(fpath) and os.path.getsize(fpath) > 0:
-                with open(fpath, "rb") as f:
-                    return f.read()
+    # Check per-folder workspaces + legacy workspace
+    search_roots = []
+    folders_dir = os.path.join(workspace, "folders")
+    if os.path.isdir(folders_dir):
+        for fd in sorted(os.listdir(folders_dir)):
+            fd_path = os.path.join(folders_dir, fd)
+            if os.path.isdir(fd_path):
+                search_roots.append(fd_path)
+    search_roots.append(workspace)  # legacy flat workspace as fallback
+    
+    for search_root in search_roots:
+        search_folders = [
+            os.path.join(search_root, "01_downloaded_from_drive"),
+            os.path.join(search_root, "01_downloaded"),
+            os.path.join(search_root, "02_unique_images"),
+            os.path.join(search_root, "02_deduplicated"),
+            os.path.join(search_root, "03_biometric_processed", "clean"),
+        ]
+        for folder in search_folders:
+            if os.path.isdir(folder):
+                fpath = os.path.join(folder, image.filename)
+                if os.path.exists(fpath) and os.path.getsize(fpath) > 0:
+                    with open(fpath, "rb") as f:
+                        return f.read()
 
     # Last resort: re-download from Google Drive
     gdrive_bytes = _download_from_google_drive(image.filename)
@@ -397,7 +418,7 @@ def restore_image(
                 restored_bytes = f.read()
             source = "processed_url"
 
-    # 2. Try local pipeline folders
+    # 2. Try local pipeline folders (per-folder workspaces + legacy)
     if not restored_bytes:
         search_order = [
             "03_biometric_processed/blurred",
@@ -407,13 +428,25 @@ def restore_image(
             "01_downloaded_from_drive",
             "01_downloaded",
         ]
-        for sub in search_order:
-            fpath = os.path.join(workspace, sub, image.filename)
-            if os.path.exists(fpath) and os.path.getsize(fpath) > 0:
-                with open(fpath, "rb") as f:
-                    restored_bytes = f.read()
-                source = sub
+        restore_search_roots = []
+        restore_folders_dir = os.path.join(workspace, "folders")
+        if os.path.isdir(restore_folders_dir):
+            for fd in sorted(os.listdir(restore_folders_dir)):
+                fd_path = os.path.join(restore_folders_dir, fd)
+                if os.path.isdir(fd_path):
+                    restore_search_roots.append(fd_path)
+        restore_search_roots.append(workspace)
+        
+        for sr in restore_search_roots:
+            if restored_bytes:
                 break
+            for sub in search_order:
+                fpath = os.path.join(sr, sub, image.filename)
+                if os.path.exists(fpath) and os.path.getsize(fpath) > 0:
+                    with open(fpath, "rb") as f:
+                        restored_bytes = f.read()
+                    source = sub
+                    break
 
     # 3. Fallback: re-download from Google Drive (main download source)
     if not restored_bytes:

@@ -85,16 +85,35 @@ export default function PhotoRegistryTab() {
 
   const driveTotal = summary.total_in_drive || 0;
   const driveDupFilenames = summary.drive_duplicate_filenames || 0;
-  const driveDupDetails = summary.drive_duplicate_details || {};
+  const withinFolderDups = summary.within_folder_duplicates || [];
+  const crossFolderDups = summary.cross_folder_duplicates || [];
+  const crossFolderOverlap = summary.cross_folder_overlap || 0;
+  const totalDownloaded = summary.total_downloaded || 0;
+  const totalDownloadedUniqueNames = summary.total_downloaded_unique_names || totalDownloaded;
+
+  // Build tooltip explaining gap between Drive count and downloaded
+  const downloadedTooltip = (() => {
+    const parts = [];
+    if (driveDupFilenames > 0) parts.push(`${driveDupFilenames} within-folder dup filenames skipped`);
+    if (crossFolderOverlap > 0) parts.push(`${crossFolderOverlap} filenames shared across folders`);
+    return parts.length > 0 ? `${driveTotal} in Drive → ${totalDownloaded} downloaded: ${parts.join(', ')}` : '';
+  })();
 
   const statCards = [
-    { key: null, icon: '☁️', label: 'In Google Drive', value: driveTotal, color: { bg: 'bg-gradient-to-br from-sky-500 to-blue-600', ring: 'ring-sky-400' }, tooltip: driveDupFilenames > 0 ? `${driveDupFilenames} duplicate filenames in Drive` : '' },
-    { key: 'all', icon: '📋', label: 'Downloaded (Unique Names)', value: summary.total_downloaded || 0, color: { bg: 'bg-gradient-to-br from-indigo-500 to-purple-500', ring: 'ring-indigo-400' } },
-    { key: 'unique', icon: '✅', label: 'Unique', value: summary.total_unique || 0, color: { bg: 'bg-gradient-to-br from-emerald-500 to-teal-500', ring: 'ring-emerald-400' } },
-    { key: 'duplicate', icon: '📑', label: 'Content Duplicates', value: summary.total_duplicate || 0, color: { bg: 'bg-gradient-to-br from-amber-500 to-orange-500', ring: 'ring-amber-400' } },
-    { key: 'blurred', icon: '🔒', label: 'Pipeline Blurred', value: summary.total_pipeline_blurred || 0, color: { bg: 'bg-gradient-to-br from-red-500 to-rose-500', ring: 'ring-red-400' } },
-    { key: 'manually_blurred', icon: '✋', label: 'Manual Blur', value: summary.total_manually_blurred || 0, color: { bg: 'bg-gradient-to-br from-violet-500 to-fuchsia-500', ring: 'ring-violet-400' } },
-    { key: 'clean', icon: '🟢', label: 'Clean', value: summary.total_clean || 0, color: { bg: 'bg-gradient-to-br from-cyan-500 to-blue-500', ring: 'ring-cyan-400' } },
+    { key: null, icon: '☁️', label: 'In Google Drive', value: driveTotal, color: { bg: 'bg-gradient-to-br from-sky-500 to-blue-600', ring: 'ring-sky-400' },
+      tooltip: `Total image files found across all Google Drive folders.${driveDupFilenames > 0 ? ` Includes ${driveDupFilenames} duplicate filename(s) within folders.` : ''}` },
+    { key: 'all', icon: '📋', label: 'Downloaded', value: totalDownloaded, color: { bg: 'bg-gradient-to-br from-indigo-500 to-purple-500', ring: 'ring-indigo-400' },
+      tooltip: `Images downloaded to disk (unique filenames per folder). ${downloadedTooltip || 'Duplicate filenames within a folder are skipped.'}` },
+    { key: 'unique', icon: '✅', label: 'Unique (After Dedup)', value: summary.total_unique || 0, color: { bg: 'bg-gradient-to-br from-emerald-500 to-teal-500', ring: 'ring-emerald-400' },
+      tooltip: 'Images remaining after content-based deduplication. These are visually distinct images that passed the similarity check.' },
+    { key: 'duplicate', icon: '📑', label: 'Content Duplicates', value: summary.total_duplicate || 0, color: { bg: 'bg-gradient-to-br from-amber-500 to-orange-500', ring: 'ring-amber-400' },
+      tooltip: 'Images removed because their visual content matched another image (pixel-level similarity), even if filenames differ.' },
+    { key: 'blurred', icon: '🔒', label: 'Pipeline Blurred', value: summary.total_pipeline_blurred || 0, color: { bg: 'bg-gradient-to-br from-red-500 to-rose-500', ring: 'ring-red-400' },
+      tooltip: 'Images where the biometric pipeline detected human faces and automatically applied blur/obfuscation for compliance.' },
+    { key: 'manually_blurred', icon: '✋', label: 'Manual Blur', value: summary.total_manually_blurred || 0, color: { bg: 'bg-gradient-to-br from-violet-500 to-fuchsia-500', ring: 'ring-violet-400' },
+      tooltip: 'Images where an admin or annotator manually drew blur regions using the blur tool, in addition to or instead of pipeline blur.' },
+    { key: 'clean', icon: '🟢', label: 'Clean', value: summary.total_clean || 0, color: { bg: 'bg-gradient-to-br from-cyan-500 to-blue-500', ring: 'ring-cyan-400' },
+      tooltip: 'Images with no blur applied — no human faces detected by the pipeline and no manual blur added. Ready for annotation as-is.' },
   ];
 
   return (
@@ -141,17 +160,89 @@ export default function PhotoRegistryTab() {
       </div>
 
       {/* Drive Duplicate Filenames info */}
-      {driveDupFilenames > 0 && (
-        <details className="bg-sky-50 border border-sky-200 rounded-lg px-4 py-2 text-xs">
-          <summary className="cursor-pointer text-sky-700 font-medium">
-            ☁️ {driveDupFilenames} files in Google Drive have duplicate filenames (same name in different subfolders) — only one copy is downloaded
-          </summary>
-          <ul className="mt-2 space-y-0.5 text-sky-600 pl-4">
-            {Object.entries(driveDupDetails).map(([name, count]) => (
-              <li key={name}>• <span className="font-mono">{name}</span> — appears {count}× in Drive</li>
-            ))}
-          </ul>
-        </details>
+      {(withinFolderDups.length > 0 || crossFolderDups.length > 0) && (
+        <div className="space-y-2">
+          {/* Within-folder duplicates */}
+          {withinFolderDups.length > 0 && (
+            <details className="bg-sky-50 border border-sky-200 rounded-lg px-4 py-2 text-xs">
+              <summary className="cursor-pointer text-sky-700 font-medium">
+                📂 {withinFolderDups.length} filename(s) repeated within a folder (same name in subfolders) — only one copy is downloaded
+              </summary>
+              <div className="mt-2 overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-left text-sky-600 border-b border-sky-200">
+                      <th className="pb-1 pr-4 font-semibold">Filename</th>
+                      <th className="pb-1 pr-4 font-semibold">Folder ID</th>
+                      <th className="pb-1 font-semibold">Count</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {withinFolderDups.map((d, i) => (
+                      <tr key={i} className="text-sky-600">
+                        <td className="py-0.5 pr-4 font-mono">{d.filename}</td>
+                        <td className="py-0.5 pr-4">
+                          <a
+                            href={`https://drive.google.com/drive/folders/${d.folder_id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-mono text-blue-600 hover:underline"
+                            title={d.folder_id}
+                          >
+                            {d.folder_id.slice(0, 16)}…
+                          </a>
+                        </td>
+                        <td className="py-0.5">{d.count}×</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          )}
+
+          {/* Cross-folder duplicates */}
+          {crossFolderDups.length > 0 && (
+            <details className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2 text-xs">
+              <summary className="cursor-pointer text-amber-700 font-medium">
+                🔀 {crossFolderDups.length} filename(s) appear in multiple folders — each folder downloads its own copy
+              </summary>
+              <div className="mt-2 overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-left text-amber-600 border-b border-amber-200">
+                      <th className="pb-1 pr-4 font-semibold">Filename</th>
+                      <th className="pb-1 font-semibold">Found in Folders</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {crossFolderDups.map((d, i) => (
+                      <tr key={i} className="text-amber-600">
+                        <td className="py-1 pr-4 font-mono">{d.filename}</td>
+                        <td className="py-1">
+                          <div className="flex flex-wrap gap-1">
+                            {d.folders.map((fid, j) => (
+                              <a
+                                key={j}
+                                href={`https://drive.google.com/drive/folders/${fid}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-mono hover:bg-amber-200 hover:underline transition"
+                                title={fid}
+                              >
+                                📂 {fid.slice(0, 12)}…
+                              </a>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          )}
+        </div>
       )}
 
       {/* Search + Filter Bar */}
@@ -195,6 +286,8 @@ export default function PhotoRegistryTab() {
               <tr className="bg-gray-50 border-b border-gray-200">
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider w-8">#</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Filename</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider" title="Google Drive File ID">Drive File ID</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider" title="Source Google Drive Folder ID">Folder ID</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Format</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Parent Image</th>
@@ -208,7 +301,7 @@ export default function PhotoRegistryTab() {
               {loading ? (
                 Array.from({ length: 10 }).map((_, i) => (
                   <tr key={i}>
-                    {Array.from({ length: 9 }).map((_, j) => (
+                    {Array.from({ length: 11 }).map((_, j) => (
                       <td key={j} className="px-4 py-3">
                         <div className="h-4 bg-gray-100 rounded animate-pulse" style={{ width: `${60 + Math.random() * 40}%` }} />
                       </td>
@@ -217,7 +310,7 @@ export default function PhotoRegistryTab() {
                 ))
               ) : data?.data?.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-12 text-center text-gray-400">
+                  <td colSpan={11} className="px-4 py-12 text-center text-gray-400">
                     No images found matching your criteria
                   </td>
                 </tr>
@@ -234,7 +327,7 @@ export default function PhotoRegistryTab() {
                       <div className="flex items-center gap-2">
                         {row.db_id && (
                           <img
-                            src={`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/images/proxy/${row.db_id}?t=1`}
+                            src={`${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/images/proxy/${row.db_id}?t=1`}
                             alt=""
                             className="w-8 h-8 rounded object-cover border border-gray-200 shrink-0"
                             onError={(e) => { e.target.style.display = 'none'; }}
@@ -251,6 +344,40 @@ export default function PhotoRegistryTab() {
                           )}
                         </div>
                       </div>
+                    </td>
+
+                    {/* Drive File ID */}
+                    <td className="px-4 py-2.5">
+                      {row.image_drive_id ? (
+                        <a
+                          href={`https://drive.google.com/file/d/${row.image_drive_id}/view`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] font-mono text-blue-600 hover:text-blue-800 hover:underline truncate max-w-[120px] inline-block"
+                          title={row.image_drive_id}
+                        >
+                          {row.image_drive_id.slice(0, 12)}…
+                        </a>
+                      ) : (
+                        <span className="text-gray-300 text-xs">—</span>
+                      )}
+                    </td>
+
+                    {/* Folder ID */}
+                    <td className="px-4 py-2.5">
+                      {row.source_drive_folder_id ? (
+                        <a
+                          href={`https://drive.google.com/drive/folders/${row.source_drive_folder_id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] font-mono text-purple-600 hover:text-purple-800 hover:underline truncate max-w-[120px] inline-block"
+                          title={row.source_drive_folder_id}
+                        >
+                          {row.source_drive_folder_id.slice(0, 12)}…
+                        </a>
+                      ) : (
+                        <span className="text-gray-300 text-xs">—</span>
+                      )}
                     </td>
 
                     {/* Format */}

@@ -7,7 +7,7 @@ import BlurTool from '../components/BlurTool';
 // Helper to get proxied image URL for Google Drive images
 const getImageUrl = (imageId) => {
   if (!imageId) return '';
-  return `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/images/proxy/${imageId}`;
+  return `${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/images/proxy/${imageId}`;
 };
 
 export default function AnnotationPage() {

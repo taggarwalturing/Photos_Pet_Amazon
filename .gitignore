@@ -111,6 +111,7 @@ backend/master_pipeline/pipeline_workspace/02_unique_images/*
 backend/master_pipeline/pipeline_workspace/02_duplicate_clusters/*
 backend/master_pipeline/pipeline_workspace/03_biometric_processed/*
 backend/master_pipeline/pipeline_workspace/04_final_output/*
+backend/master_pipeline/pipeline_workspace/folders/
 !backend/master_pipeline/pipeline_workspace/**/.gitkeep
 
 # ===================================

@@ -10,7 +10,7 @@ const PAGE_SIZE = 20;
 const getImageUrl = (image) => {
   if (!image) return '';
   // Use proxy endpoint for all images to bypass CORS, add timestamp to prevent caching
-  return `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/images/proxy/${image.id}?t=${Date.now()}`;
+  return `${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/images/proxy/${image.id}?t=${Date.now()}`;
 };
 
 function Pagination({ currentPage, totalPages, onPageChange }) {
@@ -337,11 +337,11 @@ export default function AnnotatorHome() {
             {/* Filters & Categories */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6 animate-fade-in">
               <div className="flex items-center gap-3">
-                <div>
-                  <h2 className="text-lg font-bold text-gray-800">Your Images</h2>
-                  <p className="text-sm text-gray-500">
-                    {data.total} images &middot; {data.assigned_categories.length} categories assigned
-                  </p>
+              <div>
+                <h2 className="text-lg font-bold text-gray-800">Your Images</h2>
+                <p className="text-sm text-gray-500">
+                  {data.total} images &middot; {data.assigned_categories.length} categories assigned
+                </p>
                 </div>
                 <button
                   onClick={() => setShowGuideModal(true)}
@@ -424,6 +424,7 @@ export default function AnnotatorHome() {
                       {/* Large Image */}
                       <div className="relative aspect-[4/3]">
                         <img
+                          key={`thumb-${img.id}`}
                           src={getImageUrl(img)}
                           alt={img.filename}
                           className="w-full h-full object-cover"

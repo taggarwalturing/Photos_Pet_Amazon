@@ -40,11 +40,43 @@ router = APIRouter(prefix="/admin/arbiter", tags=["Arbiter Classifier"])
 # ─── Directories ──────────────────────────────────────────────
 ARBITER_DIR = Path(__file__).parent.parent.parent / "arbiter_classifier"
 PIPELINE_WORKSPACE = Path(__file__).parent.parent.parent / "master_pipeline" / "pipeline_workspace"
-FINAL_OUTPUT_DIR = PIPELINE_WORKSPACE / "04_final_output"
+FINAL_OUTPUT_DIR = PIPELINE_WORKSPACE / "04_final_output"  # legacy fallback
 RESULTS_DIR = ARBITER_DIR / "results"
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 RESULTS_FILE = RESULTS_DIR / "final_images_results.json"
 ERRORS_FILE = RESULTS_DIR / "failed_images.json"
+
+
+def _get_all_final_images() -> list:
+    """
+    Collect all final output images across per-folder workspaces and legacy workspace.
+    Returns a sorted list of Path objects.
+    """
+    supported_exts = {".jpg", ".jpeg", ".png"}
+    images = []
+    seen_names = set()
+    
+    # Per-folder workspaces
+    folders_dir = PIPELINE_WORKSPACE / "folders"
+    if folders_dir.exists():
+        for fd in sorted(folders_dir.iterdir()):
+            if not fd.is_dir():
+                continue
+            final_dir = fd / "04_final_output"
+            if final_dir.exists():
+                for p in final_dir.iterdir():
+                    if p.is_file() and p.suffix.lower() in supported_exts and p.name not in seen_names:
+                        images.append(p)
+                        seen_names.add(p.name)
+    
+    # Legacy flat workspace
+    if FINAL_OUTPUT_DIR.exists():
+        for p in FINAL_OUTPUT_DIR.iterdir():
+            if p.is_file() and p.suffix.lower() in supported_exts and p.name not in seen_names:
+                images.append(p)
+                seen_names.add(p.name)
+    
+    return sorted(images, key=lambda x: x.name)
 
 CATEGORIES = ["lighting", "viewpoint", "environment", "occlusion", "activity", "multipet"]
 
@@ -134,9 +166,12 @@ def call_vision_api(api_url, headers, model, provider, prompt, image_b64, mime, 
                 if text.startswith("json"):
                     text = text[4:]
             return json.loads(text.strip())
+        else:
+            # Surface non-200 errors (402 budget, 429 rate limit, etc.)
+            error_body = resp.text[:300]
+            return {"error": f"API returned {resp.status_code}: {error_body}"}
     except Exception as e:
         return {"error": str(e)}
-    return {}
 
 
 def call_text_api(api_url, headers, model, provider, prompt, timeout):
@@ -156,9 +191,11 @@ def call_text_api(api_url, headers, model, provider, prompt, timeout):
                 if text.startswith("json"):
                     text = text[4:]
             return json.loads(text.strip())
+        else:
+            error_body = resp.text[:300]
+            return {"error": f"API returned {resp.status_code}: {error_body}"}
     except Exception as e:
         return {"error": str(e)}
-    return {}
 
 
 # ─── Classification helpers ──────────────────────────────────
@@ -190,6 +227,15 @@ def classify_single_image(image_path, cfg):
                           cfg["openai_prompt"], image_b64, mime, timeout)
         gemini = g_fut.result()
         openai = o_fut.result()
+
+    # If both models returned errors, propagate as a failure
+    if "error" in gemini and "error" in openai:
+        return {"error": f"Both models failed — Gemini: {gemini['error'][:200]} | OpenAI: {openai['error'][:200]}"}
+    # If one model failed, propagate as a failure (partial results are unreliable)
+    if "error" in gemini:
+        return {"error": f"Gemini failed: {gemini['error'][:300]}"}
+    if "error" in openai:
+        return {"error": f"OpenAI failed: {openai['error'][:300]}"}
 
     # 2. Compare predictions
     predictions = {}
@@ -327,17 +373,13 @@ def run_arbiter_background():
         workers = int(config.get("PARALLEL_WORKERS", "5"))
         batch_size = int(config.get("BATCH_SIZE", "50"))
 
-        # Collect images
-        supported_exts = {".jpg", ".jpeg", ".png"}
-        image_files = sorted([
-            p for p in FINAL_OUTPUT_DIR.iterdir()
-            if p.is_file() and p.suffix.lower() in supported_exts
-        ])
+        # Collect images from all per-folder workspaces + legacy
+        image_files = _get_all_final_images()
 
         if not image_files:
             arbiter_status["is_running"] = False
             arbiter_status["current_step"] = "failed"
-            arbiter_status["errors"].append("No images found in 04_final_output/")
+            arbiter_status["errors"].append("No images found in any final output folder")
             arbiter_status["completed_at"] = datetime.now().isoformat()
             return
 
@@ -540,6 +582,83 @@ def _save_predictions_to_db(results_batch):
             pass
 
 
+# ─── Error Categorization ─────────────────────────────────────
+
+def _categorize_errors(errors: list) -> dict:
+    """
+    Parse error messages and categorize them so the UI can display
+    clear, actionable banners instead of misleading 'None' predictions.
+    """
+    categories = {
+        "budget_exceeded": 0,    # 402
+        "forbidden": 0,          # 403
+        "rate_limited": 0,       # 429
+        "timeout": 0,            # timeout / connection errors
+        "server_error": 0,       # 5xx
+        "parse_error": 0,        # JSON parse failures
+        "other": 0,
+    }
+    sample_errors = {}  # One sample per category for display
+
+    for err in errors:
+        err_lower = err.lower()
+        if "402" in err or "budget" in err_lower:
+            categories["budget_exceeded"] += 1
+            sample_errors.setdefault("budget_exceeded", err)
+        elif "403" in err or "forbidden" in err_lower:
+            categories["forbidden"] += 1
+            sample_errors.setdefault("forbidden", err)
+        elif "429" in err or "rate limit" in err_lower or "too many" in err_lower:
+            categories["rate_limited"] += 1
+            sample_errors.setdefault("rate_limited", err)
+        elif "timeout" in err_lower or "timed out" in err_lower or "connectionerror" in err_lower:
+            categories["timeout"] += 1
+            sample_errors.setdefault("timeout", err)
+        elif any(code in err for code in ["500", "502", "503", "504"]):
+            categories["server_error"] += 1
+            sample_errors.setdefault("server_error", err)
+        elif "json" in err_lower or "expecting value" in err_lower or "decode" in err_lower:
+            categories["parse_error"] += 1
+            sample_errors.setdefault("parse_error", err)
+        else:
+            categories["other"] += 1
+            sample_errors.setdefault("other", err)
+
+    # Determine the dominant error type
+    total_errors = sum(categories.values())
+    dominant_type = max(categories, key=categories.get) if total_errors > 0 else None
+    is_api_issue = categories["budget_exceeded"] + categories["forbidden"] + categories["rate_limited"] > 0
+
+    return {
+        "total_errors": total_errors,
+        "categories": {k: v for k, v in categories.items() if v > 0},
+        "sample_errors": sample_errors,
+        "dominant_type": dominant_type,
+        "is_api_issue": is_api_issue,
+        "actionable_message": _get_actionable_message(dominant_type, total_errors) if total_errors > 0 else None,
+    }
+
+
+def _get_actionable_message(dominant_type: str, total_errors: int) -> str:
+    """Return a human-readable message for the dominant error type."""
+    messages = {
+        "budget_exceeded": f"🚫 API Budget Exceeded — The Turing API returned 402 errors for {total_errors} image(s). "
+                          "Your API key has insufficient credits. Please top up the budget or contact your IT team.",
+        "forbidden": f"🔒 API Access Forbidden — The Turing API returned 403 errors for {total_errors} image(s). "
+                    "Check that your API key and authorization tokens are valid.",
+        "rate_limited": f"⏱️ API Rate Limited — The Turing API returned 429 errors for {total_errors} image(s). "
+                       "Too many requests were sent. Reduce parallel workers or wait before retrying.",
+        "timeout": f"⏰ API Timeout — {total_errors} image(s) timed out during classification. "
+                  "Try increasing the TIMEOUT_SECONDS in settings or reducing parallel workers.",
+        "server_error": f"🔥 API Server Error — The Turing API returned server errors for {total_errors} image(s). "
+                       "This is likely a temporary issue. Please retry later.",
+        "parse_error": f"📄 Response Parse Error — {total_errors} image(s) returned unparseable responses. "
+                      "The model output format may have changed.",
+        "other": f"⚠️ {total_errors} image(s) failed with unexpected errors. Check the error details below.",
+    }
+    return messages.get(dominant_type, f"⚠️ {total_errors} classification errors occurred.")
+
+
 # ─── Request / Response Models ────────────────────────────────
 class ArbiterStartRequest(BaseModel):
     reset: bool = False   # If True, clear previous results and start fresh
@@ -552,13 +671,7 @@ def get_arbiter_config(admin: User = Depends(require_admin)):
     """Return current arbiter classifier configuration."""
     config = load_arbiter_config()
     # Count available images
-    supported_exts = {".jpg", ".jpeg", ".png"}
-    image_count = 0
-    if FINAL_OUTPUT_DIR.exists():
-        image_count = len([
-            p for p in FINAL_OUTPUT_DIR.iterdir()
-            if p.is_file() and p.suffix.lower() in supported_exts
-        ])
+    image_count = len(_get_all_final_images())
 
     return {
         "gemini_model": config.get("GEMINI_MODEL", "gemini-2.5-pro"),
@@ -578,8 +691,10 @@ def get_arbiter_config(admin: User = Depends(require_admin)):
 
 @router.get("/status")
 def get_arbiter_status(admin: User = Depends(require_admin)):
-    """Get current arbiter pipeline execution status."""
-    return arbiter_status
+    """Get current arbiter pipeline execution status, including API error categorization."""
+    enriched = dict(arbiter_status)
+    enriched["api_error_summary"] = _categorize_errors(arbiter_status.get("errors", []))
+    return enriched
 
 
 @router.post("/start")
@@ -594,8 +709,8 @@ def start_arbiter(
     if arbiter_status["is_running"]:
         raise HTTPException(status_code=400, detail="Arbiter pipeline is already running")
 
-    if not FINAL_OUTPUT_DIR.exists():
-        raise HTTPException(status_code=400, detail="No final output directory found. Run the master pipeline first.")
+    if not _get_all_final_images():
+        raise HTTPException(status_code=400, detail="No final output images found. Run the master pipeline first.")
 
     if request.reset:
         if RESULTS_FILE.exists():
@@ -690,12 +805,17 @@ def get_arbiter_results(
             "arbiter_count": arbiter_count,
         }
 
-    # Load failed count from errors file
+    # Load failed count and error categorization from errors file
     failed_count = 0
+    api_error_summary = _categorize_errors([])
     if ERRORS_FILE.exists():
         try:
             with open(ERRORS_FILE) as ef:
-                failed_count = len(json.load(ef).get("failed", []))
+                errors_data = json.load(ef)
+                failed_list = errors_data.get("failed", [])
+                failed_count = len(failed_list)
+                error_strings = [f.get("error", "") for f in failed_list]
+                api_error_summary = _categorize_errors(error_strings)
         except (json.JSONDecodeError, OSError):
             pass
 
@@ -706,6 +826,7 @@ def get_arbiter_results(
         "total_categories": total_categories,
         "agreement_rate": round(total_agreements / total_categories * 100, 1) if total_categories > 0 else 0,
         "failed_count": failed_count,
+        "api_error_summary": api_error_summary,
         "category_stats": cat_stats,
     }
 
@@ -774,21 +895,27 @@ def import_labels_to_db(
 
 @router.get("/failed")
 def get_failed_images(admin: User = Depends(require_admin)):
-    """Return the list of images that failed/errored during classification."""
+    """Return the list of images that failed/errored during classification, with error categorization."""
     if not ERRORS_FILE.exists():
-        return {"failed": [], "total": 0}
+        return {"failed": [], "total": 0, "error_summary": _categorize_errors([])}
 
     try:
         with open(ERRORS_FILE) as f:
             data = json.load(f)
     except json.JSONDecodeError:
-        return {"failed": [], "total": 0}
+        return {"failed": [], "total": 0, "error_summary": _categorize_errors([])}
 
     failed = data.get("failed", [])
+
+    # Categorize the error strings
+    error_strings = [f.get("error", "") for f in failed]
+    error_summary = _categorize_errors(error_strings)
+
     return {
         "failed": failed,
         "total": len(failed),
         "last_updated": data.get("last_updated"),
+        "error_summary": error_summary,
     }
 
 
@@ -876,10 +1003,8 @@ def run_retry_failed_background(failed_names: list):
         # Resolve failed image names to actual file paths
         supported_exts = {".jpg", ".jpeg", ".png"}
         failed_set = set(failed_names)
-        to_retry = [
-            p for p in FINAL_OUTPUT_DIR.iterdir()
-            if p.is_file() and p.suffix.lower() in supported_exts and p.name in failed_set
-        ]
+        all_images = _get_all_final_images()
+        to_retry = [p for p in all_images if p.name in failed_set]
 
         if not to_retry:
             arbiter_status["is_running"] = False

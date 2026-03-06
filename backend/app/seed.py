@@ -1,10 +1,9 @@
-"""Seed database with categories, options, default admin, and mock images."""
+"""Seed database with categories, options, and default admin users."""
 from sqlalchemy.orm import Session
 from app.config import settings
 from app.models.user import User
 from app.models.category import Category
 from app.models.option import Option
-from app.models.image import Image
 from app.services.auth import hash_password
 
 
@@ -83,13 +82,6 @@ CATEGORIES_DATA = [
     },
 ]
 
-# Mock pet images from picsum (deterministic seeds for consistent images)
-MOCK_IMAGES = [
-    {"filename": f"pet_{i:03d}.jpg", "url": f"https://picsum.photos/seed/pet{i}/800/600"}
-    for i in range(1, 21)  # 20 mock images
-]
-
-
 def seed_database(db: Session):
     """Seed only if tables are empty."""
 
@@ -154,9 +146,4 @@ def seed_database(db: Session):
             db.commit()
             print(f"[SEED] Added 'None of the Above' option to {added_count} categories")
 
-    # Seed mock images
-    if db.query(Image).count() == 0:
-        for img_data in MOCK_IMAGES:
-            db.add(Image(filename=img_data["filename"], url=img_data["url"]))
-        db.commit()
-        print(f"[SEED] Created {len(MOCK_IMAGES)} mock images")
+    # Note: Mock images removed — real images come from the pipeline import only

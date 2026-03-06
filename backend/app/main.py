@@ -28,7 +28,7 @@ except ImportError:
     HEIF_SUPPORT = False
 
 # Import all models so Base knows about them
-from app.models import user, image, category, option, annotator_category, annotation, image_assignment, edit_request, notification  # noqa
+from app.models import user, image, category, option, annotator_category, annotation, image_assignment, edit_request, notification, drive_folder  # noqa
 from app.models import settings as settings_model  # noqa - rename to avoid conflict with config.settings
 
 # Google Drive service account setup from settings
@@ -129,6 +129,14 @@ def _migrate():
                 conn.execute(text("ALTER TABLE images ADD COLUMN arbiter_labels JSON"))
             if "arbiter_classified_at" not in existing_img:
                 conn.execute(text("ALTER TABLE images ADD COLUMN arbiter_classified_at TIMESTAMPTZ"))
+            # Add source Drive folder tracking
+            if "source_drive_folder_id" not in existing_img:
+                conn.execute(text("ALTER TABLE images ADD COLUMN source_drive_folder_id VARCHAR(255)"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_source_drive_folder_id ON images(source_drive_folder_id)"))
+            # Add Google Drive file ID tracking
+            if "image_drive_id" not in existing_img:
+                conn.execute(text("ALTER TABLE images ADD COLUMN image_drive_id VARCHAR(255)"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_image_drive_id ON images(image_drive_id)"))
         print("[MIGRATE] Checked/added improper, AI-generated, and arbiter columns to images table")
 
 _migrate()
@@ -318,24 +326,38 @@ def proxy_image(image_id: int):
                 filename = os.path.basename(local_path)
                 workspace = os.path.join(os.path.dirname(os.path.dirname(__file__)), "master_pipeline", "pipeline_workspace")
                 found = False
-                for sub in ["04_final_output", "03_biometric_processed", "02_unique_images", "02_deduplicated", "01_downloaded_from_drive", "01_downloaded"]:
-                    candidate = os.path.join(workspace, sub, filename)
-                    if os.path.exists(candidate) and os.path.getsize(candidate) > 0:
-                        local_path = candidate
-                        found = True
+                
+                # Build search directories: per-folder workspaces + legacy flat workspace
+                search_roots = []
+                folders_dir = os.path.join(workspace, "folders")
+                if os.path.isdir(folders_dir):
+                    for fd in sorted(os.listdir(folders_dir)):
+                        fd_path = os.path.join(folders_dir, fd)
+                        if os.path.isdir(fd_path):
+                            search_roots.append(fd_path)
+                search_roots.append(workspace)  # legacy flat workspace as fallback
+                
+                for search_root in search_roots:
+                    if found:
                         break
-                    # Also check subdirectories (e.g. blurred/clean inside 03_biometric_processed)
-                    sub_dir = os.path.join(workspace, sub)
-                    if os.path.isdir(sub_dir):
-                        for root, dirs, files in os.walk(sub_dir):
-                            if filename in files:
-                                candidate = os.path.join(root, filename)
-                                if os.path.getsize(candidate) > 0:
-                                    local_path = candidate
-                                    found = True
-                                    break
-                        if found:
+                    for sub in ["04_final_output", "03_biometric_processed", "02_unique_images", "02_deduplicated", "01_downloaded_from_drive", "01_downloaded"]:
+                        candidate = os.path.join(search_root, sub, filename)
+                        if os.path.exists(candidate) and os.path.getsize(candidate) > 0:
+                            local_path = candidate
+                            found = True
                             break
+                        # Also check subdirectories (e.g. blurred/clean inside 03_biometric_processed)
+                        sub_dir = os.path.join(search_root, sub)
+                        if os.path.isdir(sub_dir):
+                            for root, dirs, files in os.walk(sub_dir):
+                                if filename in files:
+                                    candidate = os.path.join(root, filename)
+                                    if os.path.getsize(candidate) > 0:
+                                        local_path = candidate
+                                        found = True
+                                        break
+                            if found:
+                                break
                 if not found:
                     # Last resort: try re-downloading from Google Drive
                     try:

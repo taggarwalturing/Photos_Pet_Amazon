@@ -50,6 +50,10 @@ class Image(Base):
     manually_blurred_at = Column(DateTime(timezone=True), nullable=True)
     annotated_blur_url = Column(Text, nullable=True)  # URL to manually blurred version
 
+    # Google Drive source tracking
+    source_drive_folder_id = Column(String(255), nullable=True, index=True)  # Google Drive folder ID this image came from
+    image_drive_id = Column(String(255), nullable=True, index=True)  # Unique Google Drive file ID for this image
+
     # Arbiter classifier AI-predicted labels (pre-filled for annotators)
     arbiter_labels = Column(JSON, nullable=True)  # {"lighting": "dusk_dawn", "viewpoint": "ground_level", ...}
     arbiter_classified_at = Column(DateTime(timezone=True), nullable=True)

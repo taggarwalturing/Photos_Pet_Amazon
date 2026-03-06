@@ -13,7 +13,7 @@ const PAGE_SIZE = 10;
 const getImageUrl = (imageId) => {
   if (!imageId) return '';
   // Add timestamp to prevent caching of processed images
-  return `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/images/proxy/${imageId}?t=${Date.now()}`;
+  return `${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/images/proxy/${imageId}?t=${Date.now()}`;
 };
 
 /* ─── Reusable UI Helpers ──────────────────────────────────── */
@@ -1299,7 +1299,7 @@ function ImageLightbox({ img, images, idx, getStatusBadges, onClose, onNavigate,
         {/* Image with BoundingBoxCanvas overlay */}
         <div ref={imageContainerRef} className="relative max-w-5xl w-full mx-16 flex items-center justify-center">
           <img
-            src={`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/images/proxy/${img.id}?t=${imageVersion}`}
+            src={`${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/images/proxy/${img.id}?t=${imageVersion}`}
             alt={img.filename}
             className="max-w-full max-h-[80vh] object-contain rounded-lg block"
             onLoad={() => window.dispatchEvent(new Event('resize'))}
@@ -1700,7 +1700,7 @@ function ImageDetailModal({ row, categories, tableImages, onApprove, onSaveEdits
 
             <div ref={imageContainerRef} className="relative w-full h-full overflow-hidden flex items-center justify-center">
               <img
-                src={`${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/images/proxy/${row.image_id}?t=${imageVersion}`}
+                src={`${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/images/proxy/${row.image_id}?t=${imageVersion}`}
                 alt={row.image_filename}
                 className="max-w-full max-h-full object-contain rounded-lg block"
                 style={{ maxHeight: 'calc(100vh - 120px)' }}

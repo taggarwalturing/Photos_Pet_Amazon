@@ -148,9 +148,12 @@ def call_vision_api(model: str, provider: str, prompt: str, image_b64: str, mime
                 if text.startswith("json"):
                     text = text[4:]
             return json.loads(text.strip())
+        else:
+            error_body = response.text[:300]
+            return {"error": f"API returned {response.status_code}: {error_body}"}
     except Exception as e:
         return {"error": str(e)}
-    return {}
+
 
 def call_text_api(model: str, provider: str, prompt: str) -> dict:
     """Call API without image (for arbiter)"""
@@ -171,9 +174,11 @@ def call_text_api(model: str, provider: str, prompt: str) -> dict:
                 if text.startswith("json"):
                     text = text[4:]
             return json.loads(text.strip())
+        else:
+            error_body = response.text[:300]
+            return {"error": f"API returned {response.status_code}: {error_body}"}
     except Exception as e:
         return {"error": str(e)}
-    return {}
 
 # ============================================================================
 # CLASSIFICATION WITH REASONING
@@ -192,7 +197,15 @@ def classify_with_reasoning(image_path: str) -> dict:
         
         gemini_result = gemini_future.result()
         openai_result = openai_future.result()
-    
+
+    # Propagate errors from either model
+    if "error" in gemini_result and "error" in openai_result:
+        return {"error": f"Both models failed — Gemini: {gemini_result['error'][:200]} | OpenAI: {openai_result['error'][:200]}"}
+    if "error" in gemini_result:
+        return {"error": f"Gemini failed: {gemini_result['error'][:300]}"}
+    if "error" in openai_result:
+        return {"error": f"OpenAI failed: {openai_result['error'][:300]}"}
+
     return {"gemini": gemini_result, "openai": openai_result}
 
 def extract_prediction(result: dict, category: str) -> tuple:

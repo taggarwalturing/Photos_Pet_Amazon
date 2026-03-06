@@ -2,7 +2,7 @@ import { useState, useRef, useCallback } from 'react';
 import axios from 'axios';
 import BoundingBoxCanvas from '../components/BoundingBoxCanvas';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5001';
 
 export default function PublicBlurPage() {
   const [file, setFile] = useState(null);

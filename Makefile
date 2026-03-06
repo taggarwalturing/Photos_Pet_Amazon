@@ -13,8 +13,8 @@
 #   make help               - Show all available commands
 #
 # 📊 Monitor Progress:
-#   Frontend: http://localhost:5173
-#   Flower:   http://localhost:5555
+#   Frontend: http://localhost:2000
+#   Backend:  http://localhost:5001/docs
 #
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -27,8 +27,8 @@ BOLD := \033[1m
 NC := \033[0m # No Color
 
 # Configuration
-BACKEND_PORT := 8000
-FRONTEND_PORT := 5173
+BACKEND_PORT := 5001
+FRONTEND_PORT := 2000
 BACKEND_DIR := backend
 FRONTEND_DIR := frontend
 VENV_DIR := $(BACKEND_DIR)/.venv
@@ -47,9 +47,8 @@ help: ## Display this help message
 	@echo "  $(CYAN)make run-complete$(NC)  - Complete setup + start + process"
 	@echo ""
 	@echo "$(BOLD)$(GREEN)📊 MONITOR:$(NC)"
-	@echo "  Frontend: $(YELLOW)http://localhost:5173$(NC)"
-	@echo "  Flower:   $(YELLOW)http://localhost:5555$(NC)"
-	@echo "  API:      $(YELLOW)http://localhost:8000/docs$(NC)"
+	@echo "  Frontend: $(YELLOW)http://localhost:2000$(NC)"
+	@echo "  API Docs: $(YELLOW)http://localhost:5001/docs$(NC)"
 	@echo ""
 	@echo "$(BOLD)$(GREEN)🛑 STOP:$(NC)"
 	@echo "  $(CYAN)make stop-all$(NC)      - Stop everything"
@@ -66,7 +65,7 @@ help: ## Display this help message
 	@echo ""
 	@echo "  $(BOLD)Daily Use:$(NC)"
 	@echo "    1. make run-all          (starts everything)"
-	@echo "    2. Open http://localhost:5173"
+	@echo "    2. Open http://localhost:2000"
 	@echo "    3. make stop-all         (when done)"
 	@echo ""
 	@echo "  $(BOLD)Add More Images:$(NC)"
@@ -122,8 +121,8 @@ run-all: ## 🚀 START EVERYTHING (Backend + Frontend) - ONE COMMAND!
 	@echo "$(GREEN)$(BOLD)═══════════════════════════════════════════════════════════════$(NC)"
 	@echo ""
 	@echo "$(CYAN)🌐 Access Your Application:$(NC)"
-	@echo "  Frontend:  $(YELLOW)http://localhost:5173$(NC)  (Main App)"
-	@echo "  API Docs:  $(YELLOW)http://localhost:8000/docs$(NC)"
+	@echo "  Frontend:  $(YELLOW)http://localhost:2000$(NC)  (Main App)"
+	@echo "  API Docs:  $(YELLOW)http://localhost:5001/docs$(NC)"
 	@echo ""
 	@echo "$(CYAN)📊 Check Status:$(NC)"
 	@echo "  Service status:    $(YELLOW)make status$(NC)"
@@ -149,7 +148,7 @@ status-all: status ## 📊 CHECK STATUS OF EVERYTHING
 
 ##@ Port Management
 
-clean-ports: ## Kill processes on backend (8000) and frontend (5173) ports
+clean-ports: ## Kill processes on backend (5000) and frontend (2000) ports
 	@echo "$(CYAN)🧹 Cleaning up ports...$(NC)"
 	@echo "$(YELLOW)Checking port $(BACKEND_PORT) (backend)...$(NC)"
 	@-lsof -ti:$(BACKEND_PORT) | xargs kill -9 2>/dev/null || echo "  Port $(BACKEND_PORT) is already free"

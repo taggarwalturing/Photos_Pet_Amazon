@@ -1,3 +1,4 @@
+import json
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import or_, and_
@@ -414,6 +415,8 @@ def list_images(
                     (img.is_using_processed is not False) and
                     (img.compliance_status or "") in ("blurred", "processed", "obfuscated")
                 ),
+                "source_drive_folder_id": img.source_drive_folder_id,
+                "image_drive_id": img.image_drive_id,
             }
         for img in images
         ],
@@ -1666,26 +1669,35 @@ def get_photo_registry(
     backend_dir = Path(__file__).parent.parent.parent
     workspace = backend_dir / "master_pipeline" / "pipeline_workspace"
 
+    # ── Discover all workspace roots (per-folder + legacy) ──
+    workspace_roots = []
+    folders_dir = workspace / "folders"
+    if folders_dir.is_dir():
+        for fd in sorted(folders_dir.iterdir()):
+            if fd.is_dir():
+                workspace_roots.append(fd)
+    workspace_roots.append(workspace)  # legacy flat workspace as fallback
+
     # ── 1. Build duplicate map from cluster folders ──
     duplicate_map = {}      # duplicate_filename → original_filename
-    clusters_dir = workspace / "02_duplicate_clusters"
-    if clusters_dir.is_dir():
-        for cluster_folder in sorted(clusters_dir.iterdir()):
-            if not cluster_folder.is_dir():
-                continue
-            original = None
-            dupes = []
-            for f in cluster_folder.iterdir():
-                if f.name.startswith("ORIGINAL_"):
-                    # Strip "ORIGINAL_" prefix to get real filename
-                    original = f.name.replace("ORIGINAL_", "", 1)
-                elif f.name.startswith("duplicate_"):
-                    dupes.append(f.name.replace("duplicate_", "", 1))
-            if original:
-                for d in dupes:
-                    duplicate_map[d] = original
+    for ws_root in workspace_roots:
+        clusters_dir = ws_root / "02_duplicate_clusters"
+        if clusters_dir.is_dir():
+            for cluster_folder in sorted(clusters_dir.iterdir()):
+                if not cluster_folder.is_dir():
+                    continue
+                original = None
+                dupes = []
+                for f in cluster_folder.iterdir():
+                    if f.name.startswith("ORIGINAL_"):
+                        original = f.name.replace("ORIGINAL_", "", 1)
+                    elif f.name.startswith("duplicate_"):
+                        dupes.append(f.name.replace("duplicate_", "", 1))
+                if original:
+                    for d in dupes:
+                        duplicate_map[d] = original
 
-    # ── 2. Build file-existence lookups ──
+    # ── 2. Build file-existence lookups (search all workspace roots) ──
     def _file_path_if_exists(directory, filename):
         """Return relative path if file exists with content, else None."""
         fpath = directory / filename
@@ -1693,32 +1705,35 @@ def get_photo_registry(
             return str(fpath.relative_to(backend_dir))
         return None
 
-    download_dir = workspace / "01_downloaded_from_drive"
-    unique_dir = workspace / "02_unique_images"
-    blurred_dir = workspace / "03_biometric_processed" / "blurred"
-    clean_dir = workspace / "03_biometric_processed" / "clean"
-    final_dir = workspace / "04_final_output"
-    annotated_dir = workspace / "annotated_blur"
+    def _find_file_path(sub_dir_name, filename):
+        """Search all workspace roots for a file in a given subdirectory."""
+        for ws_root in workspace_roots:
+            result = _file_path_if_exists(ws_root / sub_dir_name, filename)
+            if result:
+                return result
+        return None
 
-    # ── 3. Collect all downloaded filenames ──
+    # ── 3. Collect all downloaded filenames (across all workspaces) ──
     all_disk_files = set()            # every filename on disk (JPG/PNG only, HEIC already converted)
 
     image_exts = ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp')
 
-    if download_dir.is_dir():
-        for f in download_dir.iterdir():
-            # Skip the _heic_originals subfolder and manifest files
-            if f.is_dir() or f.name.startswith('_'):
-                continue
-            if f.is_file() and f.suffix.lower() in image_exts:
-                all_disk_files.add(f.name)
+    for ws_root in workspace_roots:
+        ws_dl = ws_root / "01_downloaded_from_drive"
+        if ws_dl.is_dir():
+            for f in ws_dl.iterdir():
+                if f.is_dir() or f.name.startswith('_'):
+                    continue
+                if f.is_file() and f.suffix.lower() in image_exts:
+                    all_disk_files.add(f.name)
 
-    if unique_dir.is_dir():
-        for f in unique_dir.iterdir():
-            if f.is_dir() or f.name.startswith('_'):
-                continue
-            if f.is_file() and f.suffix.lower() in image_exts:
-                all_disk_files.add(f.name)
+        ws_uq = ws_root / "02_unique_images"
+        if ws_uq.is_dir():
+            for f in ws_uq.iterdir():
+                if f.is_dir() or f.name.startswith('_'):
+                    continue
+                if f.is_file() and f.suffix.lower() in image_exts:
+                    all_disk_files.add(f.name)
 
     for dup_name in duplicate_map:
         all_disk_files.add(dup_name)
@@ -1729,15 +1744,18 @@ def get_photo_registry(
     for img in db_images:
         db_by_filename[img.filename] = img
 
-    # ── 4b. Load HEIC conversion manifest (created by pipeline) ──
+    # ── 4b. Load HEIC conversion manifest (created by pipeline, search all workspaces) ──
     heic_manifest = {}
-    manifest_path = download_dir / "_heic_conversions.json"
-    if manifest_path.exists():
-        try:
-            with open(manifest_path, 'r') as f:
-                heic_manifest = json.load(f)
-        except Exception:
-            pass
+    for ws_root in workspace_roots:
+        ws_dl = ws_root / "01_downloaded_from_drive"
+        manifest_path = ws_dl / "_heic_conversions.json"
+        if manifest_path.exists():
+            try:
+                with open(manifest_path, 'r') as f:
+                    folder_manifest = json.load(f)
+                    heic_manifest.update(folder_manifest)
+            except Exception:
+                pass
 
     # Build reverse map: jpg_name → heic_original_name
     jpg_to_heic_map = {}
@@ -1754,6 +1772,77 @@ def get_photo_registry(
     for img in db_images:
         all_filenames.add(img.filename)
 
+    # ── 4c. Pre-load Drive metadata (needed for registry fallback) ──
+    drive_metadata = {"total_in_drive": 0, "unique_filenames": 0, "duplicate_filename_count": 0, "duplicate_filenames": {}, "scanned_at": ""}
+    
+    # Track all filenames across folders for cross-folder duplicate detection
+    # filename → [{"folder_id": str, "drive_file_id": str}]
+    global_filename_map = {}  # filename → list of {folder_id, drive_file_id}
+    within_folder_dups = []   # [{filename, folder_id, count}]
+    
+    # Check per-folder workspaces first
+    _folders_dir = workspace / "folders"
+    _per_folder_found = False
+    if _folders_dir.exists():
+        for folder_dir in sorted(_folders_dir.iterdir()):
+            if not folder_dir.is_dir():
+                continue
+            meta_path = folder_dir / "drive_metadata.json"
+            if meta_path.exists():
+                try:
+                    with open(meta_path, 'r') as f:
+                        meta = json.load(f)
+                    folder_id = folder_dir.name
+                    drive_metadata["total_in_drive"] += meta.get("total_in_drive", 0)
+                    drive_metadata["unique_filenames"] += meta.get("unique_filenames", 0)
+                    drive_metadata["duplicate_filename_count"] += meta.get("duplicate_filename_count", 0)
+                    
+                    # Track within-folder duplicates
+                    for dn, dc in meta.get("duplicate_filenames", {}).items():
+                        drive_metadata["duplicate_filenames"][dn] = drive_metadata["duplicate_filenames"].get(dn, 0) + dc
+                        within_folder_dups.append({"filename": dn, "folder_id": folder_id, "count": dc})
+                    
+                    # Track all filenames for cross-folder detection
+                    f2d = meta.get("filename_to_drive_id", {})
+                    for fname, drive_file_id in f2d.items():
+                        if fname not in global_filename_map:
+                            global_filename_map[fname] = []
+                        global_filename_map[fname].append({"folder_id": folder_id, "drive_file_id": drive_file_id})
+                    
+                    if meta.get("scanned_at", "") > drive_metadata["scanned_at"]:
+                        drive_metadata["scanned_at"] = meta["scanned_at"]
+                    _per_folder_found = True
+                except Exception:
+                    pass
+    
+    # Fallback: legacy root workspace
+    if not _per_folder_found:
+        legacy_path = workspace / "drive_metadata.json"
+        if legacy_path.exists():
+            try:
+                with open(legacy_path, 'r') as f:
+                    drive_metadata = json.load(f)
+                # Also build global_filename_map from legacy metadata
+                f2d = drive_metadata.get("filename_to_drive_id", {})
+                fid = drive_metadata.get("folder_id", "")
+                for fname, did in f2d.items():
+                    if fname not in global_filename_map:
+                        global_filename_map[fname] = []
+                    global_filename_map[fname].append({"folder_id": fid, "drive_file_id": did})
+            except Exception:
+                pass
+    
+    # Build cross-folder duplicates: filenames that appear in 2+ different folders
+    cross_folder_dups = []
+    for fname, entries in global_filename_map.items():
+        if len(entries) > 1:
+            cross_folder_dups.append({
+                "filename": fname,
+                "folders": [e["folder_id"] for e in entries],
+                "drive_file_ids": [e["drive_file_id"] for e in entries],
+            })
+    cross_folder_dups.sort(key=lambda x: x["filename"])
+
     # ── 5. Build registry entries ──
     registry = []
     for filename in sorted(all_filenames):
@@ -1762,26 +1851,27 @@ def get_photo_registry(
         db_img = db_by_filename.get(filename)
         heic_original = jpg_to_heic_map.get(filename)  # e.g. "IMG_0906.HEIC" if this was converted
 
-        # Paths
+        # Paths (search across all workspace roots)
         original_path = (
-            _file_path_if_exists(download_dir, filename)
-            or _file_path_if_exists(unique_dir, filename)
+            _find_file_path("01_downloaded_from_drive", filename)
+            or _find_file_path("02_unique_images", filename)
             or ""
         )
 
         # HEIC original path (in _heic_originals subfolder)
         heic_original_path = ""
         if heic_original:
-            heic_originals_dir = download_dir / "_heic_originals"
-            heic_original_path = (
-                _file_path_if_exists(heic_originals_dir, heic_original)
-                or ""
-            )
+            for ws_root in workspace_roots:
+                heic_originals_dir = ws_root / "01_downloaded_from_drive" / "_heic_originals"
+                result = _file_path_if_exists(heic_originals_dir, heic_original)
+                if result:
+                    heic_original_path = result
+                    break
 
         processed_path = (
-            _file_path_if_exists(final_dir, filename)
-            or _file_path_if_exists(blurred_dir, filename)
-            or _file_path_if_exists(clean_dir, filename)
+            _find_file_path("04_final_output", filename)
+            or _find_file_path(os.path.join("03_biometric_processed", "blurred"), filename)
+            or _find_file_path(os.path.join("03_biometric_processed", "clean"), filename)
             or ""
         )
 
@@ -1796,16 +1886,43 @@ def get_photo_registry(
             if manually_blurred and db_img.annotated_blur_url:
                 annotated_blur_path = db_img.annotated_blur_url
         else:
-            pipeline_blurred = _file_path_if_exists(blurred_dir, filename) is not None
+            pipeline_blurred = _find_file_path(os.path.join("03_biometric_processed", "blurred"), filename) is not None
 
-        if not annotated_blur_path and annotated_dir.is_dir():
-            for af in annotated_dir.iterdir():
-                if filename in af.name:
-                    annotated_blur_path = str(af.relative_to(backend_dir))
+        if not annotated_blur_path:
+            for ws_root in workspace_roots:
+                ws_annotated = ws_root / "annotated_blur"
+                if ws_annotated.is_dir():
+                    for af in ws_annotated.iterdir():
+                        if filename in af.name:
+                            annotated_blur_path = str(af.relative_to(backend_dir))
+                            break
+                if annotated_blur_path:
                     break
 
         # Display filename — show HEIC conversion note if applicable
         display_note = f"(converted from {heic_original})" if heic_original else ""
+
+        # Resolve Drive metadata: prefer DB, fallback to drive_metadata.json via global_filename_map
+        source_folder_id = ""
+        image_drive_id_val = ""
+        if db_img:
+            source_folder_id = db_img.source_drive_folder_id or ""
+            image_drive_id_val = db_img.image_drive_id or ""
+
+        # Fallback: look up from global_filename_map (populated from drive_metadata.json)
+        if not source_folder_id or not image_drive_id_val:
+            # Try direct filename first, then HEIC original name
+            lookup_names = [filename]
+            if heic_original:
+                lookup_names.append(heic_original)
+            for lookup_name in lookup_names:
+                map_entries = global_filename_map.get(lookup_name, [])
+                if map_entries:
+                    if not source_folder_id:
+                        source_folder_id = map_entries[0].get("folder_id", "")
+                    if not image_drive_id_val:
+                        image_drive_id_val = map_entries[0].get("drive_file_id", "")
+                    break
 
         entry = {
             "filename": filename,
@@ -1829,27 +1946,28 @@ def get_photo_registry(
             # DB-tracked format conversion columns
             "original_filename": (db_img.original_filename or "") if db_img else (heic_original or ""),
             "original_format": (db_img.original_format or "") if db_img else ("HEIC" if heic_original else ""),
+            "source_drive_folder_id": source_folder_id,
+            "image_drive_id": image_drive_id_val,
         }
         registry.append(entry)
 
-    # ── 6. Load Drive metadata (saved during pipeline download) ──
-    drive_metadata = {}
-    drive_metadata_path = workspace / "drive_metadata.json"
-    if drive_metadata_path.exists():
-        try:
-            with open(drive_metadata_path, 'r') as f:
-                drive_metadata = json.load(f)
-        except Exception:
-            pass
+    # ── 6. Summary stats (computed BEFORE filtering so they stay constant) ──
+    # total_downloaded = sum of unique filenames per folder (reflects actual downloads, not deduped across folders)
+    total_downloaded_actual = drive_metadata.get("unique_filenames", 0) or len(registry)
+    cross_folder_overlap = len(cross_folder_dups)  # filenames shared across folders (counted once in registry)
 
-    # ── 7. Summary stats (computed BEFORE filtering so they stay constant) ──
     summary = {
         "total_in_drive": drive_metadata.get("total_in_drive", 0),
         "drive_unique_filenames": drive_metadata.get("unique_filenames", 0),
         "drive_duplicate_filenames": drive_metadata.get("duplicate_filename_count", 0),
         "drive_duplicate_details": drive_metadata.get("duplicate_filenames", {}),
         "drive_scanned_at": drive_metadata.get("scanned_at", ""),
-        "total_downloaded": len(registry),
+        # Structured duplicate info: within-folder and cross-folder
+        "within_folder_duplicates": within_folder_dups,       # [{filename, folder_id, count}]
+        "cross_folder_duplicates": cross_folder_dups,         # [{filename, folders: [fid1, fid2], drive_file_ids: [...]}]
+        "cross_folder_overlap": cross_folder_overlap,
+        "total_downloaded": total_downloaded_actual,
+        "total_downloaded_unique_names": len(registry),       # distinct filenames on disk (cross-folder dups counted once)
         "total_unique": sum(1 for r in registry if r["is_unique"]),
         "total_duplicate": sum(1 for r in registry if r["is_duplicate"]),
         "total_pipeline_blurred": sum(1 for r in registry if r["pipeline_blurred"]),

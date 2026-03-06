@@ -9,7 +9,7 @@ import CategoryGuideModal from '../components/CategoryGuideModal';
 const getImageUrl = (imageId) => {
   if (!imageId) return '';
   // Add timestamp to prevent caching of processed images
-  return `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/images/proxy/${imageId}?t=${Date.now()}`;
+  return `${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/images/proxy/${imageId}?t=${Date.now()}`;
 };
 
 function CategoryDropdown({ category, annotation, completedByOther, onChange, disabled, aiSuggestion }) {
@@ -154,9 +154,9 @@ function CategoryDropdown({ category, annotation, completedByOther, onChange, di
                   </div>
                   <span className="text-sm font-medium flex-1">{opt.label}</span>
                   <div className="flex items-center gap-1.5">
-                    {opt.is_typical && (
-                      <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">typical</span>
-                    )}
+                  {opt.is_typical && (
+                    <span className="text-xs bg-gray-100 text-gray-500 px-2 py-0.5 rounded-full">typical</span>
+                  )}
                   </div>
                 </div>
               );
@@ -466,7 +466,7 @@ export default function ImageAnnotationPage() {
     if (window.history.length > 1) {
       navigate(-1);
     } else {
-      navigate('/annotator');
+    navigate('/annotator');
     }
   };
 
@@ -681,18 +681,18 @@ export default function ImageAnnotationPage() {
           <div className="flex items-center gap-3">
             {/* Countdown Timer — hidden for rework & improper */}
             {showTimer && (
-              <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
-                remainingSeconds <= 0
+            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+              remainingSeconds <= 0
                   ? 'bg-red-100 text-red-700' 
                   : remainingSeconds <= 5 
-                    ? 'bg-amber-100 text-amber-700' 
-                    : 'bg-emerald-100 text-emerald-700'
-              }`}>
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
+                  ? 'bg-amber-100 text-amber-700' 
+                  : 'bg-emerald-100 text-emerald-700'
+            }`}>
+              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
                 {formatTime(remainingSeconds)}
-              </div>
+            </div>
             )}
             <div className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-full text-xs font-semibold">
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
@@ -741,28 +741,28 @@ export default function ImageAnnotationPage() {
               ) : (
                 <>
                   {/* Blur Tool toggle */}
-                  <button
-                    onClick={() => setBlurActive(!blurActive)}
-                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold backdrop-blur-sm border transition cursor-pointer ${
-                      blurActive
-                        ? 'bg-red-500/90 text-white border-red-400'
-                        : 'bg-black/50 text-white border-white/20 hover:bg-black/70'
-                    }`}
-                  >
-                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h16v16H4z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9h6v6H9z" /></svg>
+              <button
+                onClick={() => setBlurActive(!blurActive)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold backdrop-blur-sm border transition cursor-pointer ${
+                  blurActive
+                    ? 'bg-red-500/90 text-white border-red-400'
+                    : 'bg-black/50 text-white border-white/20 hover:bg-black/70'
+                }`}
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4h16v16H4z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9h6v6H9z" /></svg>
                     {blurActive ? 'Drawing…' : 'Blur Tool'}
-                  </button>
+              </button>
 
                   {/* Drawing controls — visible when boxes are drawn */}
-                  {blurBoxes.length > 0 && (
-                    <>
-                      <span className="px-2 py-1 rounded-full bg-black/50 text-white text-xs backdrop-blur-sm border border-white/20">
-                        {blurBoxes.length} region{blurBoxes.length > 1 ? 's' : ''}
-                      </span>
-                      <button
-                        onClick={handleApplyBlur}
+              {blurBoxes.length > 0 && (
+                <>
+                  <span className="px-2 py-1 rounded-full bg-black/50 text-white text-xs backdrop-blur-sm border border-white/20">
+                    {blurBoxes.length} region{blurBoxes.length > 1 ? 's' : ''}
+                  </span>
+                  <button
+                    onClick={handleApplyBlur}
                         className="px-3 py-1.5 rounded-full bg-green-600 text-white text-xs font-semibold hover:bg-green-700 transition cursor-pointer shadow-lg"
-                      >
+                  >
                         ✓ Apply Blur
                       </button>
                       <button
@@ -770,13 +770,13 @@ export default function ImageAnnotationPage() {
                         className="px-2 py-1.5 rounded-full bg-black/50 text-white text-xs hover:bg-black/70 transition cursor-pointer backdrop-blur-sm border border-white/20"
                       >
                         ↶ Undo
-                      </button>
-                      <button
-                        onClick={() => setBlurBoxes([])}
-                        className="px-2 py-1.5 rounded-full bg-black/50 text-white text-xs hover:bg-black/70 transition cursor-pointer backdrop-blur-sm border border-white/20"
-                      >
-                        Clear
-                      </button>
+                  </button>
+                  <button
+                    onClick={() => setBlurBoxes([])}
+                    className="px-2 py-1.5 rounded-full bg-black/50 text-white text-xs hover:bg-black/70 transition cursor-pointer backdrop-blur-sm border border-white/20"
+                  >
+                    Clear
+                  </button>
                     </>
                   )}
 
@@ -805,8 +805,9 @@ export default function ImageAnnotationPage() {
 
             <div ref={imageContainerRef} className="relative max-w-full max-h-full overflow-hidden flex items-center justify-center">
               <img
-                src={data?.id ? `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/api/images/proxy/${data.id}?t=${imageVersion}` : ''}
-                alt={data?.filename}
+                key={`img-${imageId}`}
+                src={imageId ? `${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/images/proxy/${imageId}?t=${imageVersion}` : ''}
+                alt={data?.filename || ''}
                 className={`max-w-full max-h-full object-contain rounded-lg block ${isImproper ? 'opacity-50' : ''}`}
                 onLoad={() => window.dispatchEvent(new Event('resize'))}
               />
@@ -833,10 +834,10 @@ export default function ImageAnnotationPage() {
           <div className="bg-white border-l border-gray-200 flex flex-col overflow-hidden min-h-0">
             <div className="px-5 py-4 border-b border-gray-200 bg-gradient-to-r from-gray-50 to-white shrink-0 flex items-center justify-between">
               <div>
-                <h2 className="font-bold text-gray-900">Categories</h2>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {isLocked && !canEdit ? 'View your annotations (read-only)' : 'Select one option for each category'}
-                </p>
+              <h2 className="font-bold text-gray-900">Categories</h2>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {isLocked && !canEdit ? 'View your annotations (read-only)' : 'Select one option for each category'}
+              </p>
               </div>
               <button
                 onClick={() => setShowGuideModal(true)}
@@ -928,39 +929,39 @@ export default function ImageAnnotationPage() {
                         { value: null, label: 'Unknown', activeClass: 'bg-gray-500 text-white' },
                         { value: true, label: 'AI', activeClass: 'bg-purple-500 text-white' },
                       ].map((opt, idx) => (
-                        <button
+                    <button
                           key={String(opt.value)}
                           onClick={() => handleAIStatusChange(opt.value)}
-                          disabled={savingAIStatus || !canEdit}
+                      disabled={savingAIStatus || !canEdit}
                           className={`flex-1 py-1.5 text-[11px] font-semibold transition-all cursor-pointer
                             ${idx > 0 ? 'border-l border-gray-200' : ''}
                             ${isAIGenerated === opt.value
                               ? opt.activeClass
                               : 'bg-white text-gray-400 hover:bg-gray-50'
-                            } disabled:opacity-50 disabled:cursor-not-allowed`}
-                        >
+                      } disabled:opacity-50 disabled:cursor-not-allowed`}
+                    >
                           {opt.label}
-                        </button>
+                    </button>
                       ))}
-                    </div>
+                        </div>
                     {/* Flag / Edit button aligned right */}
                     <div className="w-16 shrink-0 flex justify-end">
                       {!isLocked && (
-                        <button
+                    <button
                           onClick={() => setShowImproperModal(true)}
                           className="px-2 py-1 border border-red-200 text-red-500 rounded-lg text-[10px] font-medium hover:bg-red-50 transition cursor-pointer"
                         >
                           ⚠️
-                        </button>
-                      )}
+                    </button>
+              )}
                       {isLocked && !hasPendingRequest && (
-                        <button
+                <button
                           onClick={() => setShowEditRequestModal(true)}
                           className="px-2 py-1 bg-amber-500 text-white rounded-lg text-[10px] font-medium hover:bg-amber-600 transition cursor-pointer"
-                        >
+                >
                           ✏️
-                        </button>
-                      )}
+                </button>
+              )}
                     </div>
                   </div>
 
@@ -973,7 +974,7 @@ export default function ImageAnnotationPage() {
                         { value: null, label: 'Unknown', activeClass: 'bg-gray-500 text-white' },
                         { value: false, label: 'Not Visible', activeClass: 'bg-orange-500 text-white' },
                       ].map((opt, idx) => (
-                        <button
+                <button
                           key={String(opt.value)}
                           onClick={() => handleHumanVisibleChange(opt.value)}
                           disabled={savingHumanVisible || !canEdit}
@@ -985,14 +986,14 @@ export default function ImageAnnotationPage() {
                             } disabled:opacity-50 disabled:cursor-not-allowed`}
                         >
                           {opt.label}
-                        </button>
+                </button>
                       ))}
                     </div>
                     <div className="w-16 shrink-0" />
                   </div>
                 </div>
               )}
-
+              
               {/* Navigation buttons */}
               <div className="px-4 py-3 flex gap-2">
                 <button
@@ -1017,9 +1018,9 @@ export default function ImageAnnotationPage() {
                   {saving ? 'Saving...' : data?.next_image_id ? 'Save & Next →' : 'Save & Finish ✓'}
                 </button>
               </div>
+              </div>
             </div>
           </div>
-        </div>
 
       <MarkImproperModal isOpen={showImproperModal} onClose={() => setShowImproperModal(false)} onConfirm={handleMarkImproper} loading={markingImproper} />
       <RequestEditModal isOpen={showEditRequestModal} onClose={() => setShowEditRequestModal(false)} onConfirm={handleRequestEdit} loading={requestingEdit} />
