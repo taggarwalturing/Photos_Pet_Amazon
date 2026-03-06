@@ -290,57 +290,52 @@ export default function ImageAnnotationPage() {
   const imageContainerRef = useRef(null);
 
   // Time limit settings (fetched from API)
-  const [maxAnnotationTime, setMaxAnnotationTime] = useState(120);
-  const [maxReworkTime, setMaxReworkTime] = useState(120);
+  const [maxAnnotationTime, setMaxAnnotationTime] = useState(20);
   const [isReworkMode, setIsReworkMode] = useState(false);
 
-  // Timer state — tracks time per image, persists to DB automatically
+  // Timer state — tracks time per image (only for initial annotation, not rework/improper)
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [showTimeWarning, setShowTimeWarning] = useState(false);
   const elapsedRef = useRef(0); // mirrors elapsedSeconds for use in non-reactive callbacks
   const imageIdRef = useRef(imageId); // current imageId for use in cleanup/beforeunload
-  const isReworkRef = useRef(false); // mirrors isReworkMode for auto-save
-
-  // Compute the current max time based on mode
-  const currentMaxTime = isReworkMode ? maxReworkTime : maxAnnotationTime;
+  const isReworkRef = useRef(false); // mirrors isReworkMode
+  const isImproperRef = useRef(false); // mirrors improper status
+  const maxTimeRef = useRef(20); // mirrors maxAnnotationTime for use in timer
 
   // Keep refs in sync with state
   useEffect(() => { elapsedRef.current = elapsedSeconds; }, [elapsedSeconds]);
   useEffect(() => { isReworkRef.current = isReworkMode; }, [isReworkMode]);
+  useEffect(() => { maxTimeRef.current = maxAnnotationTime; }, [maxAnnotationTime]);
+
   // When imageId changes, immediately reset timer to prevent bleeding old time to new image
   useEffect(() => {
     if (imageIdRef.current !== imageId) {
-      // Save old image's time before resetting
-      // (persistTime handled below in prevImageIdRef effect)
-      // Reset timer immediately so auto-save doesn't write stale value to new image
       setElapsedSeconds(0);
       elapsedRef.current = 0;
     }
     imageIdRef.current = imageId;
   }, [imageId]);
 
-  // Persist time to DB (fire-and-forget) — sends is_rework flag to save to correct field
-  const persistTime = useCallback((imgId, seconds, rework = false) => {
-    if (!imgId || seconds <= 0) return;
+  // Persist time to DB (fire-and-forget) — skips rework and improper
+  const persistTime = useCallback((imgId, seconds) => {
+    if (!imgId || seconds <= 0 || isReworkRef.current || isImproperRef.current) return;
+    const cappedSeconds = Math.min(seconds, maxTimeRef.current);
     api.patch(`/annotator/images/${imgId}/time`, {
-      time_spent_seconds: seconds,
-      is_rework: rework,
+      time_spent_seconds: cappedSeconds,
+      is_rework: false,
     }).catch(() => {});
   }, []);
 
   // Persist time using fetch+keepalive (works even during page unload)
   const persistTimeBeacon = useCallback((imgId, seconds) => {
-    if (!imgId || seconds <= 0) return;
+    if (!imgId || seconds <= 0 || isReworkRef.current || isImproperRef.current) return;
+    const cappedSeconds = Math.min(seconds, maxTimeRef.current);
     const token = localStorage.getItem('token');
     const url = `/api/annotator/images/${imgId}/time`;
     try {
       fetch(url, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({
-          time_spent_seconds: seconds,
-          is_rework: isReworkRef.current,
-        }),
+        body: JSON.stringify({ time_spent_seconds: cappedSeconds, is_rework: false }),
         keepalive: true,
       }).catch(() => {});
     } catch {
@@ -348,10 +343,10 @@ export default function ImageAnnotationPage() {
     }
   }, []);
 
-  // Auto-save time to DB every 10 seconds
+  // Auto-save time to DB every 10 seconds (only for normal annotation)
   useEffect(() => {
     const interval = setInterval(() => {
-      persistTime(imageIdRef.current, elapsedRef.current, isReworkRef.current);
+      persistTime(imageIdRef.current, elapsedRef.current);
     }, 10000);
     return () => clearInterval(interval);
   }, [persistTime]);
@@ -367,59 +362,48 @@ export default function ImageAnnotationPage() {
 
   // Save time when navigating away from this image (imageId changes)
   const prevImageIdRef = useRef(imageId);
-  const prevIsReworkRef = useRef(false);
   useEffect(() => {
     const prevId = prevImageIdRef.current;
     if (prevId && prevId !== imageId) {
-      persistTime(prevId, elapsedRef.current, prevIsReworkRef.current);
+      persistTime(prevId, elapsedRef.current);
     }
     prevImageIdRef.current = imageId;
-    prevIsReworkRef.current = isReworkRef.current;
   }, [imageId, persistTime]);
 
   // Fetch time limit settings from API on mount
   useEffect(() => {
     api.get('/annotator/settings/time-limits')
       .then(res => {
-        setMaxAnnotationTime(res.data.max_annotation_time_seconds || 120);
-        setMaxReworkTime(res.data.max_rework_time_seconds || 120);
+        setMaxAnnotationTime(res.data.max_annotation_time_seconds || 20);
       })
       .catch(() => {
-        // Use defaults if API fails
-        setMaxAnnotationTime(120);
-        setMaxReworkTime(120);
+        setMaxAnnotationTime(20);
       });
   }, []);
 
-  // Timer tick
+  // Timer tick — stops at max time, does not run for rework/improper
   useEffect(() => {
     const interval = setInterval(() => {
+      // Skip ticking for rework and improper images
+      if (isReworkRef.current || isImproperRef.current) return;
       setElapsedSeconds((prev) => {
-        const next = prev + 1;
-        return next;
+        if (prev >= maxTimeRef.current) return prev; // Stop at max
+        return prev + 1;
       });
     }, 1000);
 
     return () => clearInterval(interval);
   }, []);
 
-  // Check for time warning whenever elapsed changes
-  useEffect(() => {
-    if (elapsedSeconds >= currentMaxTime && !showTimeWarning) {
-      setShowTimeWarning(true);
-    }
-  }, [elapsedSeconds, currentMaxTime, showTimeWarning]);
-
   const formatTime = (seconds) => {
-    const absSeconds = Math.abs(seconds);
-    const mins = Math.floor(absSeconds / 60);
-    const secs = absSeconds % 60;
-    const prefix = seconds < 0 ? '-' : '';
-    return `${prefix}${mins}:${secs.toString().padStart(2, '0')}`;
+    const secs = Math.abs(seconds);
+    return `${secs}s`;
   };
 
   // Compute remaining time for countdown display
-  const remainingSeconds = currentMaxTime - elapsedSeconds;
+  const remainingSeconds = maxAnnotationTime - elapsedSeconds;
+  // Whether we should show the timer (not for rework or improper)
+  const showTimer = !isReworkMode && !data?.is_improper;
 
   const loadImage = useCallback(async (id) => {
     setLoading(true);
@@ -434,32 +418,25 @@ export default function ImageAnnotationPage() {
       
       const initial = {};
       let maxSavedTime = 0;
-      let maxReworkSavedTime = 0;
       res.data.categories.forEach((cat) => {
         const hasHumanSelection = cat.annotation?.selected_option_ids?.length > 0;
         if (hasHumanSelection) {
-          // Use existing human selections
           initial[cat.id] = {
             selected_option_ids: cat.annotation.selected_option_ids,
           };
         } else if (cat.ai_suggestion?.option_id) {
-          // Pre-fill from AI suggestion (even if an empty in_progress annotation exists)
           initial[cat.id] = {
             selected_option_ids: [cat.ai_suggestion.option_id],
           };
         } else if (cat.annotation) {
-          // Annotation exists but no selections and no AI suggestion
           initial[cat.id] = {
             selected_option_ids: [],
           };
         }
-        // Track time from annotation if it exists
+        // Track max saved time (only initial annotation time, not rework)
         if (cat.annotation) {
           if ((cat.annotation.time_spent_seconds || 0) > maxSavedTime) {
             maxSavedTime = cat.annotation.time_spent_seconds || 0;
-          }
-          if ((cat.annotation.rework_time_seconds || 0) > maxReworkSavedTime) {
-            maxReworkSavedTime = cat.annotation.rework_time_seconds || 0;
           }
         }
       });
@@ -481,22 +458,26 @@ export default function ImageAnnotationPage() {
         setHumanVisible(null); // Default to Unknown
       }
       
-      // Detect if this is a rework - check both top-level flag and category annotations
+      // Detect if this is a rework
       const hasRework = res.data.is_rework || res.data.categories.some(cat => 
         cat.annotation?.review_status === 'rework_requested' || cat.annotation?.is_rework
       );
       setIsReworkMode(hasRework);
       isReworkRef.current = hasRework;
       
-      // For rework, resume from rework_time_seconds (start at 0 if first rework)
-      // For normal annotation, resume from time_spent_seconds
-      const resumeTime = hasRework ? maxReworkSavedTime : maxSavedTime;
-      setElapsedSeconds(resumeTime);
-      elapsedRef.current = resumeTime;
+      // Track improper status for timer
+      isImproperRef.current = !!res.data.is_improper;
       
-      // Check if we're already over the limit
-      const effectiveMaxTime = hasRework ? maxReworkTime : maxAnnotationTime;
-      setShowTimeWarning(resumeTime >= effectiveMaxTime);
+      // For rework / improper: timer stays at 0 (no time tracking)
+      // For normal annotation: resume from saved time (capped at max)
+      if (hasRework || res.data.is_improper) {
+        setElapsedSeconds(0);
+        elapsedRef.current = 0;
+      } else {
+        const resumeTime = Math.min(maxSavedTime, maxAnnotationTime);
+        setElapsedSeconds(resumeTime);
+        elapsedRef.current = resumeTime;
+      }
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to load image');
     } finally {
@@ -544,9 +525,11 @@ export default function ImageAnnotationPage() {
     setError('');
     
     try {
+      // For rework/improper: send 0 time. For normal: send min(elapsed, max)
+      const timeToSave = isReworkMode || data?.is_improper ? 0 : Math.min(elapsedSeconds, maxAnnotationTime);
       await api.put(`/annotator/images/${imageId}/annotations`, {
         annotations: pendingChanges,
-        time_spent_seconds: elapsedSeconds,
+        time_spent_seconds: timeToSave,
         is_rework: isReworkMode,
       });
       await loadImage(imageId);
@@ -572,13 +555,13 @@ export default function ImageAnnotationPage() {
 
   const handleNavigate = (id) => {
     if (id) {
-      persistTime(imageId, elapsedSeconds, isReworkMode);
+      persistTime(imageId, elapsedSeconds);
       navigate(`/annotator/image/${id}`);
     }
   };
 
   const handleBack = () => {
-    persistTime(imageId, elapsedSeconds, isReworkMode);
+    persistTime(imageId, elapsedSeconds);
     // Use browser back to preserve the page number on the annotator home
     if (window.history.length > 1) {
       navigate(-1);
@@ -796,20 +779,21 @@ export default function ImageAnnotationPage() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            {/* Countdown Timer */}
-            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
-              remainingSeconds <= 0
-                ? 'bg-red-100 text-red-700 animate-pulse' 
-                : remainingSeconds <= 30 
-                  ? 'bg-amber-100 text-amber-700' 
-                  : 'bg-emerald-100 text-emerald-700'
-            }`}>
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              {remainingSeconds >= 0 ? formatTime(remainingSeconds) : `+${formatTime(Math.abs(remainingSeconds))}`}
-              {isReworkMode && <span className="ml-1 text-[10px] opacity-70">rework</span>}
-            </div>
+            {/* Countdown Timer — hidden for rework & improper */}
+            {showTimer && (
+              <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
+                remainingSeconds <= 0
+                  ? 'bg-red-100 text-red-700' 
+                  : remainingSeconds <= 5 
+                    ? 'bg-amber-100 text-amber-700' 
+                    : 'bg-emerald-100 text-emerald-700'
+              }`}>
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                {formatTime(remainingSeconds)}
+              </div>
+            )}
             <div className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-full text-xs font-semibold">
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
               {completedCount}/{data?.categories?.length}
@@ -964,20 +948,6 @@ export default function ImageAnnotationPage() {
             </div>
 
             {error && <div className="mx-4 mt-3 bg-red-50 text-red-700 px-4 py-2 rounded-lg text-sm">{error}</div>}
-
-            {showTimeWarning && !isLocked && (
-              <div className="mx-4 mt-3 bg-red-50 border border-red-300 rounded-lg px-4 py-3 animate-pulse">
-                <div className="flex items-center gap-2">
-                  <svg className="w-5 h-5 text-red-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                  <div>
-                    <p className="text-sm text-red-700 font-semibold">⏱️ Performance Warning</p>
-                    <p className="text-xs text-red-600 mt-0.5">You've spent over 2 minutes on this image. Please complete your annotation.</p>
-                  </div>
-                </div>
-              </div>
-            )}
 
             {isImproper && (
               <div className="mx-4 mt-3 bg-red-50 border border-red-200 rounded-lg px-4 py-3">

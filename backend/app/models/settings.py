@@ -16,5 +16,4 @@ class SystemSettings(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Default settings keys:
-    # - max_annotation_time_seconds: Max time allowed for initial annotation (default: 120)
-    # - max_rework_time_seconds: Max time allowed for rework annotation (default: 120)
+    # - max_annotation_time_seconds: Max time allowed for initial annotation (default: 20)
