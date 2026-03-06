@@ -14,31 +14,34 @@ const getImageUrl = (imageId) => {
 function CategoryDropdown({ category, annotation, completedByOther, onChange, disabled, aiSuggestion }) {
   const [isOpen, setIsOpen] = useState(false);
 
-  // Determine initial selection: existing annotation > AI suggestion (for new images)
+  // Determine initial selection: existing annotation > AI suggestion
+  // AI suggestion is used when there's no annotation OR annotation has empty selections (in_progress auto-save)
+  const hasHumanSelection = annotation?.selected_option_ids?.length > 0;
+
   const getInitialSelection = () => {
-    if (annotation?.selected_option_ids?.[0]) return annotation.selected_option_ids[0];
-    // Pre-fill AI suggestion if no human annotation exists yet
-    if (aiSuggestion?.option_id && !annotation) return aiSuggestion.option_id;
+    if (hasHumanSelection) return annotation.selected_option_ids[0];
+    // Pre-fill AI suggestion if no human selection exists
+    if (aiSuggestion?.option_id) return aiSuggestion.option_id;
     return null;
   };
 
   const [selectedOption, setSelectedOption] = useState(getInitialSelection);
   const [aiPreFilled, setAiPreFilled] = useState(
-    !annotation && aiSuggestion?.option_id ? true : false
+    !hasHumanSelection && aiSuggestion?.option_id ? true : false
   );
 
   useEffect(() => {
-    if (annotation?.selected_option_ids?.[0]) {
+    if (hasHumanSelection) {
       setSelectedOption(annotation.selected_option_ids[0]);
       setAiPreFilled(false);
-    } else if (!annotation && aiSuggestion?.option_id) {
+    } else if (aiSuggestion?.option_id) {
       setSelectedOption(aiSuggestion.option_id);
       setAiPreFilled(true);
     } else {
       setSelectedOption(null);
       setAiPreFilled(false);
     }
-  }, [annotation, aiSuggestion]);
+  }, [annotation, aiSuggestion, hasHumanSelection]);
 
   const selectOption = (optionId) => {
     if (disabled) return;
@@ -431,23 +434,31 @@ export default function ImageAnnotationPage() {
       let maxSavedTime = 0;
       let maxReworkSavedTime = 0;
       res.data.categories.forEach((cat) => {
-        if (cat.annotation) {
+        const hasHumanSelection = cat.annotation?.selected_option_ids?.length > 0;
+        if (hasHumanSelection) {
+          // Use existing human selections
           initial[cat.id] = {
             selected_option_ids: cat.annotation.selected_option_ids,
           };
-          // Track the max time_spent_seconds across all categories for this image
-          if ((cat.annotation.time_spent_seconds || 0) > maxSavedTime) {
-            maxSavedTime = cat.annotation.time_spent_seconds || 0;
-          }
-          // Track rework time separately
-          if ((cat.annotation.rework_time_seconds || 0) > maxReworkSavedTime) {
-            maxReworkSavedTime = cat.annotation.rework_time_seconds || 0;
-          }
         } else if (cat.ai_suggestion?.option_id) {
-          // Pre-fill from AI suggestion if no human annotation exists
+          // Pre-fill from AI suggestion (even if an empty in_progress annotation exists)
           initial[cat.id] = {
             selected_option_ids: [cat.ai_suggestion.option_id],
           };
+        } else if (cat.annotation) {
+          // Annotation exists but no selections and no AI suggestion
+          initial[cat.id] = {
+            selected_option_ids: [],
+          };
+        }
+        // Track time from annotation if it exists
+        if (cat.annotation) {
+          if ((cat.annotation.time_spent_seconds || 0) > maxSavedTime) {
+            maxSavedTime = cat.annotation.time_spent_seconds || 0;
+          }
+          if ((cat.annotation.rework_time_seconds || 0) > maxReworkSavedTime) {
+            maxReworkSavedTime = cat.annotation.rework_time_seconds || 0;
+          }
         }
       });
       setPendingChanges(initial);

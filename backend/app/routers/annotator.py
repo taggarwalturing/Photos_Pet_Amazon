@@ -557,7 +557,8 @@ def get_image_for_annotation(
     completed_by_others_cat_ids = {a.category_id for a in completed_by_others}
     
     # Build option label → option id lookup for AI suggestion mapping
-    arbiter_labels = image.arbiter_labels or {}  # e.g. {"lighting": "dusk_dawn", ...}
+    # arbiter_labels format: {"lighting": {"final": "well_lit", "status": "agree", ...}, ...}
+    arbiter_labels = image.arbiter_labels or {}
 
     # Build category data with annotations
     categories_data = []
@@ -582,7 +583,13 @@ def get_image_for_annotation(
         ai_suggestion = None
         arbiter_cat_key = _DB_CAT_TO_ARBITER.get(cat.name)
         if arbiter_cat_key and arbiter_cat_key in arbiter_labels:
-            arbiter_pred = arbiter_labels[arbiter_cat_key]
+            arbiter_pred_data = arbiter_labels[arbiter_cat_key]
+            # Predictions are stored as dicts: {"final": "well_lit", "status": "agree", ...}
+            # Extract the final prediction string
+            if isinstance(arbiter_pred_data, dict):
+                arbiter_pred = arbiter_pred_data.get("final", "None")
+            else:
+                arbiter_pred = str(arbiter_pred_data) if arbiter_pred_data else "None"
             option_label = _ARBITER_LABEL_TO_OPTION.get(arbiter_pred)
             if option_label:
                 # Find matching option id

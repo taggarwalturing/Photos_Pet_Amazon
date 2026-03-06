@@ -1065,7 +1065,12 @@ def get_prediction_tracking(
             if not db_cat:
                 continue
 
-            ai_pred_short = arbiter_labels.get(arb_cat_key)
+            ai_pred_raw = arbiter_labels.get(arb_cat_key)
+            # Predictions are stored as dicts: {"final": "well_lit", "status": "agree", ...}
+            if isinstance(ai_pred_raw, dict):
+                ai_pred_short = ai_pred_raw.get("final", "None")
+            else:
+                ai_pred_short = str(ai_pred_raw) if ai_pred_raw else None
             ai_pred_label = ARBITER_TO_OPTION_LABEL.get(ai_pred_short, ai_pred_short) if ai_pred_short else None
 
             # Get human annotation
