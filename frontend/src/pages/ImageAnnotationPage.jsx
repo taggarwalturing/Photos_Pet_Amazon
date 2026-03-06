@@ -293,82 +293,21 @@ export default function ImageAnnotationPage() {
   const [maxAnnotationTime, setMaxAnnotationTime] = useState(20);
   const [isReworkMode, setIsReworkMode] = useState(false);
 
-  // Timer state — tracks time per image (only for initial annotation, not rework/improper)
+  // Timer state — tracks time per image session (resets on every open)
+  // Time is ONLY saved on submit — not on navigate, close, or auto-save
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const elapsedRef = useRef(0); // mirrors elapsedSeconds for use in non-reactive callbacks
-  const imageIdRef = useRef(imageId); // current imageId for use in cleanup/beforeunload
   const isReworkRef = useRef(false); // mirrors isReworkMode
   const isImproperRef = useRef(false); // mirrors improper status
   const maxTimeRef = useRef(20); // mirrors maxAnnotationTime for use in timer
 
   // Keep refs in sync with state
-  useEffect(() => { elapsedRef.current = elapsedSeconds; }, [elapsedSeconds]);
   useEffect(() => { isReworkRef.current = isReworkMode; }, [isReworkMode]);
   useEffect(() => { maxTimeRef.current = maxAnnotationTime; }, [maxAnnotationTime]);
 
-  // When imageId changes, immediately reset timer to prevent bleeding old time to new image
+  // Reset timer to 0 whenever the image changes (always start fresh)
   useEffect(() => {
-    if (imageIdRef.current !== imageId) {
-      setElapsedSeconds(0);
-      elapsedRef.current = 0;
-    }
-    imageIdRef.current = imageId;
+    setElapsedSeconds(0);
   }, [imageId]);
-
-  // Persist time to DB (fire-and-forget) — skips rework and improper
-  const persistTime = useCallback((imgId, seconds) => {
-    if (!imgId || seconds <= 0 || isReworkRef.current || isImproperRef.current) return;
-    const cappedSeconds = Math.min(seconds, maxTimeRef.current);
-    api.patch(`/annotator/images/${imgId}/time`, {
-      time_spent_seconds: cappedSeconds,
-      is_rework: false,
-    }).catch(() => {});
-  }, []);
-
-  // Persist time using fetch+keepalive (works even during page unload)
-  const persistTimeBeacon = useCallback((imgId, seconds) => {
-    if (!imgId || seconds <= 0 || isReworkRef.current || isImproperRef.current) return;
-    const cappedSeconds = Math.min(seconds, maxTimeRef.current);
-    const token = localStorage.getItem('token');
-    const url = `/api/annotator/images/${imgId}/time`;
-    try {
-      fetch(url, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ time_spent_seconds: cappedSeconds, is_rework: false }),
-        keepalive: true,
-      }).catch(() => {});
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  // Auto-save time to DB every 10 seconds (only for normal annotation)
-  useEffect(() => {
-    const interval = setInterval(() => {
-      persistTime(imageIdRef.current, elapsedRef.current);
-    }, 10000);
-    return () => clearInterval(interval);
-  }, [persistTime]);
-
-  // Save time on window/tab close or browser navigation
-  useEffect(() => {
-    const handleBeforeUnload = () => {
-      persistTimeBeacon(imageIdRef.current, elapsedRef.current);
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [persistTimeBeacon]);
-
-  // Save time when navigating away from this image (imageId changes)
-  const prevImageIdRef = useRef(imageId);
-  useEffect(() => {
-    const prevId = prevImageIdRef.current;
-    if (prevId && prevId !== imageId) {
-      persistTime(prevId, elapsedRef.current);
-    }
-    prevImageIdRef.current = imageId;
-  }, [imageId, persistTime]);
 
   // Fetch time limit settings from API on mount
   useEffect(() => {
@@ -384,7 +323,6 @@ export default function ImageAnnotationPage() {
   // Timer tick — stops at max time, does not run for rework/improper
   useEffect(() => {
     const interval = setInterval(() => {
-      // Skip ticking for rework and improper images
       if (isReworkRef.current || isImproperRef.current) return;
       setElapsedSeconds((prev) => {
         if (prev >= maxTimeRef.current) return prev; // Stop at max
@@ -417,7 +355,6 @@ export default function ImageAnnotationPage() {
       setData(res.data);
       
       const initial = {};
-      let maxSavedTime = 0;
       res.data.categories.forEach((cat) => {
         const hasHumanSelection = cat.annotation?.selected_option_ids?.length > 0;
         if (hasHumanSelection) {
@@ -432,12 +369,6 @@ export default function ImageAnnotationPage() {
           initial[cat.id] = {
             selected_option_ids: [],
           };
-        }
-        // Track max saved time (only initial annotation time, not rework)
-        if (cat.annotation) {
-          if ((cat.annotation.time_spent_seconds || 0) > maxSavedTime) {
-            maxSavedTime = cat.annotation.time_spent_seconds || 0;
-          }
         }
       });
       setPendingChanges(initial);
@@ -468,16 +399,8 @@ export default function ImageAnnotationPage() {
       // Track improper status for timer
       isImproperRef.current = !!res.data.is_improper;
       
-      // For rework / improper: timer stays at 0 (no time tracking)
-      // For normal annotation: resume from saved time (capped at max)
-      if (hasRework || res.data.is_improper) {
-        setElapsedSeconds(0);
-        elapsedRef.current = 0;
-      } else {
-        const resumeTime = Math.min(maxSavedTime, maxAnnotationTime);
-        setElapsedSeconds(resumeTime);
-        elapsedRef.current = resumeTime;
-      }
+      // Always start timer fresh at 0 — time is only saved on submit
+      setElapsedSeconds(0);
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to load image');
     } finally {
@@ -555,13 +478,11 @@ export default function ImageAnnotationPage() {
 
   const handleNavigate = (id) => {
     if (id) {
-      persistTime(imageId, elapsedSeconds);
       navigate(`/annotator/image/${id}`);
     }
   };
 
   const handleBack = () => {
-    persistTime(imageId, elapsedSeconds);
     // Use browser back to preserve the page number on the annotator home
     if (window.history.length > 1) {
       navigate(-1);
