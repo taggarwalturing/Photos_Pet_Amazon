@@ -9,17 +9,6 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 480  # 8 hours
     CORS_ORIGINS: str = ""  # comma-separated origins
     SEED_ADMINS: str = "[]"  # JSON array of {username, password, full_name}
-    BACKEND_URL: str = "http://localhost:8000"
-    
-    # AWS S3 Configuration (pulls from system env if not in .env)
-    AWS_ACCESS_KEY_ID: str = ""
-    AWS_SECRET_ACCESS_KEY: str = ""
-    AWS_REGION: str = "us-east-1"
-    AWS_S3_BUCKET_ORIGINALS: str = "agi-ds-turing"
-    AWS_S3_BUCKET_PROCESSED: str = "agi-ds-turing"
-    AWS_S3_PREFIX_ORIGINALS: str = "pet-annotation/originals/"
-    AWS_S3_PREFIX_PROCESSED: str = "pet-annotation/processed/"
-    AWS_ROLE_ARN: str = ""
     
     class Config:
         env_file = ".env"
@@ -40,6 +29,15 @@ class Settings(BaseSettings):
     
     # OpenAI API Key
     OPENAI_API_KEY: str = ""
+
+    # Turing API / Arbiter Classifier
+    TURING_API_URL: str = "https://kong.turing.com/api/v2/chat"
+    TURING_API_KEY: str = ""
+    TURING_GW_KEY: str = ""
+    TURING_AUTH: str = ""
+    GEMINI_MODEL: str = "gemini-2.5-pro"
+    OPENAI_MODEL: str = "gpt-4o"
+    ARBITER_MODEL: str = "o3"
 
     @property
     def cors_origins_list(self) -> list[str]:

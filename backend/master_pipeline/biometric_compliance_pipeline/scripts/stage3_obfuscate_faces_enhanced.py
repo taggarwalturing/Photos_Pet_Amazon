@@ -13,6 +13,7 @@ Methods available:
 
 import cv2
 import json
+import os
 import numpy as np
 from pathlib import Path
 from tqdm import tqdm
@@ -27,18 +28,34 @@ except ImportError:
 
 
 def load_config():
-    """Load configuration from settings.env"""
-    config = {}
+    """Load configuration. Priority: env vars (from backend/.env) > local settings.env file."""
+    # 1. Load from local settings.env as fallback
+    file_config = {}
     env_file = Path(__file__).parent.parent / 'config' / 'settings.env'
-    
-    with open(env_file) as f:
-        for line in f:
-            line = line.strip()
-            if line and not line.startswith('#') and '=' in line:
-                key, value = line.split('=', 1)
-                value = value.split('#')[0].strip()
-                config[key] = value
-    
+    if env_file.exists():
+        with open(env_file) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    value = value.split('#')[0].strip()
+                    file_config[key] = value
+
+    # 2. Also try loading backend/.env via dotenv (for standalone usage)
+    backend_env = Path(__file__).parent.parent.parent.parent / '.env'
+    if backend_env.exists():
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(backend_env, override=False)
+        except ImportError:
+            pass
+
+    # 3. Env vars take priority
+    config = {}
+    for key in file_config:
+        env_val = os.environ.get(key)
+        config[key] = env_val if env_val else file_config[key]
+
     return config
 
 

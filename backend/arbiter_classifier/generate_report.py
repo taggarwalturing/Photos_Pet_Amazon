@@ -6,15 +6,26 @@ Generate Arbiter Metrics Report
 """
 
 import json
+import os
 import pandas as pd
 from pathlib import Path
 from collections import defaultdict
 
 # ============================================================================
-# LOAD CONFIGURATION
+# LOAD CONFIGURATION (from backend/.env via env vars, fallback to settings.env)
 # ============================================================================
 def load_config():
-    config = {}
+    # Try loading backend/.env via dotenv
+    backend_env = Path(__file__).parent.parent / ".env"
+    if backend_env.exists():
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(backend_env, override=False)
+        except ImportError:
+            pass
+
+    # Fallback: local settings.env
+    file_config = {}
     config_file = Path(__file__).parent / "config" / "settings.env"
     if config_file.exists():
         with open(config_file) as f:
@@ -22,7 +33,17 @@ def load_config():
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
                     key, value = line.split("=", 1)
-                    config[key.strip()] = value.strip()
+                    file_config[key.strip()] = value.strip()
+
+    config = {}
+    for key in file_config:
+        config[key] = os.environ.get(key, file_config[key])
+    for key in ["PIPELINE_VERSION", "ARBITER_PIPELINE_VERSION", "RESULTS_DIR"]:
+        env_val = os.environ.get(key)
+        if env_val and key not in config:
+            config[key] = env_val
+    if "ARBITER_PIPELINE_VERSION" in config and "PIPELINE_VERSION" not in config:
+        config["PIPELINE_VERSION"] = config["ARBITER_PIPELINE_VERSION"]
     return config
 
 CONFIG = load_config()

@@ -367,7 +367,7 @@ Photos_Pet_Amazon/
 
 ### Pipeline Configuration
 
-Edit `backend/master_pipeline/.env` or use command-line flags:
+Edit `backend/.env` or use command-line flags:
 
 ```bash
 # Workspace

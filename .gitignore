@@ -31,7 +31,9 @@ ENV/
 env/
 
 # ===================================
-# Environment Files (keep only .env.example)
+# Environment Files
+# Only TWO .env files exist: backend/.env and frontend/.env
+# Only TWO .env.example files exist: backend/.env.example and frontend/.env.example
 # ===================================
 .env
 .env.*
@@ -147,5 +149,4 @@ temp/
 
 # Arbiter Classifier
 # ===================================
-backend/arbiter_classifier/config/settings.env
 backend/arbiter_classifier/results/

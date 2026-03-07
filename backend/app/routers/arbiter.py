@@ -100,7 +100,12 @@ _stop_event = threading.Event()
 
 # ─── Config Loader ────────────────────────────────────────────
 def load_arbiter_config():
-    config = {}
+    """
+    Load arbiter config from environment variables (backend/.env via dotenv).
+    Falls back to arbiter_classifier/config/settings.env for any missing keys.
+    """
+    # 1. Load fallback from settings.env file (if it exists)
+    file_config = {}
     config_file = ARBITER_DIR / "config" / "settings.env"
     if config_file.exists():
         with open(config_file) as f:
@@ -108,7 +113,38 @@ def load_arbiter_config():
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
                     key, value = line.split("=", 1)
-                    config[key.strip()] = value.strip()
+                    file_config[key.strip()] = value.strip()
+
+    # 2. Environment variables take priority over file config
+    keys = [
+        "TURING_API_URL", "TURING_API_KEY", "TURING_GW_KEY", "TURING_AUTH",
+        "GEMINI_MODEL", "GEMINI_PROVIDER", "GEMINI_PROMPT_VERSION",
+        "OPENAI_MODEL", "OPENAI_PROVIDER", "OPENAI_PROMPT_VERSION",
+        "ARBITER_MODEL", "ARBITER_PROVIDER", "ARBITER_PROMPT_VERSION",
+        "ARBITER_BATCH_SIZE", "ARBITER_MAX_RETRIES", "ARBITER_TIMEOUT_SECONDS",
+        "ARBITER_PARALLEL_WORKERS", "ARBITER_PIPELINE_VERSION",
+        # Legacy keys (from settings.env) mapped to new env names
+        "BATCH_SIZE", "MAX_RETRIES", "TIMEOUT_SECONDS",
+        "PARALLEL_WORKERS", "PIPELINE_VERSION", "TEMPERATURE",
+    ]
+    config = {}
+    for key in keys:
+        env_val = os.environ.get(key)
+        if env_val:
+            config[key] = env_val
+        elif key in file_config:
+            config[key] = file_config[key]
+
+    # Normalize: new ARBITER_ prefixed keys map to legacy keys for compatibility
+    if "ARBITER_BATCH_SIZE" in config and "BATCH_SIZE" not in config:
+        config["BATCH_SIZE"] = config["ARBITER_BATCH_SIZE"]
+    if "ARBITER_TIMEOUT_SECONDS" in config and "TIMEOUT_SECONDS" not in config:
+        config["TIMEOUT_SECONDS"] = config["ARBITER_TIMEOUT_SECONDS"]
+    if "ARBITER_PARALLEL_WORKERS" in config and "PARALLEL_WORKERS" not in config:
+        config["PARALLEL_WORKERS"] = config["ARBITER_PARALLEL_WORKERS"]
+    if "ARBITER_PIPELINE_VERSION" in config and "PIPELINE_VERSION" not in config:
+        config["PIPELINE_VERSION"] = config["ARBITER_PIPELINE_VERSION"]
+
     return config
 
 

@@ -261,57 +261,6 @@ def proxy_image(image_id: int):
         
         url = img.url
         
-        # Handle S3 URLs (s3://bucket/key)
-        if url.startswith('s3://'):
-            from app.utils.s3_utils import parse_s3_url, download_from_s3
-            
-            bucket, key = parse_s3_url(url)
-            content = download_from_s3(bucket, key)
-            
-            # Determine mime type from extension
-            ext = os.path.splitext(key)[1].lower()
-            filename = os.path.basename(key).lower()
-            
-            # Check if this is a HEIC/HEIF file that needs conversion
-            is_heic = ext in ('.heic', '.heif') or 'heic' in filename or 'heif' in filename
-            
-            if is_heic and HEIF_SUPPORT:
-                # Convert HEIC to JPEG for browser compatibility
-                try:
-                    file_buffer = io.BytesIO(content)
-                    pil_image = PILImage.open(file_buffer)
-                    if pil_image.mode in ('RGBA', 'P'):
-                        pil_image = pil_image.convert('RGB')
-                    
-                    output_buffer = io.BytesIO()
-                    pil_image.save(output_buffer, format='JPEG', quality=85)
-                    content = output_buffer.getvalue()
-                    mime_type = 'image/jpeg'
-                except Exception as conv_err:
-                    print(f"HEIC conversion failed for {key}: {conv_err}")
-                    mime_type = 'image/heic'
-            else:
-                mime_type = {
-                    '.jpg': 'image/jpeg',
-                    '.jpeg': 'image/jpeg',
-                    '.png': 'image/png',
-                    '.gif': 'image/gif',
-                    '.webp': 'image/webp',
-                }.get(ext, 'image/jpeg')
-            
-            # Cache it
-            cache_image(image_id, content, mime_type)
-            
-            return Response(
-                content=content,
-                media_type=mime_type,
-                headers={
-                    "Cache-Control": "public, max-age=604800",
-                    "X-Cache": "MISS",
-                    "X-Source": "s3",
-                }
-            )
-        
         # Handle local file:// URLs
         if url.startswith('file://'):
             local_path = url.replace('file://', '')

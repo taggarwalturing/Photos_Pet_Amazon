@@ -4,15 +4,27 @@ Run Complete Arbiter Classification Pipeline
 2. Arbiter resolves disagreements
 3. Generate reports
 
-Configuration: config/settings.env
+Configuration: backend/.env (single source of truth)
 """
 
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 def load_config():
-    config = {}
+    """Load config from env vars (backend/.env) with fallback to local settings.env."""
+    # Try loading backend/.env via dotenv
+    backend_env = Path(__file__).parent.parent / ".env"
+    if backend_env.exists():
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(backend_env, override=False)
+        except ImportError:
+            pass
+
+    # Fallback: local settings.env
+    file_config = {}
     config_file = Path(__file__).parent / "config" / "settings.env"
     if config_file.exists():
         with open(config_file) as f:
@@ -20,7 +32,20 @@ def load_config():
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
                     key, value = line.split("=", 1)
-                    config[key.strip()] = value.strip()
+                    file_config[key.strip()] = value.strip()
+
+    config = {}
+    for key in file_config:
+        config[key] = os.environ.get(key, file_config[key])
+    # Also check env-only keys
+    for key in ["GEMINI_MODEL", "OPENAI_MODEL", "ARBITER_MODEL",
+                "GEMINI_PROMPT_VERSION", "OPENAI_PROMPT_VERSION", "ARBITER_PROMPT_VERSION",
+                "ARBITER_PIPELINE_VERSION", "PIPELINE_VERSION", "RESULTS_DIR"]:
+        env_val = os.environ.get(key)
+        if env_val and key not in config:
+            config[key] = env_val
+    if "ARBITER_PIPELINE_VERSION" in config and "PIPELINE_VERSION" not in config:
+        config["PIPELINE_VERSION"] = config["ARBITER_PIPELINE_VERSION"]
     return config
 
 def main():
@@ -73,7 +98,7 @@ def main():
     print("\n" + "=" * 70)
     print("✅ PIPELINE COMPLETE!")
     print("=" * 70)
-    print(f"\nConfiguration: config/settings.env")
+    print(f"\nConfiguration: backend/.env")
     print(f"\nPrompts:")
     print(f"  • prompts/gemini_reasoning_v{GEMINI_PROMPT_VERSION}.txt")
     print(f"  • prompts/openai_reasoning_v{OPENAI_PROMPT_VERSION}.txt")

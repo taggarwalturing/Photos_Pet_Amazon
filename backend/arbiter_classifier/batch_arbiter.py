@@ -23,8 +23,12 @@ import io
 # ============================================================================
 # LOAD CONFIGURATION
 # ============================================================================
+# Priority: Environment variables (from backend/.env) > settings.env file
+# ============================================================================
 def load_config():
-    config = {}
+    """Load config: env vars take priority, fall back to settings.env file."""
+    # Load from settings.env file as fallback
+    file_config = {}
     config_file = Path(__file__).parent / "config" / "settings.env"
     if config_file.exists():
         with open(config_file) as f:
@@ -32,7 +36,46 @@ def load_config():
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
                     key, value = line.split("=", 1)
-                    config[key.strip()] = value.strip()
+                    file_config[key.strip()] = value.strip()
+
+    # Also try loading backend/.env via dotenv (for standalone script usage)
+    backend_env = Path(__file__).parent.parent / ".env"
+    if backend_env.exists():
+        try:
+            from dotenv import load_dotenv
+            load_dotenv(backend_env, override=False)
+        except ImportError:
+            pass
+
+    # Env vars take priority over file config
+    config = {}
+    all_keys = set(file_config.keys()) | {
+        "TURING_API_URL", "TURING_API_KEY", "TURING_GW_KEY", "TURING_AUTH",
+        "GEMINI_MODEL", "GEMINI_PROVIDER", "GEMINI_PROMPT_VERSION",
+        "OPENAI_MODEL", "OPENAI_PROVIDER", "OPENAI_PROMPT_VERSION",
+        "ARBITER_MODEL", "ARBITER_PROVIDER", "ARBITER_PROMPT_VERSION",
+        "ARBITER_BATCH_SIZE", "ARBITER_TIMEOUT_SECONDS",
+        "ARBITER_PARALLEL_WORKERS", "ARBITER_PIPELINE_VERSION",
+        "BATCH_SIZE", "TIMEOUT_SECONDS", "PARALLEL_WORKERS",
+        "PIPELINE_VERSION", "TEMPERATURE", "RESULTS_DIR",
+    }
+    for key in all_keys:
+        env_val = os.environ.get(key)
+        if env_val:
+            config[key] = env_val
+        elif key in file_config:
+            config[key] = file_config[key]
+
+    # Map ARBITER_ prefixed keys to legacy keys
+    if "ARBITER_BATCH_SIZE" in config and "BATCH_SIZE" not in config:
+        config["BATCH_SIZE"] = config["ARBITER_BATCH_SIZE"]
+    if "ARBITER_TIMEOUT_SECONDS" in config and "TIMEOUT_SECONDS" not in config:
+        config["TIMEOUT_SECONDS"] = config["ARBITER_TIMEOUT_SECONDS"]
+    if "ARBITER_PARALLEL_WORKERS" in config and "PARALLEL_WORKERS" not in config:
+        config["PARALLEL_WORKERS"] = config["ARBITER_PARALLEL_WORKERS"]
+    if "ARBITER_PIPELINE_VERSION" in config and "PIPELINE_VERSION" not in config:
+        config["PIPELINE_VERSION"] = config["ARBITER_PIPELINE_VERSION"]
+
     return config
 
 CONFIG = load_config()
@@ -41,7 +84,7 @@ CONFIG = load_config()
 # CONFIGURATION
 # ============================================================================
 TURING_API_URL = CONFIG.get("TURING_API_URL", "https://kong.turing.com/api/v2/chat")
-TURING_API_KEY = os.environ.get("TURING_API_KEY", CONFIG.get("TURING_API_KEY", "YOUR_API_KEY"))
+TURING_API_KEY = CONFIG.get("TURING_API_KEY", "YOUR_API_KEY")
 TURING_GW_KEY = CONFIG.get("TURING_GW_KEY")
 TURING_AUTH = CONFIG.get("TURING_AUTH")
 
