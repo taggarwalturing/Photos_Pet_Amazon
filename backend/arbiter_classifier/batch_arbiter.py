@@ -243,7 +243,7 @@ def classify_with_reasoning(image_path: str) -> dict:
         
         gemini_result = gemini_future.result()
         openai_result = openai_future.result()
-
+    
     # Propagate errors from either model
     if "error" in gemini_result and "error" in openai_result:
         return {"error": f"Both models failed — Gemini: {gemini_result['error'][:200]} | OpenAI: {openai_result['error'][:200]}"}

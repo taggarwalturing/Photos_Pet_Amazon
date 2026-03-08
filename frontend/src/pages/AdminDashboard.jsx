@@ -294,40 +294,7 @@ function UsersTab() {
         </form>
       )}
 
-      {/* Image Assignment Summary */}
-      {imageAssignments && (
-        <div className="bg-gradient-to-r from-indigo-50 via-purple-50 to-pink-50 rounded-xl border border-indigo-100 p-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-lg flex items-center justify-center text-white shadow-sm">
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold text-gray-900">Image Assignment Summary</h3>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {imageAssignments.assigned_count} of {imageAssignments.total_images} images assigned
-                  {imageAssignments.unassigned_count > 0 && (
-                    <span className="text-amber-600 ml-1 font-medium">
-                      ({imageAssignments.unassigned_count} available)
-                    </span>
-                  )}
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="w-32 bg-white/80 rounded-full h-2.5 shadow-inner">
-                <div
-                  className="bg-gradient-to-r from-indigo-500 to-purple-500 h-2.5 rounded-full transition-all animate-progress"
-                  style={{ width: `${imageAssignments.total_images > 0 ? (imageAssignments.assigned_count / imageAssignments.total_images) * 100 : 0}%` }}
-                />
-              </div>
-              <span className="text-xs font-medium text-indigo-600">
-                {imageAssignments.total_images > 0 ? Math.round((imageAssignments.assigned_count / imageAssignments.total_images) * 100) : 0}%
-              </span>
-            </div>
-          </div>
-        </div>
-      )}
+      
 
       {/* Users table */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
