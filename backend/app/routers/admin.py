@@ -596,6 +596,7 @@ def list_images(
         images_out.append({
             "id": img.id,
             "filename": img.filename,
+            "original_filename": img.original_filename,  # Original Drive name (human-readable)
             "url": img.url,
             "created_at": img.created_at,
             "compliance_status": img.compliance_status,

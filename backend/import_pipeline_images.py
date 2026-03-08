@@ -128,7 +128,15 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                         heic_conversion_map[img_file.name] = heic_name
                         break
     
-    # Load filename → folder_id and filename → drive_file_id mappings from drive_metadata.json
+    # Load filename mappings from drive_metadata.json
+    # New-style (drive-id based filenames on disk):
+    #   disk_filename_to_drive_id:  {disk_filename: drive_file_id}
+    #   disk_filename_to_original:  {disk_filename: original_drive_name}
+    # Legacy (original-name based filenames on disk):
+    #   filename_to_drive_id:       {original_name: drive_file_id}
+    #   filename_folder_map:        {original_name: folder_id}
+    disk_filename_to_drive_id = {}
+    disk_filename_to_original = {}
     filename_folder_map = {}
     filename_to_drive_id = {}
     drive_meta_path = workspace / "drive_metadata.json"
@@ -136,11 +144,15 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
         try:
             with open(drive_meta_path, 'r') as f:
                 drive_meta = json.load(f)
+            disk_filename_to_drive_id = drive_meta.get("disk_filename_to_drive_id", {})
+            disk_filename_to_original = drive_meta.get("disk_filename_to_original", {})
             filename_folder_map = drive_meta.get("filename_folder_map", {})
             filename_to_drive_id = drive_meta.get("filename_to_drive_id", {})
             # If folder_id not provided, try to extract from metadata
             if not folder_id:
                 folder_id = drive_meta.get("folder_id")
+            if disk_filename_to_drive_id:
+                print(f"   📊 Loaded drive-id filename mapping for {len(disk_filename_to_drive_id)} images")
         except Exception as e:
             print(f"   ⚠️  Could not load drive metadata: {e}")
     
@@ -178,10 +190,26 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
             lookup_name = heic_conversion_map.get(filename, filename)
             source_fid = filename_folder_map.get(lookup_name) or filename_folder_map.get(filename)
         
-        # Resolve Google Drive file ID for this image
-        # For HEIC-converted files, look up by original HEIC filename
-        lookup_name_for_drive = heic_conversion_map.get(filename, filename)
-        drive_file_id = filename_to_drive_id.get(lookup_name_for_drive) or filename_to_drive_id.get(filename)
+        # ── Resolve Google Drive file ID and original filename ──
+        # New-style: disk filename IS the drive file ID (e.g. "abc123.jpg")
+        drive_file_id = disk_filename_to_drive_id.get(filename)
+        original_drive_name = disk_filename_to_original.get(filename)
+        
+        # For HEIC-converted files: the HEIC disk name was drive_id.heic → now drive_id.jpg
+        # Check heic_conversion_map for the pre-conversion disk name
+        if not drive_file_id:
+            pre_convert_name = heic_conversion_map.get(filename)  # e.g. "abc123.heic"
+            if pre_convert_name:
+                drive_file_id = disk_filename_to_drive_id.get(pre_convert_name)
+                original_drive_name = disk_filename_to_original.get(pre_convert_name)
+        
+        # Legacy fallback (old-style downloads where disk name = original name)
+        if not drive_file_id:
+            lookup_name_for_drive = heic_conversion_map.get(filename, filename)
+            drive_file_id = filename_to_drive_id.get(lookup_name_for_drive) or filename_to_drive_id.get(filename)
+            # In legacy mode, original_filename is from HEIC conversion only
+            if not original_drive_name:
+                original_drive_name = heic_conversion_map.get(filename)
         
         # URL path relative to backend directory
         relative_path = f"{rel_workspace}/deliverable/{filename}"
@@ -190,7 +218,7 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
         
         # Determine if pipeline blurred this image
         is_prog_blurred = compliance_status in ("blurred", "processed", "obfuscated")
-            
+        
         if filename in existing_filenames:
             db.execute(text('''
                 UPDATE images 
@@ -202,6 +230,7 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                     processing_log = :processing_log,
                     source_drive_folder_id = COALESCE(source_drive_folder_id, :source_drive_folder_id),
                     image_drive_id = COALESCE(image_drive_id, :image_drive_id),
+                    original_filename = COALESCE(:original_filename, original_filename),
                     url = :url,
                     original_url = :original_url,
                     processed_url = :processed_url,
@@ -215,6 +244,7 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                 'processing_log': f"Action: {action}, Faces: {face_count}",
                 'source_drive_folder_id': source_fid,
                 'image_drive_id': drive_file_id,
+                'original_filename': original_drive_name,
                 'url': url,
                 'original_url': relative_path,
                 'processed_url': relative_path,
@@ -225,6 +255,8 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
         else:
             heic_original = heic_conversion_map.get(filename)
             orig_format = "HEIC" if heic_original else None
+            # original_filename: prefer Drive original name, fall back to HEIC original
+            orig_name_for_db = original_drive_name or heic_original
 
             db.execute(text('''
                 INSERT INTO images (
@@ -249,7 +281,7 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                 )
             '''), {
                 'filename': filename,
-                'original_filename': heic_original,
+                'original_filename': orig_name_for_db,
                 'original_format': orig_format,
                 'url': url,
                 'compliance_status': compliance_status,
@@ -276,11 +308,23 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                 if not raw_path.exists():
                     continue
                     
-                # Resolve drive metadata
-                lookup_name_for_drive = heic_conversion_map.get(dup_filename, dup_filename)
-                drive_file_id = filename_to_drive_id.get(lookup_name_for_drive) or filename_to_drive_id.get(dup_filename)
+                # Resolve drive metadata (new-style first, then legacy)
+                dup_drive_id = disk_filename_to_drive_id.get(dup_filename)
+                dup_original_name = disk_filename_to_original.get(dup_filename)
+                
+                if not dup_drive_id:
+                    pre_convert = heic_conversion_map.get(dup_filename)
+                    if pre_convert:
+                        dup_drive_id = disk_filename_to_drive_id.get(pre_convert)
+                        dup_original_name = disk_filename_to_original.get(pre_convert)
+                
+                if not dup_drive_id:
+                    lookup = heic_conversion_map.get(dup_filename, dup_filename)
+                    dup_drive_id = filename_to_drive_id.get(lookup) or filename_to_drive_id.get(dup_filename)
+                
                 heic_original = heic_conversion_map.get(dup_filename)
                 orig_format = "HEIC" if heic_original else None
+                orig_name_for_dup = dup_original_name or heic_original
                 
                 relative_dup_path = f"{rel_workspace}/01_downloaded_from_drive/{dup_filename}"
                 dup_url = f"file://{relative_dup_path}"
@@ -308,12 +352,12 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                     )
                 '''), {
                     'filename': dup_filename,
-                    'original_filename': heic_original,
+                    'original_filename': orig_name_for_dup,
                     'original_format': orig_format,
                     'url': dup_url,
                     'original_url': relative_dup_path,
                     'source_drive_folder_id': source_fid,
-                    'image_drive_id': drive_file_id,
+                    'image_drive_id': dup_drive_id,
                     'parent_image': parent_filename,
                     'image_path': str(raw_path),
                 })

@@ -84,7 +84,12 @@ async def start_pipeline(
         db_folders = db.query(DriveFolder).filter(DriveFolder.status != "disabled").all()
         if db_folders:
             folder_ids = [f.folder_id for f in db_folders]
-    
+
+    # Resolve parent folders into child subfolders BEFORE launching the pipeline
+    # so the initial status response already shows the correct leaf folders.
+    if folder_ids and request.download:
+        folder_ids = _resolve_parent_folders(folder_ids, db)
+
     # Reset status
     pipeline_status = {
         "is_running": True,
@@ -518,6 +523,136 @@ def _init_folder_progress():
     }
 
 
+def _resolve_parent_folders(folder_ids: List[str], db: Session) -> List[str]:
+    """
+    For each folder ID, check if it's a "parent" folder (contains only subfolders,
+    no direct image files).  If so, expand it into its child subfolder IDs and
+    register them in the drive_folders DB table.
+
+    Returns the final flat list of leaf-folder IDs to process.
+    """
+    import os
+    from dotenv import dotenv_values
+
+    try:
+        from google.oauth2 import service_account
+        from googleapiclient.discovery import build
+    except ImportError:
+        print("[RESOLVE] Google Drive libraries not available — skipping parent-folder expansion")
+        return folder_ids
+
+    # Build Drive service (same logic as master_pipeline._get_drive_service)
+    env_vals = dotenv_values(Path(__file__).parent.parent.parent / ".env")
+
+    sa_file = env_vals.get("GOOGLE_SERVICE_ACCOUNT_FILE") or os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")
+    if not sa_file:
+        print("[RESOLVE] No GOOGLE_SERVICE_ACCOUNT_FILE — skipping parent-folder expansion")
+        return folder_ids
+
+    sa_path = Path(__file__).parent.parent.parent / sa_file
+    if not sa_path.exists():
+        sa_path = Path(sa_file)
+    if not sa_path.exists():
+        print(f"[RESOLVE] Service account file not found: {sa_file} — skipping")
+        return folder_ids
+
+    import json as _json
+    with open(sa_path) as f:
+        creds_dict = _json.load(f)
+
+    creds = service_account.Credentials.from_service_account_info(
+        creds_dict, scopes=["https://www.googleapis.com/auth/drive.readonly"]
+    )
+    service = build("drive", "v3", credentials=creds)
+
+    IMAGE_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif', '.avif', '.bmp', '.tiff', '.tif'}
+    resolved: List[str] = []
+
+    for fid in folder_ids:
+        print(f"[RESOLVE] Checking folder: {fid}")
+        try:
+            # List immediate children
+            query = f"'{fid}' in parents and trashed=false"
+            all_children = []
+            page_token = None
+            while True:
+                resp = service.files().list(
+                    q=query, spaces="drive",
+                    fields="nextPageToken, files(id, name, mimeType)",
+                    pageToken=page_token, pageSize=200,
+                    includeItemsFromAllDrives=True, supportsAllDrives=True,
+                ).execute()
+                all_children.extend(resp.get("files", []))
+                page_token = resp.get("nextPageToken")
+                if not page_token:
+                    break
+
+            subfolders = [c for c in all_children if c["mimeType"] == "application/vnd.google-apps.folder"]
+            image_files = [c for c in all_children
+                           if c["mimeType"] != "application/vnd.google-apps.folder"
+                           and os.path.splitext(c["name"])[1].lower() in IMAGE_EXTENSIONS]
+
+            if subfolders and not image_files:
+                # This is a parent folder — expand into subfolders
+                print(f"[RESOLVE] '{fid}' is a parent folder with {len(subfolders)} subfolder(s) — expanding")
+
+                # Get parent folder name for notes
+                try:
+                    parent_meta = service.files().get(
+                        fileId=fid, fields="name", supportsAllDrives=True
+                    ).execute()
+                    parent_name = parent_meta.get("name", fid)
+                except Exception:
+                    parent_name = fid
+
+                for sf in sorted(subfolders, key=lambda x: x["name"]):
+                    sf_id = sf["id"]
+                    sf_name = sf["name"]
+                    resolved.append(sf_id)
+                    print(f"[RESOLVE]   → {sf_name} ({sf_id})")
+
+                    # Register in DB if not already present
+                    existing = db.query(DriveFolder).filter(DriveFolder.folder_id == sf_id).first()
+                    if not existing:
+                        db.add(DriveFolder(
+                            folder_id=sf_id,
+                            folder_name=sf_name,
+                            notes=f"Auto-discovered from parent: {parent_name}",
+                            status="pending",
+                        ))
+
+                # Remove the parent entry from DB if it was registered
+                parent_entry = db.query(DriveFolder).filter(DriveFolder.folder_id == fid).first()
+                if parent_entry:
+                    db.delete(parent_entry)
+
+                db.commit()
+            else:
+                # This folder directly contains images — keep as-is
+                resolved.append(fid)
+                if image_files:
+                    print(f"[RESOLVE] '{fid}' contains {len(image_files)} image(s) — processing directly")
+                else:
+                    print(f"[RESOLVE] '{fid}' is empty or inaccessible — keeping as-is")
+
+        except Exception as e:
+            print(f"[RESOLVE] Error checking folder {fid}: {e} — keeping as-is")
+            resolved.append(fid)
+
+    # De-duplicate while preserving order
+    seen = set()
+    unique = []
+    for r in resolved:
+        if r not in seen:
+            seen.add(r)
+            unique.append(r)
+
+    if len(unique) != len(folder_ids):
+        print(f"[RESOLVE] Expanded {len(folder_ids)} input folder(s) → {len(unique)} leaf folder(s)")
+
+    return unique
+
+
 def run_pipeline_background(
     download: bool,
     deduplicate: bool,
@@ -534,6 +669,19 @@ def run_pipeline_background(
 
     try:
         print(f"[PIPELINE] Starting pipeline: download={download}, deduplicate={deduplicate}, biometric={biometric}")
+
+        # ── Resolve parent folders into child subfolders ──
+        if folder_ids and download:
+            original_count = len(folder_ids)
+            folder_ids = _resolve_parent_folders(folder_ids, db)
+            if len(folder_ids) != original_count:
+                print(f"[PIPELINE] Expanded {original_count} → {len(folder_ids)} folder(s) after parent discovery")
+                # Re-populate folder_progress for the expanded list
+                pipeline_status["total_folders"] = len(folder_ids)
+                pipeline_status["folder_progress"] = {}
+                for fid in folder_ids:
+                    pipeline_status["folder_progress"][fid] = _init_folder_progress()
+
         if folder_ids:
             print(f"[PIPELINE] Processing {len(folder_ids)} folder(s): {folder_ids}")
 
@@ -1243,12 +1391,18 @@ async def upload_folder_excel(
 
     db.commit()
 
+    # After initial registration, resolve parent folders into subfolders
+    all_new_ids = [row.get(fid_key) for row in rows if row.get(fid_key)]
+    all_new_ids = list(dict.fromkeys(all_new_ids))  # dedupe preserving order
+    resolved_ids = _resolve_parent_folders(all_new_ids, db)
+
     return {
         "message": f"Processed {len(rows)} rows: {added} added, {skipped} already existed",
         "added": added,
         "skipped": skipped,
         "errors": errors,
         "total_folders": db.query(DriveFolder).count(),
+        "resolved_folders": len(resolved_ids),
     }
 
 
@@ -1260,11 +1414,13 @@ def add_drive_folder(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    """Manually add a single Google Drive folder ID."""
+    """Manually add a single Google Drive folder ID. If it's a parent folder containing
+    only subfolders, it will be auto-expanded into child folder entries."""
     existing = db.query(DriveFolder).filter(DriveFolder.folder_id == folder_id).first()
     if existing:
         raise HTTPException(status_code=409, detail="Folder ID already registered")
 
+    # First register it
     folder = DriveFolder(
         folder_id=folder_id,
         folder_name=folder_name,
@@ -1274,6 +1430,21 @@ def add_drive_folder(
     db.add(folder)
     db.commit()
     db.refresh(folder)
+
+    # Resolve: if it's a parent, expand into children and remove the parent entry
+    resolved = _resolve_parent_folders([folder_id], db)
+
+    if len(resolved) > 1 or (len(resolved) == 1 and resolved[0] != folder_id):
+        # Parent was expanded — return the child folders
+        child_folders = db.query(DriveFolder).filter(DriveFolder.folder_id.in_(resolved)).all()
+        return {
+            "message": f"Parent folder expanded into {len(child_folders)} subfolder(s)",
+            "expanded": True,
+            "folders": [
+                {"id": f.id, "folder_id": f.folder_id, "folder_name": f.folder_name, "status": f.status}
+                for f in child_folders
+            ]
+        }
 
     return {
         "message": "Folder added",

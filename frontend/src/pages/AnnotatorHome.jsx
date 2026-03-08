@@ -473,8 +473,8 @@ export default function AnnotatorHome() {
                               {img.image_drive_id.slice(0, 16)}…
                             </span>
                           )}
-                          <span className="px-2 py-1 bg-black/50 text-white text-[10px] font-medium rounded-lg backdrop-blur-sm truncate block">
-                            {img.filename}
+                          <span className="px-2 py-1 bg-black/50 text-white text-[10px] font-medium rounded-lg backdrop-blur-sm truncate block" title={img.filename}>
+                            {img.original_filename || img.filename}
                           </span>
                         </div>
                         

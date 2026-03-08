@@ -144,6 +144,11 @@ class MasterPipeline:
         """
         Step 1: Download all images from a single Google Drive folder.
         
+        Files are saved using their Google Drive file ID as the filename
+        (e.g. ``1a2B3c4D5e.jpg``) to avoid collisions.  A mapping from
+        drive_file_id → original_filename is persisted in
+        ``drive_metadata.json`` and later imported into the database.
+        
         Args:
             folder_id: Google Drive folder ID to download from.
         
@@ -165,37 +170,78 @@ class MasterPipeline:
             print("⚠️  No images found")
             return 0
         
-        # Save Drive metadata for this folder
+        # Save Drive metadata for this folder (includes file_id→name map)
         self._save_drive_metadata(all_images, folder_id)
         
-        # Download images
+        # Download images — saved as {drive_file_id}.{ext}
         download_folder = self.folders['downloaded']
         print(f"\n📥 Downloading to: {download_folder}")
         
+        heic_exts = {'.heic', '.heif', '.avif'}
+        heic_originals_dir = download_folder / '_heic_originals'
+        
         downloaded = 0
+        skipped = 0
         for img in tqdm(all_images, desc="Downloading"):
             try:
-                request = service.files().get_media(fileId=img['id'], supportsAllDrives=True)
-                output_path = download_folder / img['name']
+                drive_file_id = img['id']
+                original_name = img['name']
+                ext = os.path.splitext(original_name)[1].lower()  # e.g. .jpg, .heic
+                disk_filename = f"{drive_file_id}{ext}"
+                output_path = download_folder / disk_filename
                 
-                # Skip if already downloaded
-                if output_path.exists():
+                # Skip if already downloaded (exact file exists)
+                if output_path.exists() and output_path.stat().st_size > 0:
+                    continue
+                
+                # For HEIC/HEIF/AVIF: also skip if already converted to JPG
+                if ext in heic_exts:
+                    jpg_path = download_folder / f"{drive_file_id}.jpg"
+                    heic_orig = heic_originals_dir / disk_filename
+                    if jpg_path.exists() and jpg_path.stat().st_size > 0:
+                        skipped += 1
+                        continue
+                    if heic_orig.exists() and heic_orig.stat().st_size > 0:
+                        skipped += 1
+                        continue
+                
+                # Clean up any 0-byte leftover from a previous failed download
+                if output_path.exists() and output_path.stat().st_size == 0:
+                    output_path.unlink()
+                
+                request = service.files().get_media(fileId=drive_file_id, supportsAllDrives=True)
+                
+                # Download to BytesIO first, then write to disk only on success
+                from io import BytesIO
+                file_buffer = BytesIO()
+                downloader = MediaIoBaseDownload(file_buffer, request)
+                done = False
+                while not done:
+                    status, done = downloader.next_chunk()
+                
+                file_buffer.seek(0)
+                data = file_buffer.read()
+                
+                if len(data) == 0:
+                    print(f"⚠️  Empty download for {original_name} (id={drive_file_id})")
                     continue
                 
                 with open(output_path, 'wb') as f:
-                    from io import BytesIO
-                    file_buffer = BytesIO()
-                    downloader = MediaIoBaseDownload(file_buffer, request)
-                    done = False
-                    while not done:
-                        status, done = downloader.next_chunk()
-                    file_buffer.seek(0)
-                    f.write(file_buffer.read())
+                    f.write(data)
                 
                 downloaded += 1
                 
             except Exception as e:
-                print(f"❌ Failed to download {img['name']}: {e}")
+                # Clean up 0-byte file if download failed after file creation
+                if output_path.exists() and output_path.stat().st_size == 0:
+                    try:
+                        output_path.unlink()
+                    except Exception:
+                        pass
+                print(f"❌ Failed to download {img['name']} (id={img['id']}): {e}")
+        
+        if skipped > 0:
+            print(f"⏭️  Skipped {skipped} already-converted HEIC/HEIF/AVIF files")
         
         print(f"\n✅ Downloaded {downloaded} new images")
         print(f"📊 Total in folder: {len(list(download_folder.glob('*')))} images")
@@ -204,27 +250,55 @@ class MasterPipeline:
         converted = self._convert_unsupported_formats(download_folder)
         if converted > 0:
             print(f"🔄 Converted {converted} HEIC/HEIF/AVIF images to JPG")
+            # Update drive_metadata.json so disk_filename mappings point to .jpg
+            self._update_metadata_for_conversions(download_folder)
         
         return len(list(download_folder.glob('*')))
     
     def _save_drive_metadata(self, images: List[Dict], folder_id: str):
-        """Save metadata about what was found in this Google Drive folder."""
+        """Save metadata about what was found in this Google Drive folder.
+        
+        Key mappings stored:
+        - drive_id_to_original_name:  {drive_file_id: original_filename}
+        - drive_id_to_disk_filename:  {drive_file_id: disk_filename}  (file_id.ext)
+        - disk_filename_to_drive_id:  {disk_filename: drive_file_id}  (reverse)
+        - disk_filename_to_original:  {disk_filename: original_filename}
+        
+        Legacy mappings (kept for backward compat):
+        - filename_to_drive_id:       {original_name: drive_file_id}  (first-wins)
+        - filename_folder_map:        {original_name: folder_id}
+        """
         from collections import Counter
         all_names = [img['name'] for img in images]
         name_counts = Counter(all_names)
         unique_names = set(all_names)
         dup_names = {n: c for n, c in name_counts.items() if c > 1}
 
-        # Build filename → folder_id mapping (all images belong to this folder)
+        # Core mappings (drive_file_id based — no collision possible)
+        drive_id_to_original_name = {}
+        drive_id_to_disk_filename = {}
+        disk_filename_to_drive_id = {}
+        disk_filename_to_original = {}
+
+        # Legacy mappings (original-name based — first-wins for duplicate names)
         filename_folder_map = {}
-        # Build filename → Drive file ID mapping (first-wins for duplicate names)
         filename_to_drive_id = {}
+
         for img in images:
             name = img['name']
+            drive_id = img['id']
+            ext = os.path.splitext(name)[1].lower()
+            disk_name = f"{drive_id}{ext}"
+
+            drive_id_to_original_name[drive_id] = name
+            drive_id_to_disk_filename[drive_id] = disk_name
+            disk_filename_to_drive_id[disk_name] = drive_id
+            disk_filename_to_original[disk_name] = name
+
             if name not in filename_folder_map:
                 filename_folder_map[name] = folder_id
             if name not in filename_to_drive_id:
-                filename_to_drive_id[name] = img['id']  # Google Drive file ID
+                filename_to_drive_id[name] = drive_id
 
         metadata = {
             "folder_id": folder_id,
@@ -233,6 +307,12 @@ class MasterPipeline:
             "duplicate_filename_count": sum(c - 1 for c in name_counts.values() if c > 1),
             "duplicate_filenames": {n: c for n, c in sorted(dup_names.items())},
             "scanned_at": datetime.now().isoformat(),
+            # Primary mappings (drive-id keyed — collision-free)
+            "drive_id_to_original_name": drive_id_to_original_name,
+            "drive_id_to_disk_filename": drive_id_to_disk_filename,
+            "disk_filename_to_drive_id": disk_filename_to_drive_id,
+            "disk_filename_to_original": disk_filename_to_original,
+            # Legacy mappings (original-name keyed — kept for backward compat)
             "filename_folder_map": filename_folder_map,
             "filename_to_drive_id": filename_to_drive_id,
         }
@@ -245,13 +325,77 @@ class MasterPipeline:
               f"{metadata['unique_filenames']} unique filenames, "
               f"{metadata['duplicate_filename_count']} duplicate filenames")
 
+    def _update_metadata_for_conversions(self, download_folder: Path):
+        """Update drive_metadata.json after HEIC/HEIF/AVIF → JPG conversion.
+        
+        Replaces disk_filename entries so that they reference the .jpg file
+        (which is the actual file on disk) instead of the original .heic/.heif/.avif.
+        """
+        metadata_path = self.workspace / "drive_metadata.json"
+        manifest_path = download_folder / '_heic_conversions.json'
+        
+        if not metadata_path.exists() or not manifest_path.exists():
+            return
+        
+        try:
+            with open(metadata_path, 'r') as f:
+                metadata = json.load(f)
+            with open(manifest_path, 'r') as f:
+                conversions = json.load(f)
+        except Exception:
+            return
+        
+        # Build a mapping: original_heic_name → jpg_name  (e.g. {id}.heic → {id}.jpg)
+        heic_to_jpg = {}
+        for jpg_name, info in conversions.items():
+            orig = info.get('original_filename', '')
+            if orig:
+                heic_to_jpg[orig] = jpg_name
+        
+        if not heic_to_jpg:
+            return
+        
+        # Update disk_filename_to_drive_id and disk_filename_to_original
+        old_d2d = metadata.get('disk_filename_to_drive_id', {})
+        old_d2o = metadata.get('disk_filename_to_original', {})
+        new_d2d = {}
+        new_d2o = {}
+        
+        for disk_name, drive_id in old_d2d.items():
+            if disk_name in heic_to_jpg:
+                # Replace .heic key with .jpg key
+                new_d2d[heic_to_jpg[disk_name]] = drive_id
+                new_d2o[heic_to_jpg[disk_name]] = old_d2o.get(disk_name, '')
+            else:
+                new_d2d[disk_name] = drive_id
+                new_d2o[disk_name] = old_d2o.get(disk_name, '')
+        
+        # Update drive_id_to_disk_filename
+        old_id2disk = metadata.get('drive_id_to_disk_filename', {})
+        new_id2disk = {}
+        for drive_id, disk_name in old_id2disk.items():
+            if disk_name in heic_to_jpg:
+                new_id2disk[drive_id] = heic_to_jpg[disk_name]
+            else:
+                new_id2disk[drive_id] = disk_name
+        
+        metadata['disk_filename_to_drive_id'] = new_d2d
+        metadata['disk_filename_to_original'] = new_d2o
+        metadata['drive_id_to_disk_filename'] = new_id2disk
+        metadata['heic_conversions'] = heic_to_jpg  # Track what was converted
+        
+        with open(metadata_path, 'w') as f:
+            json.dump(metadata, f, indent=2)
+        
+        print(f"📝 Updated drive_metadata.json: {len(heic_to_jpg)} HEIC→JPG mappings")
+
     def _convert_unsupported_formats(self, folder: Path) -> int:
         """
         Convert HEIC/HEIF/AVIF images to JPG in-place.
         
         - Converts the file to .jpg
         - Moves the original to a '_heic_originals' subfolder for traceability
-        - Tracks the conversion in a JSON manifest
+        - Tracks the conversion in a JSON manifest (saved after each file)
         
         Returns: number of files converted
         """
@@ -268,14 +412,21 @@ class MasterPipeline:
             except Exception:
                 manifest = {}
         
+        # Also check _heic_originals for files already converted but not in manifest
+        already_converted = set()
+        if originals_dir.exists():
+            for f in originals_dir.iterdir():
+                if f.is_file():
+                    already_converted.add(f.name)
+        
         # Find all unsupported format files
         to_convert = []
         for f in folder.iterdir():
             if f.is_file() and f.suffix.lower() in unsupported_exts:
                 jpg_name = f.stem + '.jpg'
                 jpg_path = folder / jpg_name
-                # Skip if already converted
-                if jpg_name in manifest or jpg_path.exists():
+                # Skip if already converted (manifest, existing jpg, or original in _heic_originals)
+                if jpg_name in manifest or jpg_path.exists() or f.name in already_converted:
                     continue
                 to_convert.append(f)
         
@@ -286,17 +437,34 @@ class MasterPipeline:
         originals_dir.mkdir(exist_ok=True)
         
         converted = 0
+        failed = 0
         for img_path in tqdm(to_convert, desc="Converting"):
             try:
+                # Guard: verify file still exists (may have been moved by prior iteration)
+                if not img_path.exists():
+                    continue
+                
                 jpg_name = img_path.stem + '.jpg'
                 jpg_path = folder / jpg_name
+                
+                # Double-check: skip if jpg was created by a concurrent/prior conversion
+                if jpg_path.exists() and jpg_path.stat().st_size > 0:
+                    # Just move the original — conversion already happened
+                    shutil.move(str(img_path), str(originals_dir / img_path.name))
+                    manifest[jpg_name] = {
+                        'original_filename': img_path.name,
+                        'original_format': img_path.suffix.upper().lstrip('.'),
+                        'converted_at': datetime.now().isoformat(),
+                    }
+                    converted += 1
+                    continue
                 
                 # Try loading with PIL + pillow-heif (best HEIC support)
                 img = None
                 if HEIF_AVAILABLE:
                     try:
                         from PIL import Image as PILImage
-                        pil_img = PILImage.open(img_path)
+                        pil_img = PILImage.open(str(img_path))
                         if pil_img.mode != 'RGB':
                             pil_img = pil_img.convert('RGB')
                         pil_img.save(str(jpg_path), 'JPEG', quality=95)
@@ -322,16 +490,25 @@ class MasterPipeline:
                         'converted_at': datetime.now().isoformat(),
                     }
                     converted += 1
-                    print(f"  ✓ {img_path.name} → {jpg_name}")
                 else:
+                    failed += 1
                     print(f"  ✗ Failed to convert {img_path.name}")
                     
             except Exception as e:
+                failed += 1
                 print(f"  ✗ Error converting {img_path.name}: {e}")
+            
+            # Save manifest after each batch of 10 conversions (incremental save)
+            if converted > 0 and converted % 10 == 0:
+                with open(manifest_path, 'w') as mf:
+                    json.dump(manifest, mf, indent=2)
         
-        # Save manifest
+        # Final save of manifest
         with open(manifest_path, 'w') as f:
             json.dump(manifest, f, indent=2)
+        
+        if failed > 0:
+            print(f"⚠️  {failed} files could not be converted")
         
         return converted
     

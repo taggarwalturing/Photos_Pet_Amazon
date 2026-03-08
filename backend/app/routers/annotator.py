@@ -331,6 +331,7 @@ def list_images_for_annotator(
             "id": img.id,
             "image_drive_id": img.image_drive_id,
             "filename": img.filename,
+            "original_filename": img.original_filename,
             "url": img.url,
             "category_status": category_status,
             "category_labels": category_labels,
@@ -550,6 +551,7 @@ def get_image_for_annotation(
         "id": image.id,
         "image_drive_id": image.image_drive_id,  # Google Drive hex ID
         "filename": image.filename,
+        "original_filename": image.original_filename,  # Original name in Google Drive
         "url": image.url,
         "categories": categories_data,
         "prev_image_id": prev_id,

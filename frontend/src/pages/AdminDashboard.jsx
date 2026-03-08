@@ -1006,8 +1006,8 @@ function ImagesTab() {
                         <span key={i} className={`px-1.5 py-0.5 text-[9px] font-bold text-white rounded-md shadow-sm ${b.className}`}>
                           {b.label}
                         </span>
-                      ))}
-                    </div>
+        ))}
+      </div>
                   )}
                   {/* Dark gradient for label readability */}
                   <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
@@ -1064,7 +1064,7 @@ function ImagesTab() {
                   {img.image_drive_id && (
                     <p className="text-[9px] text-blue-500 font-mono truncate" title={img.image_drive_id}>{img.image_drive_id}</p>
                   )}
-                  <p className="text-xs text-gray-600 truncate font-medium" title={img.filename}>{img.filename}</p>
+                  <p className="text-xs text-gray-600 truncate font-medium" title={img.original_filename || img.filename}>{img.original_filename || img.filename}</p>
                 </div>
               </div>
             );
@@ -1320,7 +1320,7 @@ function ImageLightbox({ img, images, idx, getStatusBadges, onClose, onNavigate,
             {img.image_drive_id && (
               <span className="text-blue-300 text-[10px] font-mono shrink-0" title={img.image_drive_id}>{img.image_drive_id.slice(0, 20)}…</span>
             )}
-            <span className="text-white text-sm font-medium truncate">{img.filename}</span>
+            <span className="text-white text-sm font-medium truncate">{img.original_filename || img.filename}</span>
             <div className="flex gap-1.5">
               {getStatusBadges(img).map((b, i) => (
                 <span key={i} className={`px-2 py-0.5 text-[10px] font-bold text-white rounded-md ${b.className}`}>
@@ -2872,7 +2872,7 @@ function ImproperImagesTab() {
                   />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-2">
-                      <span className="font-medium text-gray-900">{img.filename}</span>
+                      <span className="font-medium text-gray-900">{img.original_filename || img.filename}</span>
                       <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs font-medium rounded-full">
                         Improper
                       </span>
@@ -3635,7 +3635,7 @@ function ComplianceTab() {
                     className="w-24 h-24 object-cover rounded-xl border border-gray-200"
                   />
                   <div className="flex-1 min-w-0">
-                    <h4 className="text-sm font-semibold text-gray-900 truncate">{img.filename}</h4>
+                    <h4 className="text-sm font-semibold text-gray-900 truncate">{img.original_filename || img.filename}</h4>
                     <div className="mt-2 space-y-1">
                       {img.flagged_for_human && (
                         <div className="flex items-start gap-2 text-xs">
