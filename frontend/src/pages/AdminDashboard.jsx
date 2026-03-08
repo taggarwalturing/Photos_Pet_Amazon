@@ -310,7 +310,7 @@ function UsersTab() {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gradient-to-r from-gray-50 to-gray-50/80 text-gray-600 text-left">
-              <th className="px-5 py-3.5 font-semibold">Username</th>
+              <th className="px-5 py-3.5 font-semibold">Turing ID</th>
               <th className="px-5 py-3 font-medium">Name</th>
               <th className="px-5 py-3 font-medium">Role</th>
               <th className="px-5 py-3 font-medium">Categories</th>
@@ -523,7 +523,7 @@ function UsersTab() {
             <table className="w-full text-xs">
               <thead>
                 <tr className="bg-gray-50 text-gray-500">
-                  <th className="px-4 py-2.5 text-left font-semibold sticky left-0 bg-gray-50 z-10">Annotator</th>
+                  <th className="px-4 py-2.5 text-left font-semibold sticky left-0 bg-gray-50 z-10">Turing ID</th>
                   {dailyStats.date_range.map((d) => {
                     const dateObj = new Date(d + 'T00:00:00');
                     const isToday = d === new Date().toISOString().split('T')[0];
@@ -626,7 +626,7 @@ function ProgressTab() {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gradient-to-r from-gray-50 to-gray-50/80 text-gray-600 text-left">
-              <th className="px-5 py-3.5 font-semibold">Annotator</th>
+              <th className="px-5 py-3.5 font-semibold">Turing ID</th>
               <th className="px-5 py-3.5 font-semibold">Category</th>
               <th className="px-5 py-3.5 font-semibold">Progress</th>
               <th className="px-5 py-3.5 font-semibold">Completed</th>
@@ -3258,7 +3258,7 @@ function AnnotationLogTab() {
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-200">
                     <th className="text-left px-4 py-3 font-semibold text-gray-700">Image</th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-700">Annotator</th>
+                    <th className="text-left px-4 py-3 font-semibold text-gray-700">Turing ID</th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-700">Categories</th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-700">Event</th>
                     <th className="text-left px-4 py-3 font-semibold text-gray-700">Time</th>

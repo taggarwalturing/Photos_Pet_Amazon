@@ -178,7 +178,7 @@ export default function AnnotatorStatsTab() {
           <table className="w-full text-xs">
             <thead>
               <tr className="bg-gray-50 text-gray-500">
-                <th className="px-4 py-3 text-left font-semibold sticky left-0 bg-gray-50 z-10 min-w-[160px]">Annotator</th>
+                <th className="px-4 py-3 text-left font-semibold sticky left-0 bg-gray-50 z-10 min-w-[160px]">Turing ID</th>
                 {dateRange.map((d) => {
                   const dateObj = new Date(d + 'T00:00:00');
                   const isToday = d === new Date().toISOString().split('T')[0];
