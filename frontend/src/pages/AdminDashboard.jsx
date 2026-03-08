@@ -869,6 +869,8 @@ function ImagesTab() {
     { key: 'ai_generated', label: 'AI Generated', value: summary.ai_generated, icon: '🤖', color: 'amber' },
     { key: 'human_visible', label: 'Human Visible', value: summary.human_visible, icon: '👤', color: 'blue' },
     { key: 'improper', label: 'Improper', value: summary.improper, icon: '⚠️', color: 'orange' },
+    { key: 'delivered', label: 'Delivered', value: summary.delivered, icon: '📦', color: 'teal' },
+    { key: 'not_delivered', label: 'Not Delivered', value: (summary.total || 0) - (summary.delivered || 0), icon: '⏳', color: 'gray' },
   ];
 
   const colorMap = {
@@ -879,6 +881,8 @@ function ImagesTab() {
     amber: { active: 'bg-amber-100 text-amber-700 border-amber-300 ring-amber-400', inactive: 'bg-white text-gray-600 border-gray-200 hover:border-gray-300' },
     blue: { active: 'bg-blue-100 text-blue-700 border-blue-300 ring-blue-400', inactive: 'bg-white text-gray-600 border-gray-200 hover:border-gray-300' },
     orange: { active: 'bg-orange-100 text-orange-700 border-orange-300 ring-orange-400', inactive: 'bg-white text-gray-600 border-gray-200 hover:border-gray-300' },
+    teal: { active: 'bg-teal-100 text-teal-700 border-teal-300 ring-teal-400', inactive: 'bg-white text-gray-600 border-gray-200 hover:border-gray-300' },
+    gray: { active: 'bg-gray-100 text-gray-700 border-gray-300 ring-gray-400', inactive: 'bg-white text-gray-600 border-gray-200 hover:border-gray-300' },
   };
 
   const getStatusBadges = (img) => {
@@ -898,6 +902,15 @@ function ImagesTab() {
     }
     if (img.human_faces_detected > 0) {
       badges.push({ label: `${img.human_faces_detected} face${img.human_faces_detected > 1 ? 's' : ''}`, className: 'bg-sky-500' });
+    }
+    if (img.deliverable_image_path) {
+      badges.push({ label: img.is_modified ? '📦 Modified' : '📦 Original', className: img.is_modified ? 'bg-teal-600' : 'bg-teal-500' });
+    }
+    if (img.is_blurred_annotator) {
+      badges.push({ label: '🖌 Annotator Blurred', className: 'bg-purple-500' });
+    }
+    if (img.is_restore_annotator) {
+      badges.push({ label: '↩ Annotator Restored', className: 'bg-cyan-500' });
     }
     return badges;
   };
@@ -2250,7 +2263,7 @@ function ReviewTab() {
                         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
 
                         {/* Status badge - top left */}
-                        <div className="absolute top-3 left-3">
+                        <div className="absolute top-3 left-3 flex gap-1">
                           {allApproved ? (
                             <span className="px-2.5 py-1 bg-green-500 text-white text-xs font-bold rounded-lg shadow-lg">
                               ✓ Approved
@@ -2266,6 +2279,11 @@ function ReviewTab() {
                           ) : (
                             <span className="px-2.5 py-1 bg-gray-800/80 text-white text-xs font-medium rounded-lg shadow-lg backdrop-blur-sm">
                               {approvedCount}/{totalAnnotated}
+                            </span>
+                          )}
+                          {row.deliverable_image_path && (
+                            <span className="px-2 py-1 bg-teal-500 text-white text-xs font-bold rounded-lg shadow-lg" title={`Delivered: ${row.deliverable_image_path}`}>
+                              📦
                             </span>
                           )}
                               </div>

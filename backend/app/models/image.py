@@ -54,6 +54,14 @@ class Image(Base):
     source_drive_folder_id = Column(String(255), nullable=True, index=True)  # Google Drive folder ID this image came from
     image_drive_id = Column(String(255), nullable=True, index=True)  # Unique Google Drive file ID for this image
 
+    # Annotator blur/restore tracking
+    is_blurred_annotator = Column(Boolean, default=False, nullable=False)  # True if annotator manually blurred the image
+    is_restore_annotator = Column(Boolean, default=False, nullable=False)  # True if annotator restored (undo blur) the image
+
+    # Deliverable image tracking (populated after reviewer approves all annotations)
+    deliverable_image_path = Column(Text, nullable=True)  # Path to image in deliverable_images folder
+    is_modified = Column(Boolean, nullable=True)  # True if image was modified (blurred/restored), False if original, None if not delivered yet
+
     # Arbiter classifier AI-predicted labels (pre-filled for annotators)
     arbiter_labels = Column(JSON, nullable=True)  # {"lighting": "dusk_dawn", "viewpoint": "ground_level", ...}
     arbiter_classified_at = Column(DateTime(timezone=True), nullable=True)

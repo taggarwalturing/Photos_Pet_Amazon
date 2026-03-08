@@ -1,5 +1,8 @@
 import json
+import os
+import shutil
 from datetime import datetime, timezone, date, timedelta
+from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import or_, and_, func, cast, Date
 from sqlalchemy.orm import Session, joinedload
@@ -31,6 +34,115 @@ class AssignImagesRequest(BaseModel):
     count: int  # Number of images to assign
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
+
+
+# ── Deliverable Images Helper ────────────────────────────────────
+
+BACKEND_DIR = Path(__file__).resolve().parent.parent.parent  # backend/
+PIPELINE_WORKSPACE = BACKEND_DIR / "master_pipeline" / "pipeline_workspace"
+IMAGE_CACHE_DIR = BACKEND_DIR / "image_cache"
+
+
+def _check_and_copy_to_deliverable(image_id: int, db: Session):
+    """
+    After an annotation is approved, check if ALL annotations for this image
+    are now approved. If so, copy the current image version to
+    deliverable_images/{folder_id}/ and update the Image record.
+    
+    The image is only moved to deliverable once the reviewer has approved.
+    """
+    image = db.query(Image).filter(Image.id == image_id).first()
+    if not image:
+        return
+    
+    # Already delivered — skip
+    if image.deliverable_image_path:
+        return
+    
+    # Check if ALL annotations for this image are approved
+    all_annotations = (
+        db.query(Annotation)
+        .filter(
+            Annotation.image_id == image_id,
+            Annotation.status == "completed",
+        )
+        .all()
+    )
+    
+    if not all_annotations:
+        return
+    
+    # Every completed annotation must be approved
+    all_approved = all(a.review_status == "approved" for a in all_annotations)
+    if not all_approved:
+        return
+    
+    # Determine folder_id for the deliverable directory
+    folder_id = image.source_drive_folder_id or "unknown"
+    
+    # Create deliverable directory
+    deliverable_dir = PIPELINE_WORKSPACE / "folders" / folder_id / "deliverable_images"
+    deliverable_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Find the current image file to copy
+    source_bytes = None
+    source_path = None
+    
+    # Priority 1: Image cache (has the latest version - blurred or restored)
+    cache_path = IMAGE_CACHE_DIR / f"{image.id}.jpg"
+    if cache_path.exists() and cache_path.stat().st_size > 0:
+        source_path = cache_path
+    
+    # Priority 2: Annotated blur file
+    if not source_path and image.annotated_blur_url:
+        blur_path = PIPELINE_WORKSPACE / image.annotated_blur_url
+        if blur_path.exists() and blur_path.stat().st_size > 0:
+            source_path = blur_path
+    
+    # Priority 3: Pipeline final output (per-folder)
+    if not source_path:
+        folder_final = PIPELINE_WORKSPACE / "folders" / folder_id / "04_final_output" / image.filename
+        if folder_final.exists() and folder_final.stat().st_size > 0:
+            source_path = folder_final
+    
+    # Priority 4: Search all per-folder workspaces
+    if not source_path:
+        folders_dir = PIPELINE_WORKSPACE / "folders"
+        if folders_dir.is_dir():
+            for fd in sorted(folders_dir.iterdir()):
+                if fd.is_dir():
+                    for sub in ["04_final_output", "03_biometric_processed", "02_unique_images"]:
+                        candidate = fd / sub / image.filename
+                        if candidate.exists() and candidate.stat().st_size > 0:
+                            source_path = candidate
+                            break
+                if source_path:
+                    break
+    
+    if not source_path:
+        print(f"[Deliverable] WARNING: Could not find source image for image_id={image.id} ({image.filename})")
+        return
+    
+    # Copy to deliverable folder
+    dest_path = deliverable_dir / image.filename
+    try:
+        shutil.copy2(str(source_path), str(dest_path))
+    except Exception as e:
+        print(f"[Deliverable] ERROR copying image {image.id}: {e}")
+        return
+    
+    # Determine if the image was modified by the annotator
+    is_modified = bool(image.is_blurred_annotator or image.is_restore_annotator)
+    
+    # Store relative path from pipeline_workspace root
+    relative_path = str(dest_path.relative_to(PIPELINE_WORKSPACE))
+    
+    # Update image record
+    image.deliverable_image_path = relative_path
+    image.is_modified = is_modified
+    db.commit()
+    
+    print(f"[Deliverable] ✅ Image {image.id} ({image.filename}) → {relative_path} (modified={is_modified})")
 
 
 # ── User Management ──────────────────────────────────────────────
@@ -434,6 +546,10 @@ def list_images(
         query = query.filter(Image.human_visible == True)
     elif status_filter == "improper":
         query = query.filter(Image.is_improper == True)
+    elif status_filter == "delivered":
+        query = query.filter(Image.deliverable_image_path.isnot(None))
+    elif status_filter == "not_delivered":
+        query = query.filter(Image.deliverable_image_path.is_(None))
 
     images = query.all()
 
@@ -453,6 +569,7 @@ def list_images(
     ai_count = db.query(Image).filter(Image.is_ai_generated == True).count()
     human_visible_count = db.query(Image).filter(Image.human_visible == True).count()
     improper_count = db.query(Image).filter(Image.is_improper == True).count()
+    delivered_count = db.query(Image).filter(Image.deliverable_image_path.isnot(None)).count()
 
     return {
         "summary": {
@@ -463,6 +580,7 @@ def list_images(
             "ai_generated": ai_count,
             "human_visible": human_visible_count,
             "improper": improper_count,
+            "delivered": delivered_count,
         },
         "total": len(images),
         "images": [
@@ -484,6 +602,10 @@ def list_images(
                 ),
                 "source_drive_folder_id": img.source_drive_folder_id,
                 "image_drive_id": img.image_drive_id,
+                "is_blurred_annotator": img.is_blurred_annotator or False,
+                "is_restore_annotator": img.is_restore_annotator or False,
+                "deliverable_image_path": img.deliverable_image_path,
+                "is_modified": img.is_modified,
             }
         for img in images
         ],
@@ -517,6 +639,10 @@ def get_image_status(
         "compliance_status": _compliance_status,
         "is_using_processed": _is_using_processed,
         "manually_blurred": _manually_blurred,
+        "is_blurred_annotator": img.is_blurred_annotator or False,
+        "is_restore_annotator": img.is_restore_annotator or False,
+        "deliverable_image_path": img.deliverable_image_path,
+        "is_modified": img.is_modified,
     }
 
 
@@ -903,6 +1029,10 @@ def review_table(
                 manually_blurred=_manually_blurred,
                 reviewed_by_username=_reviewed_by,
                 reviewed_at=_reviewed_at,
+                is_blurred_annotator=img.is_blurred_annotator or False,
+                is_restore_annotator=img.is_restore_annotator or False,
+                deliverable_image_path=img.deliverable_image_path,
+                is_modified=img.is_modified,
             ))
 
     # All categories for column headers
@@ -955,10 +1085,59 @@ def review_stats(
         else:
             pending_images += 1
 
+    # Deliverable stats
+    delivered = db.query(Image).filter(Image.deliverable_image_path.isnot(None)).count()
+    delivered_modified = db.query(Image).filter(
+        Image.deliverable_image_path.isnot(None),
+        Image.is_modified == True,
+    ).count()
+    delivered_original = db.query(Image).filter(
+        Image.deliverable_image_path.isnot(None),
+        Image.is_modified == False,
+    ).count()
+
     return {
         "total_completed": total_images,
         "pending_review": pending_images,
         "approved": approved_images,
+        "delivered": delivered,
+        "delivered_modified": delivered_modified,
+        "delivered_original": delivered_original,
+    }
+
+
+@router.get("/deliverable/stats")
+def deliverable_stats(
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """Get deliverable image statistics grouped by folder_id."""
+    delivered_images = (
+        db.query(Image)
+        .filter(Image.deliverable_image_path.isnot(None))
+        .all()
+    )
+
+    # Group by folder_id
+    folder_stats = {}
+    for img in delivered_images:
+        fid = img.source_drive_folder_id or "unknown"
+        if fid not in folder_stats:
+            folder_stats[fid] = {"folder_id": fid, "total": 0, "modified": 0, "original": 0}
+        folder_stats[fid]["total"] += 1
+        if img.is_modified:
+            folder_stats[fid]["modified"] += 1
+        else:
+            folder_stats[fid]["original"] += 1
+
+    total_delivered = len(delivered_images)
+    total_images = db.query(Image).count()
+
+    return {
+        "total_images": total_images,
+        "total_delivered": total_delivered,
+        "total_pending": total_images - total_delivered,
+        "by_folder": list(folder_stats.values()),
     }
 
 
@@ -969,7 +1148,7 @@ def approve_annotation(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
-    """Approve an annotation as-is."""
+    """Approve an annotation as-is. If all annotations for the image are approved, copy to deliverable."""
     annotation = db.query(Annotation).filter(Annotation.id == annotation_id).first()
     if not annotation:
         raise HTTPException(status_code=404, detail="Annotation not found")
@@ -980,6 +1159,10 @@ def approve_annotation(
     annotation.reviewed_by = admin.id
     annotation.reviewed_at = datetime.now(timezone.utc)
     db.commit()
+
+    # Check if all annotations for this image are now approved → copy to deliverable
+    _check_and_copy_to_deliverable(annotation.image_id, db)
+
     return {"message": "Annotation approved", "annotation_id": annotation_id}
 
 
@@ -1013,6 +1196,10 @@ def update_and_approve_annotation(
     annotation.reviewed_by = admin.id
     annotation.reviewed_at = datetime.now(timezone.utc)
     db.commit()
+
+    # Check if all annotations for this image are now approved → copy to deliverable
+    _check_and_copy_to_deliverable(annotation.image_id, db)
+
     return {"message": "Annotation updated and approved", "annotation_id": annotation_id}
 
 
@@ -2015,6 +2202,12 @@ def get_photo_registry(
             "original_format": (db_img.original_format or "") if db_img else ("HEIC" if heic_original else ""),
             "source_drive_folder_id": source_folder_id,
             "image_drive_id": image_drive_id_val,
+            # Annotator blur/restore tracking
+            "is_blurred_annotator": (db_img.is_blurred_annotator or False) if db_img else False,
+            "is_restore_annotator": (db_img.is_restore_annotator or False) if db_img else False,
+            # Deliverable image tracking
+            "deliverable_image_path": db_img.deliverable_image_path if db_img else None,
+            "is_modified": db_img.is_modified if db_img else None,
         }
         registry.append(entry)
 
@@ -2041,6 +2234,7 @@ def get_photo_registry(
         "total_manually_blurred": sum(1 for r in registry if r["manually_blurred"]),
         "total_in_database": sum(1 for r in registry if r["in_database"]),
         "total_clean": sum(1 for r in registry if not r["pipeline_blurred"] and not r["manually_blurred"] and not r["is_duplicate"]),
+        "total_delivered": sum(1 for r in registry if r["deliverable_image_path"]),
     }
 
     # ── 8. Apply filters ──

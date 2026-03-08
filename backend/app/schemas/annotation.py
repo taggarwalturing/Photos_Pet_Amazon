@@ -133,6 +133,12 @@ class ReviewTableRow(BaseModel):
     # Reviewer info (image-level: who last reviewed any annotation on this image)
     reviewed_by_username: Optional[str] = None
     reviewed_at: Optional[datetime] = None
+    # Annotator blur/restore tracking
+    is_blurred_annotator: bool = False
+    is_restore_annotator: bool = False
+    # Deliverable image tracking
+    deliverable_image_path: Optional[str] = None
+    is_modified: Optional[bool] = None
 
 
 class ReviewTableCategory(BaseModel):

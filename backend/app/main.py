@@ -137,7 +137,17 @@ def _migrate():
             if "image_drive_id" not in existing_img:
                 conn.execute(text("ALTER TABLE images ADD COLUMN image_drive_id VARCHAR(255)"))
                 conn.execute(text("CREATE INDEX IF NOT EXISTS idx_image_drive_id ON images(image_drive_id)"))
-        print("[MIGRATE] Checked/added improper, AI-generated, and arbiter columns to images table")
+            # Add annotator blur/restore tracking columns
+            if "is_blurred_annotator" not in existing_img:
+                conn.execute(text("ALTER TABLE images ADD COLUMN is_blurred_annotator BOOLEAN DEFAULT FALSE NOT NULL"))
+            if "is_restore_annotator" not in existing_img:
+                conn.execute(text("ALTER TABLE images ADD COLUMN is_restore_annotator BOOLEAN DEFAULT FALSE NOT NULL"))
+            # Add deliverable image tracking columns
+            if "deliverable_image_path" not in existing_img:
+                conn.execute(text("ALTER TABLE images ADD COLUMN deliverable_image_path TEXT"))
+            if "is_modified" not in existing_img:
+                conn.execute(text("ALTER TABLE images ADD COLUMN is_modified BOOLEAN"))
+        print("[MIGRATE] Checked/added improper, AI-generated, arbiter, and deliverable columns to images table")
 
 _migrate()
 

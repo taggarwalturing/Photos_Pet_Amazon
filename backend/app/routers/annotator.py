@@ -1711,6 +1711,11 @@ def blur_image_regions_endpoint(
     image.processed_url = f"file://image_cache/{blurred_filename}"
     image.is_using_processed = True
     image.processing_method = "manual"
+
+    # Track annotator blur action
+    if user.role == "annotator":
+        image.is_blurred_annotator = True
+
     db.commit()
 
     return {

@@ -155,6 +155,10 @@ def apply_manual_blur(
         image.manually_blurred_at = datetime.utcnow()
         image.annotated_blur_url = f"annotated_blur/{blurred_filename}"
 
+        # Track annotator blur action
+        if current_user.role == "annotator":
+            image.is_blurred_annotator = True
+
         db.commit()
         db.refresh(image)
 
@@ -374,6 +378,10 @@ def remove_blur(
     image.manually_blurred_at = None
     image.annotated_blur_url = None
     image.is_using_processed = False  # Switch to showing original
+
+    # Track annotator restore action
+    if current_user.role == "annotator":
+        image.is_restore_annotator = True
 
     db.commit()
 

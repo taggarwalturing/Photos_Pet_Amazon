@@ -114,6 +114,8 @@ export default function PhotoRegistryTab() {
       tooltip: 'Images where an admin or annotator manually drew blur regions using the blur tool, in addition to or instead of pipeline blur.' },
     { key: 'clean', icon: '🟢', label: 'Clean', value: summary.total_clean || 0, color: { bg: 'bg-gradient-to-br from-cyan-500 to-blue-500', ring: 'ring-cyan-400' },
       tooltip: 'Images with no blur applied — no human faces detected by the pipeline and no manual blur added. Ready for annotation as-is.' },
+    { key: null, icon: '📦', label: 'Delivered', value: summary.total_delivered || 0, color: { bg: 'bg-gradient-to-br from-teal-500 to-emerald-600', ring: 'ring-teal-400' },
+      tooltip: 'Images that have been reviewed and approved by a reviewer, then copied to the deliverable_images folder.' },
   ];
 
   return (
@@ -144,7 +146,7 @@ export default function PhotoRegistryTab() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-7 gap-3">
+      <div className="grid grid-cols-4 md:grid-cols-8 gap-3">
         {statCards.map((s, idx) => (
           <StatCard
             key={s.key || `stat-${idx}`}
@@ -295,6 +297,7 @@ export default function PhotoRegistryTab() {
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Processed Path</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Blur</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Manual Blur Path</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider" title="Deliverable status — image is copied here after reviewer approves all annotations">Deliverable</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -461,6 +464,20 @@ export default function PhotoRegistryTab() {
                     {/* Manual Blur Path */}
                     <td className="px-4 py-2.5">
                       <TruncatedPath path={row.annotated_blur_path} />
+                    </td>
+
+                    {/* Deliverable */}
+                    <td className="px-4 py-2.5">
+                      {row.deliverable_image_path ? (
+                        <div className="flex flex-col gap-0.5">
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-teal-50 text-teal-700">
+                            📦 {row.is_modified ? 'Modified' : 'Original'}
+                          </span>
+                          <TruncatedPath path={row.deliverable_image_path} />
+                        </div>
+                      ) : (
+                        <span className="text-gray-300 text-[10px]">—</span>
+                      )}
                     </td>
                   </tr>
                 ))
