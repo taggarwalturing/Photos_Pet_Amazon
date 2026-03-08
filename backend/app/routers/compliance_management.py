@@ -18,6 +18,20 @@ from app.models.user import User
 from app.models.image import Image
 from app.models.annotation import Annotation
 
+
+def _read_backend_env() -> dict:
+    """Read backend/.env fresh from disk (avoids stale os.environ cache)."""
+    result = {}
+    env_path = Path(__file__).parent.parent.parent / ".env"
+    if env_path.exists():
+        with open(env_path) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, value = line.split("=", 1)
+                    result[key.strip()] = value.strip()
+    return result
+
 router = APIRouter(prefix="/admin/compliance/images", tags=["Compliance Management"])
 
 
@@ -162,8 +176,9 @@ async def detect_and_blur_with_openai(image: Image) -> dict:
     from google.oauth2 import service_account
     from googleapiclient.discovery import build
     
-    # Get OpenAI API key
-    openai_api_key = os.getenv("OPENAI_API_KEY")
+    # Get OpenAI API key - read fresh from .env file (not stale os.environ)
+    backend_vars = _read_backend_env()
+    openai_api_key = backend_vars.get("OPENAI_API_KEY") or os.getenv("OPENAI_API_KEY")
     if not openai_api_key:
         raise Exception("OPENAI_API_KEY not configured")
     

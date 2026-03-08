@@ -27,34 +27,40 @@ except ImportError:
     pass  # HEIF support optional
 
 
-def load_config():
-    """Load configuration. Priority: env vars (from backend/.env) > local settings.env file."""
-    # 1. Load from local settings.env as fallback
-    file_config = {}
-    env_file = Path(__file__).parent.parent / 'config' / 'settings.env'
-    if env_file.exists():
-        with open(env_file) as f:
+def _read_env_file(filepath):
+    """Parse a .env file directly from disk (no caching via os.environ)."""
+    result = {}
+    if Path(filepath).exists():
+        with open(filepath) as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith('#') and '=' in line:
                     key, value = line.split('=', 1)
                     value = value.split('#')[0].strip()
-                    file_config[key] = value
+                    result[key.strip()] = value.strip()
+    return result
 
-    # 2. Also try loading backend/.env via dotenv (for standalone usage)
-    backend_env = Path(__file__).parent.parent.parent.parent / '.env'
-    if backend_env.exists():
-        try:
-            from dotenv import load_dotenv
-            load_dotenv(backend_env, override=False)
-        except ImportError:
-            pass
 
-    # 3. Env vars take priority
+def load_config():
+    """Load config fresh from .env files on disk (never stale os.environ).
+    Priority: backend/.env (fresh read) > local settings.env > os.environ (last resort)
+    """
+    # 1. Fresh-read backend/.env from disk
+    fresh_env = _read_env_file(Path(__file__).parent.parent.parent.parent / '.env')
+
+    # 2. Fallback: local settings.env
+    file_config = _read_env_file(Path(__file__).parent.parent / 'config' / 'settings.env')
+
+    # 3. Merge: fresh .env > settings.env > os.environ (last resort)
     config = {}
-    for key in file_config:
-        env_val = os.environ.get(key)
-        config[key] = env_val if env_val else file_config[key]
+    all_keys = set(file_config.keys()) | set(fresh_env.keys())
+    for key in all_keys:
+        if key in fresh_env:
+            config[key] = fresh_env[key]
+        elif key in file_config:
+            config[key] = file_config[key]
+        elif os.environ.get(key):
+            config[key] = os.environ[key]
 
     return config
 

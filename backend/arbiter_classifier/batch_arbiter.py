@@ -25,31 +25,32 @@ import io
 # ============================================================================
 # Priority: Environment variables (from backend/.env) > settings.env file
 # ============================================================================
-def load_config():
-    """Load config: env vars take priority, fall back to settings.env file."""
-    # Load from settings.env file as fallback
-    file_config = {}
-    config_file = Path(__file__).parent / "config" / "settings.env"
-    if config_file.exists():
-        with open(config_file) as f:
+def _read_env_file(filepath):
+    """Parse a .env file directly from disk (no caching via os.environ)."""
+    result = {}
+    if Path(filepath).exists():
+        with open(filepath) as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
                     key, value = line.split("=", 1)
-                    file_config[key.strip()] = value.strip()
+                    result[key.strip()] = value.strip()
+    return result
 
-    # Also try loading backend/.env via dotenv (for standalone script usage)
+
+def load_config():
+    """Load config fresh from .env files on disk (never stale os.environ).
+    Priority: backend/.env (fresh read) > settings.env fallback > os.environ (last resort)
+    """
+    # 1. Fresh-read backend/.env from disk
     backend_env = Path(__file__).parent.parent / ".env"
-    if backend_env.exists():
-        try:
-            from dotenv import load_dotenv
-            load_dotenv(backend_env, override=False)
-        except ImportError:
-            pass
+    fresh_env = _read_env_file(backend_env)
 
-    # Env vars take priority over file config
-    config = {}
-    all_keys = set(file_config.keys()) | {
+    # 2. Fallback: local settings.env
+    file_config = _read_env_file(Path(__file__).parent / "config" / "settings.env")
+
+    # 3. Merge: fresh .env > settings.env > os.environ (last resort)
+    all_keys = set(file_config.keys()) | set(fresh_env.keys()) | {
         "TURING_API_URL", "TURING_API_KEY", "TURING_GW_KEY", "TURING_AUTH",
         "GEMINI_MODEL", "GEMINI_PROVIDER", "GEMINI_PROMPT_VERSION",
         "OPENAI_MODEL", "OPENAI_PROVIDER", "OPENAI_PROMPT_VERSION",
@@ -59,12 +60,14 @@ def load_config():
         "BATCH_SIZE", "TIMEOUT_SECONDS", "PARALLEL_WORKERS",
         "PIPELINE_VERSION", "TEMPERATURE", "RESULTS_DIR",
     }
+    config = {}
     for key in all_keys:
-        env_val = os.environ.get(key)
-        if env_val:
-            config[key] = env_val
+        if key in fresh_env:
+            config[key] = fresh_env[key]
         elif key in file_config:
             config[key] = file_config[key]
+        elif os.environ.get(key):
+            config[key] = os.environ[key]
 
     # Map ARBITER_ prefixed keys to legacy keys
     if "ARBITER_BATCH_SIZE" in config and "BATCH_SIZE" not in config:

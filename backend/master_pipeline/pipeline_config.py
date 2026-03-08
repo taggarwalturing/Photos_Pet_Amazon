@@ -10,27 +10,46 @@ Provides a centralized config object for all pipeline components.
 import os
 from pathlib import Path
 from typing import Optional
-from dotenv import load_dotenv
 
-# Load .env file from parent backend directory (single source of truth)
-backend_env = Path(__file__).parent.parent / '.env'
 
-if backend_env.exists():
-    load_dotenv(backend_env)
-    print(f"[Config] Loaded: {backend_env}")
-else:
-    print(f"[Config] WARNING: No .env file found at {backend_env}")
-    print("[Config] Using environment variables or defaults")
+def _read_env_file(filepath):
+    """Parse a .env file directly from disk (no caching via os.environ)."""
+    result = {}
+    if Path(filepath).exists():
+        with open(filepath) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    result[key.strip()] = value.strip()
+    return result
+
+
+# Identify backend .env path once (but read fresh every time in PipelineConfig)
+_BACKEND_ENV_PATH = Path(__file__).parent.parent / '.env'
+
 
 class PipelineConfig:
     """Central configuration for the master pipeline."""
     
     def __init__(self):
+        # Fresh-read backend/.env from disk each time (never stale os.environ)
+        _env = _read_env_file(_BACKEND_ENV_PATH)
+        if _env:
+            print(f"[Config] Fresh-read: {_BACKEND_ENV_PATH}")
+        else:
+            print(f"[Config] WARNING: No .env file found at {_BACKEND_ENV_PATH}")
+            print("[Config] Using environment variables or defaults")
+
+        def _get(key, default=None):
+            """Get config value: .env file > os.environ > default."""
+            return _env.get(key) or os.getenv(key) or default
+
         # Backend directory is where this file is located
         self.backend_dir = Path(__file__).parent
         
         # ==================== WORKSPACE PATHS ====================
-        workspace = os.getenv('PIPELINE_WORKSPACE', 'pipeline_workspace')
+        workspace = _get('PIPELINE_WORKSPACE', 'pipeline_workspace')
         # Workspace can be absolute or relative to backend directory
         if Path(workspace).is_absolute():
             self.workspace = Path(workspace)
@@ -38,72 +57,73 @@ class PipelineConfig:
             self.workspace = self.backend_dir / workspace
         
         # Stage folders
-        self.downloaded_dir = self.workspace / os.getenv('DOWNLOADED_IMAGES_DIR', '01_downloaded_from_drive')
-        self.unique_dir = self.workspace / os.getenv('UNIQUE_IMAGES_DIR', '02_unique_images')
-        self.duplicate_clusters_dir = self.workspace / os.getenv('DUPLICATE_CLUSTERS_DIR', '02_duplicate_clusters')
-        self.biometric_processed_dir = self.workspace / os.getenv('BIOMETRIC_PROCESSED_DIR', '03_biometric_processed')
-        self.final_output_dir = self.workspace / os.getenv('FINAL_OUTPUT_DIR', '04_final_output')
+        self.downloaded_dir = self.workspace / _get('DOWNLOADED_IMAGES_DIR', '01_downloaded_from_drive')
+        self.unique_dir = self.workspace / _get('UNIQUE_IMAGES_DIR', '02_unique_images')
+        self.duplicate_clusters_dir = self.workspace / _get('DUPLICATE_CLUSTERS_DIR', '02_duplicate_clusters')
+        self.biometric_processed_dir = self.workspace / _get('BIOMETRIC_PROCESSED_DIR', '03_biometric_processed')
+        self.final_output_dir = self.workspace / _get('FINAL_OUTPUT_DIR', '04_final_output')
         
         # ==================== BIOMETRIC PIPELINE PATHS ====================
-        biometric_base = os.getenv('BIOMETRIC_PIPELINE_DIR', 'biometric_compliance_pipeline')
+        biometric_base = _get('BIOMETRIC_PIPELINE_DIR', 'biometric_compliance_pipeline')
         self.biometric_pipeline_dir = self.backend_dir / biometric_base
         
-        self.biometric_input_dir = self.biometric_pipeline_dir / os.getenv('BIOMETRIC_INPUT_DIR', 'data/input')
-        self.biometric_output_dir = self.biometric_pipeline_dir / os.getenv('BIOMETRIC_OUTPUT_DIR', 'data/obfuscated')
-        self.biometric_clean_dir = self.biometric_pipeline_dir / os.getenv('BIOMETRIC_CLEAN_DIR', 'data/clean')
-        self.biometric_qa_dir = self.biometric_pipeline_dir / os.getenv('BIOMETRIC_QA_DIR', 'data/qa_review')
-        self.biometric_results_dir = self.biometric_pipeline_dir / os.getenv('BIOMETRIC_RESULTS_DIR', 'results')
-        self.biometric_logs_dir = self.biometric_pipeline_dir / os.getenv('BIOMETRIC_LOGS_DIR', 'results/logs')
+        self.biometric_input_dir = self.biometric_pipeline_dir / _get('BIOMETRIC_INPUT_DIR', 'data/input')
+        self.biometric_output_dir = self.biometric_pipeline_dir / _get('BIOMETRIC_OUTPUT_DIR', 'data/obfuscated')
+        self.biometric_clean_dir = self.biometric_pipeline_dir / _get('BIOMETRIC_CLEAN_DIR', 'data/clean')
+        self.biometric_qa_dir = self.biometric_pipeline_dir / _get('BIOMETRIC_QA_DIR', 'data/qa_review')
+        self.biometric_results_dir = self.biometric_pipeline_dir / _get('BIOMETRIC_RESULTS_DIR', 'results')
+        self.biometric_logs_dir = self.biometric_pipeline_dir / _get('BIOMETRIC_LOGS_DIR', 'results/logs')
         
         # Biometric pipeline scripts
         self.biometric_scripts_dir = self.biometric_pipeline_dir / 'scripts'
         self.biometric_run_script = self.biometric_scripts_dir / 'stage3_obfuscate_faces_enhanced.py'
         
         # ==================== DEDUPLICATION SETTINGS ====================
-        self.dedup_threshold = float(os.getenv('DEDUP_THRESHOLD', '0.32'))
-        self.use_llm_validation = os.getenv('USE_LLM_VALIDATION', 'false').lower() == 'true'
-        self.max_llm_validations = int(os.getenv('MAX_LLM_VALIDATIONS', '100'))
+        self.dedup_threshold = float(_get('DEDUP_THRESHOLD', '0.32'))
+        self.use_llm_validation = (_get('USE_LLM_VALIDATION', 'false')).lower() == 'true'
+        self.max_llm_validations = int(_get('MAX_LLM_VALIDATIONS', '100'))
         
         # ==================== FACE DETECTION SETTINGS ====================
-        self.face_detection_confidence = float(os.getenv('FACE_DETECTION_CONFIDENCE', '0.5'))
-        self.face_verification_threshold = float(os.getenv('FACE_VERIFICATION_THRESHOLD', '0.4'))
-        self.obfuscation_method = os.getenv('OBFUSCATION_METHOD', 'egoblur')
-        self.filter_animal_faces = os.getenv('FILTER_ANIMAL_FACES', 'true').lower() == 'true'
-        self.yolo_model = os.getenv('YOLO_MODEL', 'yolov8n.pt')
+        self.face_detection_confidence = float(_get('FACE_DETECTION_CONFIDENCE', '0.5'))
+        self.face_verification_threshold = float(_get('FACE_VERIFICATION_THRESHOLD', '0.4'))
+        self.obfuscation_method = _get('OBFUSCATION_METHOD', 'egoblur')
+        self.filter_animal_faces = (_get('FILTER_ANIMAL_FACES', 'true')).lower() == 'true'
+        self.yolo_model = _get('YOLO_MODEL', 'yolov8n.pt')
         
         # ==================== GOOGLE DRIVE CONFIG ====================
-        self.google_drive_folder_id = os.getenv('GOOGLE_DRIVE_FOLDER_ID')
-        self.google_service_account_file = os.getenv('GOOGLE_SERVICE_ACCOUNT_FILE')
+        self.google_drive_folder_id = _get('GOOGLE_DRIVE_FOLDER_ID')
+        self.google_service_account_file = _get('GOOGLE_SERVICE_ACCOUNT_FILE')
         
         # ==================== OPENAI API ====================
-        self.openai_api_key = os.getenv('OPENAI_API_KEY')
-        self.openai_model = os.getenv('OPENAI_MODEL', 'gpt-4-vision-preview')
+        self.openai_api_key = _get('OPENAI_API_KEY')
+        self.openai_model = _get('OPENAI_MODEL', 'gpt-4-vision-preview')
         
         
         # ==================== DATABASE CONFIG ====================
-        self.database_url = os.getenv('DATABASE_URL', 'sqlite:///./photo_annotation.db')
+        self.database_url = _get('DATABASE_URL', 'sqlite:///./photo_annotation.db')
         
         # ==================== PIPELINE BEHAVIOR ====================
-        self.verbose_logging = os.getenv('VERBOSE_LOGGING', 'true').lower() == 'true'
-        self.num_workers = int(os.getenv('NUM_WORKERS', '4'))
-        self.pipeline_timeout = int(os.getenv('PIPELINE_TIMEOUT', '3600'))
-        self.cleanup_temp_files = os.getenv('CLEANUP_TEMP_FILES', 'true').lower() == 'true'
+        self.verbose_logging = (_get('VERBOSE_LOGGING', 'true')).lower() == 'true'
+        self.num_workers = int(_get('NUM_WORKERS', '4'))
+        self.pipeline_timeout = int(_get('PIPELINE_TIMEOUT', '3600'))
+        self.cleanup_temp_files = (_get('CLEANUP_TEMP_FILES', 'true')).lower() == 'true'
         
         # ==================== OUTPUT FORMAT ====================
-        self.output_format = os.getenv('OUTPUT_FORMAT', 'jpg')
-        self.jpeg_quality = int(os.getenv('JPEG_QUALITY', '95'))
-        self.preserve_original_format = os.getenv('PRESERVE_ORIGINAL_FORMAT', 'true').lower() == 'true'
+        self.output_format = _get('OUTPUT_FORMAT', 'jpg')
+        self.jpeg_quality = int(_get('JPEG_QUALITY', '95'))
+        self.preserve_original_format = (_get('PRESERVE_ORIGINAL_FORMAT', 'true')).lower() == 'true'
         
         # ==================== DEBUG ====================
-        self.debug = os.getenv('DEBUG', 'false').lower() == 'true'
-        self.dry_run = os.getenv('DRY_RUN', 'false').lower() == 'true'
-        self.limit_images = int(os.getenv('LIMIT_IMAGES', '0')) if os.getenv('LIMIT_IMAGES') else None
+        self.debug = (_get('DEBUG', 'false')).lower() == 'true'
+        self.dry_run = (_get('DRY_RUN', 'false')).lower() == 'true'
+        limit_val = _get('LIMIT_IMAGES')
+        self.limit_images = int(limit_val) if limit_val and limit_val != '0' else None
         
         # ==================== DEFAULT PIPELINE STEPS ====================
-        self.run_download_by_default = os.getenv('RUN_DOWNLOAD_BY_DEFAULT', 'false').lower() == 'true'
-        self.run_deduplicate_by_default = os.getenv('RUN_DEDUPLICATE_BY_DEFAULT', 'false').lower() == 'true'
-        self.run_biometric_by_default = os.getenv('RUN_BIOMETRIC_BY_DEFAULT', 'false').lower() == 'true'
-        self.run_all_by_default = os.getenv('RUN_ALL_BY_DEFAULT', 'false').lower() == 'true'
+        self.run_download_by_default = (_get('RUN_DOWNLOAD_BY_DEFAULT', 'false')).lower() == 'true'
+        self.run_deduplicate_by_default = (_get('RUN_DEDUPLICATE_BY_DEFAULT', 'false')).lower() == 'true'
+        self.run_biometric_by_default = (_get('RUN_BIOMETRIC_BY_DEFAULT', 'false')).lower() == 'true'
+        self.run_all_by_default = (_get('RUN_ALL_BY_DEFAULT', 'false')).lower() == 'true'
     
     def create_directories(self):
         """Create all necessary directories for the pipeline."""

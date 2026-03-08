@@ -12,38 +12,44 @@ import subprocess
 import sys
 from pathlib import Path
 
-def load_config():
-    """Load config from env vars (backend/.env) with fallback to local settings.env."""
-    # Try loading backend/.env via dotenv
-    backend_env = Path(__file__).parent.parent / ".env"
-    if backend_env.exists():
-        try:
-            from dotenv import load_dotenv
-            load_dotenv(backend_env, override=False)
-        except ImportError:
-            pass
-
-    # Fallback: local settings.env
-    file_config = {}
-    config_file = Path(__file__).parent / "config" / "settings.env"
-    if config_file.exists():
-        with open(config_file) as f:
+def _read_env_file(filepath):
+    """Parse a .env file directly from disk (no caching via os.environ)."""
+    result = {}
+    if Path(filepath).exists():
+        with open(filepath) as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
                     key, value = line.split("=", 1)
-                    file_config[key.strip()] = value.strip()
+                    result[key.strip()] = value.strip()
+    return result
 
+
+def load_config():
+    """Load config fresh from .env files on disk (never stale os.environ).
+    Priority: backend/.env (fresh read) > settings.env fallback > os.environ (last resort)
+    """
+    # 1. Fresh-read backend/.env from disk
+    fresh_env = _read_env_file(Path(__file__).parent.parent / ".env")
+
+    # 2. Fallback: local settings.env
+    file_config = _read_env_file(Path(__file__).parent / "config" / "settings.env")
+
+    # 3. Merge: fresh .env > settings.env > os.environ (last resort)
     config = {}
-    for key in file_config:
-        config[key] = os.environ.get(key, file_config[key])
-    # Also check env-only keys
-    for key in ["GEMINI_MODEL", "OPENAI_MODEL", "ARBITER_MODEL",
-                "GEMINI_PROMPT_VERSION", "OPENAI_PROMPT_VERSION", "ARBITER_PROMPT_VERSION",
-                "ARBITER_PIPELINE_VERSION", "PIPELINE_VERSION", "RESULTS_DIR"]:
-        env_val = os.environ.get(key)
-        if env_val and key not in config:
-            config[key] = env_val
+    all_keys = set(file_config.keys()) | set(fresh_env.keys()) | {
+        "GEMINI_MODEL", "OPENAI_MODEL", "ARBITER_MODEL",
+        "GEMINI_PROMPT_VERSION", "OPENAI_PROMPT_VERSION", "ARBITER_PROMPT_VERSION",
+        "ARBITER_PIPELINE_VERSION", "PIPELINE_VERSION", "RESULTS_DIR",
+    }
+    for key in all_keys:
+        if key in fresh_env:
+            config[key] = fresh_env[key]
+        elif key in file_config:
+            config[key] = file_config[key]
+        elif os.environ.get(key):
+            config[key] = os.environ[key]
+
     if "ARBITER_PIPELINE_VERSION" in config and "PIPELINE_VERSION" not in config:
         config["PIPELINE_VERSION"] = config["ARBITER_PIPELINE_VERSION"]
     return config
