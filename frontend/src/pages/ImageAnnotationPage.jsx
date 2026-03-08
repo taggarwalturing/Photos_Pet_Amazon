@@ -510,6 +510,9 @@ export default function ImageAnnotationPage() {
       setBlurActive(false);
       // Force image to reload with fresh cache-buster
       setImageVersion(Date.now());
+      // Refresh task data so the blur flags update in the UI (enables Undo Blur button)
+      const refreshed = await api.get(`/annotator/images/${imageId}`);
+      setData(refreshed.data);
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to apply blur');
     } finally {
