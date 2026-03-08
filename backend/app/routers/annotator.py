@@ -1715,6 +1715,7 @@ def blur_image_regions_endpoint(
     # Track annotator blur action
     if user.role == "annotator":
         image.is_blurred_annotator = True
+    image.is_modified = True
 
     db.commit()
 

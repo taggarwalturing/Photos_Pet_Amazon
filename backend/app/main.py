@@ -142,6 +142,10 @@ def _migrate():
                 conn.execute(text("ALTER TABLE images ADD COLUMN is_blurred_annotator BOOLEAN DEFAULT FALSE NOT NULL"))
             if "is_restore_annotator" not in existing_img:
                 conn.execute(text("ALTER TABLE images ADD COLUMN is_restore_annotator BOOLEAN DEFAULT FALSE NOT NULL"))
+            if "restored_by_annotator_id" not in existing_img:
+                conn.execute(text("ALTER TABLE images ADD COLUMN restored_by_annotator_id INTEGER REFERENCES users(id)"))
+            if "restored_at_annotator" not in existing_img:
+                conn.execute(text("ALTER TABLE images ADD COLUMN restored_at_annotator TIMESTAMP WITH TIME ZONE"))
             # Add deliverable image tracking columns
             if "deliverable_image_path" not in existing_img:
                 conn.execute(text("ALTER TABLE images ADD COLUMN deliverable_image_path TEXT"))

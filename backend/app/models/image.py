@@ -57,6 +57,8 @@ class Image(Base):
     # Annotator blur/restore tracking
     is_blurred_annotator = Column(Boolean, default=False, nullable=False)  # True if annotator manually blurred the image
     is_restore_annotator = Column(Boolean, default=False, nullable=False)  # True if annotator restored (undo blur) the image
+    restored_by_annotator_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # Which annotator last restored
+    restored_at_annotator = Column(DateTime(timezone=True), nullable=True)  # When annotator restored
 
     # Deliverable image tracking (populated after reviewer approves all annotations)
     deliverable_image_path = Column(Text, nullable=True)  # Path to image in deliverable_images folder
@@ -73,6 +75,7 @@ class Image(Base):
     human_visible_marker = relationship("User", foreign_keys=[human_visible_marked_by])
     edit_requests = relationship("EditRequest", back_populates="image")
     manual_blur_user = relationship("User", foreign_keys=[manually_blurred_by])
+    restore_user = relationship("User", foreign_keys=[restored_by_annotator_id])
     
     # Composite indexes for common query patterns
     __table_args__ = (

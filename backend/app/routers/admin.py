@@ -267,6 +267,151 @@ def get_daily_annotation_stats(
     }
 
 
+@router.get("/annotator-stats")
+def get_annotator_stats(
+    days: int = Query(7, ge=1, le=90),
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """
+    Comprehensive daily stats per annotator:
+      - annotated: distinct images with completed annotations per day
+      - blurred: images blurred by annotator per day (manually_blurred_at)
+      - restored: images restored by annotator per day (restored_at_annotator)
+      - approved: annotator's annotations approved per day (reviewed_at)
+    """
+    start_date = date.today() - timedelta(days=days - 1)
+
+    # ── All annotators ──
+    annotators = db.query(User).filter(User.role == "annotator").all()
+    id_to_name = {u.id: u.username for u in annotators}
+
+    # Prepare result skeleton per annotator
+    result = {}
+    for u in annotators:
+        result[u.username] = {
+            "annotator_id": u.id,
+            "annotated": {},   # date -> count
+            "blurred": {},     # date -> count
+            "restored": {},    # date -> count
+            "approved": {},    # date -> count
+            "totals": {"annotated": 0, "blurred": 0, "restored": 0, "approved": 0},
+        }
+
+    # ── 1. Annotated per day (distinct images completed) ──
+    annotated_rows = (
+        db.query(
+            Annotation.annotator_id,
+            cast(Annotation.updated_at, Date).label("d"),
+            func.count(func.distinct(Annotation.image_id)).label("cnt"),
+        )
+        .filter(
+            Annotation.status == "completed",
+            cast(Annotation.updated_at, Date) >= start_date,
+        )
+        .group_by(Annotation.annotator_id, cast(Annotation.updated_at, Date))
+        .all()
+    )
+    for annotator_id, d, cnt in annotated_rows:
+        name = id_to_name.get(annotator_id)
+        if name and name in result:
+            result[name]["annotated"][str(d)] = cnt
+
+    # ── 2. Blurred per day (images where manually_blurred_by = annotator) ──
+    blurred_rows = (
+        db.query(
+            Image.manually_blurred_by,
+            cast(Image.manually_blurred_at, Date).label("d"),
+            func.count(Image.id).label("cnt"),
+        )
+        .filter(
+            Image.manually_blurred_by.isnot(None),
+            Image.manually_blurred_at.isnot(None),
+            cast(Image.manually_blurred_at, Date) >= start_date,
+        )
+        .group_by(Image.manually_blurred_by, cast(Image.manually_blurred_at, Date))
+        .all()
+    )
+    for user_id, d, cnt in blurred_rows:
+        name = id_to_name.get(user_id)
+        if name and name in result:
+            result[name]["blurred"][str(d)] = cnt
+
+    # ── 3. Restored per day (images where restored_by_annotator_id = annotator) ──
+    restored_rows = (
+        db.query(
+            Image.restored_by_annotator_id,
+            cast(Image.restored_at_annotator, Date).label("d"),
+            func.count(Image.id).label("cnt"),
+        )
+        .filter(
+            Image.restored_by_annotator_id.isnot(None),
+            Image.restored_at_annotator.isnot(None),
+            cast(Image.restored_at_annotator, Date) >= start_date,
+        )
+        .group_by(Image.restored_by_annotator_id, cast(Image.restored_at_annotator, Date))
+        .all()
+    )
+    for user_id, d, cnt in restored_rows:
+        name = id_to_name.get(user_id)
+        if name and name in result:
+            result[name]["restored"][str(d)] = cnt
+
+    # ── 4. Approved per day (annotator's annotations that were approved, grouped by reviewed_at) ──
+    approved_rows = (
+        db.query(
+            Annotation.annotator_id,
+            cast(Annotation.reviewed_at, Date).label("d"),
+            func.count(func.distinct(Annotation.image_id)).label("cnt"),
+        )
+        .filter(
+            Annotation.review_status == "approved",
+            Annotation.reviewed_at.isnot(None),
+            cast(Annotation.reviewed_at, Date) >= start_date,
+        )
+        .group_by(Annotation.annotator_id, cast(Annotation.reviewed_at, Date))
+        .all()
+    )
+    for annotator_id, d, cnt in approved_rows:
+        name = id_to_name.get(annotator_id)
+        if name and name in result:
+            result[name]["approved"][str(d)] = cnt
+
+    # ── Compute cumulative totals (all-time, not just the window) ──
+    for u in annotators:
+        name = u.username
+        if name not in result:
+            continue
+        result[name]["totals"]["annotated"] = (
+            db.query(func.count(func.distinct(Annotation.image_id)))
+            .filter(Annotation.annotator_id == u.id, Annotation.status == "completed")
+            .scalar() or 0
+        )
+        result[name]["totals"]["blurred"] = (
+            db.query(func.count(Image.id))
+            .filter(Image.manually_blurred_by == u.id)
+            .scalar() or 0
+        )
+        result[name]["totals"]["restored"] = (
+            db.query(func.count(Image.id))
+            .filter(Image.restored_by_annotator_id == u.id)
+            .scalar() or 0
+        )
+        result[name]["totals"]["approved"] = (
+            db.query(func.count(func.distinct(Annotation.image_id)))
+            .filter(Annotation.annotator_id == u.id, Annotation.review_status == "approved")
+            .scalar() or 0
+        )
+
+    # Build date range
+    date_range = [str(start_date + timedelta(days=i)) for i in range(days)]
+
+    return {
+        "date_range": date_range,
+        "annotators": result,
+    }
+
+
 @router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def create_user(
     payload: UserCreate,

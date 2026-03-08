@@ -158,6 +158,7 @@ def apply_manual_blur(
         # Track annotator blur action
         if current_user.role == "annotator":
             image.is_blurred_annotator = True
+        image.is_modified = True
 
         db.commit()
         db.refresh(image)
@@ -371,17 +372,19 @@ def remove_blur(
         with open(cache_path, "wb") as f:
             f.write(original_bytes)
 
-    # 4. Update database — clear manual blur fields
+    # 4. Update database — clear operational blur fields but KEEP manually_blurred_by/at for stats
     image.manually_blurred = False
     image.blur_regions = None
-    image.manually_blurred_by = None
-    image.manually_blurred_at = None
+    # NOTE: Do NOT clear manually_blurred_by / manually_blurred_at — needed for per-day blur stats
     image.annotated_blur_url = None
     image.is_using_processed = False  # Switch to showing original
 
     # Track annotator restore action
     if current_user.role == "annotator":
         image.is_restore_annotator = True
+    image.restored_by_annotator_id = current_user.id
+    image.restored_at_annotator = datetime.utcnow()
+    image.is_modified = True
 
     db.commit()
 
