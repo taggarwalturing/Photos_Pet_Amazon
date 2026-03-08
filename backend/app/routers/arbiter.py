@@ -99,23 +99,33 @@ _stop_event = threading.Event()
 
 
 # ─── Config Loader ────────────────────────────────────────────
-def load_arbiter_config():
-    """
-    Load arbiter config from environment variables (backend/.env via dotenv).
-    Falls back to arbiter_classifier/config/settings.env for any missing keys.
-    """
-    # 1. Load fallback from settings.env file (if it exists)
-    file_config = {}
-    config_file = ARBITER_DIR / "config" / "settings.env"
-    if config_file.exists():
-        with open(config_file) as f:
+def _read_env_file(filepath: Path) -> dict:
+    """Parse a .env file into a dict (ignoring comments and blank lines)."""
+    result = {}
+    if filepath.exists():
+        with open(filepath) as f:
             for line in f:
                 line = line.strip()
                 if line and not line.startswith("#") and "=" in line:
                     key, value = line.split("=", 1)
-                    file_config[key.strip()] = value.strip()
+                    result[key.strip()] = value.strip()
+    return result
 
-    # 2. Environment variables take priority over file config
+
+def load_arbiter_config():
+    """
+    Load arbiter config by re-reading backend/.env fresh every time.
+    This ensures API key changes are picked up without a server restart.
+    Priority: backend/.env (fresh read) > settings.env fallback > os.environ
+    """
+    # 1. Fresh-read backend/.env file (NOT from cached os.environ)
+    backend_env = Path(__file__).parent.parent.parent / ".env"
+    fresh_env = _read_env_file(backend_env)
+
+    # 2. Fallback: arbiter settings.env (if it exists)
+    file_config = _read_env_file(ARBITER_DIR / "config" / "settings.env")
+
+    # 3. Merge: fresh .env > settings.env fallback > os.environ
     keys = [
         "TURING_API_URL", "TURING_API_KEY", "TURING_GW_KEY", "TURING_AUTH",
         "GEMINI_MODEL", "GEMINI_PROVIDER", "GEMINI_PROMPT_VERSION",
@@ -123,19 +133,19 @@ def load_arbiter_config():
         "ARBITER_MODEL", "ARBITER_PROVIDER", "ARBITER_PROMPT_VERSION",
         "ARBITER_BATCH_SIZE", "ARBITER_MAX_RETRIES", "ARBITER_TIMEOUT_SECONDS",
         "ARBITER_PARALLEL_WORKERS", "ARBITER_PIPELINE_VERSION",
-        # Legacy keys (from settings.env) mapped to new env names
         "BATCH_SIZE", "MAX_RETRIES", "TIMEOUT_SECONDS",
         "PARALLEL_WORKERS", "PIPELINE_VERSION", "TEMPERATURE",
     ]
     config = {}
     for key in keys:
-        env_val = os.environ.get(key)
-        if env_val:
-            config[key] = env_val
+        if key in fresh_env:
+            config[key] = fresh_env[key]
         elif key in file_config:
             config[key] = file_config[key]
+        elif os.environ.get(key):
+            config[key] = os.environ[key]
 
-    # Normalize: new ARBITER_ prefixed keys map to legacy keys for compatibility
+    # Normalize: ARBITER_ prefixed keys map to legacy keys for compatibility
     if "ARBITER_BATCH_SIZE" in config and "BATCH_SIZE" not in config:
         config["BATCH_SIZE"] = config["ARBITER_BATCH_SIZE"]
     if "ARBITER_TIMEOUT_SECONDS" in config and "TIMEOUT_SECONDS" not in config:
@@ -391,7 +401,7 @@ def run_arbiter_background():
             "api_url": config.get("TURING_API_URL", "https://kong.turing.com/api/v2/chat"),
             "headers": {
                 "Content-Type": "application/json",
-                "x-api-key": os.environ.get("TURING_API_KEY", config.get("TURING_API_KEY", "")),
+                "x-api-key": config.get("TURING_API_KEY", ""),
                 "x-api-gw-key": config.get("TURING_GW_KEY", ""),
                 "Authorization": config.get("TURING_AUTH", ""),
             },
@@ -1019,7 +1029,7 @@ def run_retry_failed_background(failed_names: list):
             "api_url": config.get("TURING_API_URL", "https://kong.turing.com/api/v2/chat"),
             "headers": {
                 "Content-Type": "application/json",
-                "x-api-key": os.environ.get("TURING_API_KEY", config.get("TURING_API_KEY", "")),
+                "x-api-key": config.get("TURING_API_KEY", ""),
                 "x-api-gw-key": config.get("TURING_GW_KEY", ""),
                 "Authorization": config.get("TURING_AUTH", ""),
             },
