@@ -123,16 +123,12 @@ function Pagination({ currentPage, totalPages, onPageChange }) {
 function UsersTab() {
   const [users, setUsers] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [imageAssignments, setImageAssignments] = useState(null);
   const [showCreate, setShowCreate] = useState(false);
   const [editingAssignment, setEditingAssignment] = useState(null); // user id for category assignment
-  const [editingImageAssignment, setEditingImageAssignment] = useState(null); // user id for image assignment
-  const [imageCount, setImageCount] = useState(10);
   const [form, setForm] = useState({ username: '', password: '', full_name: '', role: 'annotator' });
   const [showPassword, setShowPassword] = useState(false);
   const [assignedCats, setAssignedCats] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [assigning, setAssigning] = useState(false);
 
   const generatePassword = () => {
     const chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%&*';
@@ -144,14 +140,12 @@ function UsersTab() {
 
   const load = async () => {
     try {
-      const [usersRes, catsRes, assignmentsRes] = await Promise.all([
+      const [usersRes, catsRes] = await Promise.all([
         api.get('/admin/users'),
         api.get('/admin/categories'),
-        api.get('/admin/images/assignments'),
       ]);
       setUsers(usersRes.data);
       setCategories(catsRes.data);
-      setImageAssignments(assignmentsRes.data);
     } catch (err) {
       console.error(err);
     } finally {
@@ -194,42 +188,6 @@ function UsersTab() {
     setAssignedCats((prev) =>
       prev.includes(catId) ? prev.filter((id) => id !== catId) : [...prev, catId]
     );
-  };
-
-  // Image assignment functions
-  const getUserImageCount = (userId) => {
-    if (!imageAssignments) return 0;
-    const userAssignment = imageAssignments.by_user.find((u) => u.user_id === userId);
-    return userAssignment?.count || 0;
-  };
-
-  const openImageAssignment = (user) => {
-    setEditingImageAssignment(user.id);
-    setImageCount(10);
-  };
-
-  const assignImages = async () => {
-    if (assigning) return;
-    setAssigning(true);
-    try {
-      await api.post(`/admin/users/${editingImageAssignment}/images/assign`, { count: imageCount });
-      setEditingImageAssignment(null);
-      load();
-    } catch (err) {
-      alert(err.response?.data?.detail || 'Error assigning images');
-    } finally {
-      setAssigning(false);
-    }
-  };
-
-  const unassignAllImages = async (userId) => {
-    if (!confirm('Are you sure you want to unassign all images from this user?')) return;
-    try {
-      await api.delete(`/admin/users/${userId}/images/unassign`);
-      load();
-    } catch (err) {
-      alert(err.response?.data?.detail || 'Error');
-    }
   };
 
   if (loading) return <LoadingSkeleton rows={6} />;
@@ -389,7 +347,7 @@ function UsersTab() {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {users.map((u) => {
-              const userImageCount = getUserImageCount(u.id);
+              const userImageCount = u.assigned_image_count || 0;
               return (
                 <tr key={u.id} className={`transition-colors hover:bg-gray-50/50 ${!u.is_active ? 'opacity-50' : ''}`}>
                   <td className="px-5 py-3">
@@ -479,20 +437,6 @@ function UsersTab() {
                       >
                             Categories
                           </button>
-                          <button
-                            onClick={() => openImageAssignment(u)}
-                            className="text-emerald-600 hover:text-emerald-800 text-xs font-medium cursor-pointer"
-                          >
-                            + Images
-                          </button>
-                          {userImageCount > 0 && (
-                            <button
-                              onClick={() => unassignAllImages(u.id)}
-                              className="text-amber-600 hover:text-amber-800 text-xs font-medium cursor-pointer"
-                            >
-                              Clear
-                      </button>
-                          )}
                         </>
                     )}
                     <button
@@ -565,95 +509,7 @@ function UsersTab() {
         </div>
       )}
 
-      {/* Image Assignment modal */}
-      {editingImageAssignment && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md animate-scale-in">
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              Assign Images
-            </h3>
-            <p className="text-sm text-gray-500 mb-4">
-              Assign unassigned images to{' '}
-              <span className="font-medium text-gray-900">
-                {users.find((u) => u.id === editingImageAssignment)?.username}
-              </span>
-            </p>
-            
-            {imageAssignments && (
-              <div className="bg-gray-50 rounded-lg p-3 mb-4">
-                <p className="text-xs text-gray-600">
-                  <span className="font-semibold text-emerald-600">{imageAssignments.unassigned_count}</span> images available for assignment
-                </p>
-                <p className="text-xs text-gray-500 mt-1">
-                  Each image can only be assigned to one annotator
-                </p>
-              </div>
-            )}
-
-            <div className="mb-4">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Number of images to assign
-              </label>
-              <input
-                type="number"
-                min="1"
-                max={imageAssignments?.unassigned_count || 100}
-                value={imageCount}
-                onChange={(e) => setImageCount(parseInt(e.target.value) || 1)}
-                className="w-full px-4 py-2.5 border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-emerald-500"
-              />
-              <p className="text-xs text-gray-400 mt-1">
-                Images will be assigned in order (lowest ID first)
-              </p>
-            </div>
-
-            {/* Quick buttons */}
-            <div className="flex gap-2 mb-4">
-              {[5, 10, 20, 50].map((n) => (
-                <button
-                  key={n}
-                  onClick={() => setImageCount(n)}
-                  className={`px-3 py-1 rounded-full text-xs font-medium border transition cursor-pointer ${
-                    imageCount === n
-                      ? 'bg-emerald-500 text-white border-emerald-500'
-                      : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400'
-                  }`}
-                >
-                  {n}
-                </button>
-              ))}
-              {imageAssignments?.unassigned_count > 0 && (
-                <button
-                  onClick={() => setImageCount(imageAssignments.unassigned_count)}
-                  className={`px-3 py-1 rounded-full text-xs font-medium border transition cursor-pointer ${
-                    imageCount === imageAssignments.unassigned_count
-                      ? 'bg-emerald-500 text-white border-emerald-500'
-                      : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400'
-                  }`}
-                >
-                  All ({imageAssignments.unassigned_count})
-                </button>
-              )}
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                onClick={assignImages}
-                disabled={assigning || imageCount <= 0 || (imageAssignments?.unassigned_count || 0) === 0}
-                className="flex-1 px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-              >
-                {assigning ? 'Assigning...' : `Assign ${imageCount} Images`}
-              </button>
-              <button
-                onClick={() => setEditingImageAssignment(null)}
-                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300 cursor-pointer"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      
     </div>
   );
 }

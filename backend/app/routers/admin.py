@@ -41,16 +41,14 @@ def list_users(
     _admin: User = Depends(require_admin),
 ):
     users = db.query(User).order_by(User.id).all()
+    # All annotators have access to ALL images
+    total_images = db.query(Image).count()
     result = []
     for u in users:
         assigned_cat_ids = [ac.category_id for ac in u.assigned_categories]
         
-        # Get assigned image count
-        assigned_image_count = (
-            db.query(AnnotatorImageAssignment)
-            .filter(AnnotatorImageAssignment.user_id == u.id)
-            .count()
-        )
+        # All annotators see all images
+        assigned_image_count = total_images if u.role == "annotator" and assigned_cat_ids else 0
         
         # Get completed annotations count
         completed_annotations = (
@@ -62,7 +60,7 @@ def list_users(
             .count()
         )
         
-        # Total needed = assigned_images * assigned_categories
+        # Total needed = all_images * assigned_categories
         total_annotations_needed = assigned_image_count * len(assigned_cat_ids)
         
         # Get improper images marked by this user
