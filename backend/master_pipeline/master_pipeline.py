@@ -6,16 +6,13 @@ Complete Image Processing Pipeline
 Workflow (runs per folder_id in isolation):
 1. Download all images from a single Google Drive folder
 2. Run deduplicator (within that folder only — no cross-folder comparison)
-3. Run biometric pipeline on unique images only
-4. Consolidate final output
+3. Run biometric pipeline on unique images only → output to deliverable/
+   (DB tracks duplicate / blurred state; no intermediate folders)
 
 Each folder_id gets its own workspace:
   pipeline_workspace/folders/{folder_id}/
     ├── 01_downloaded_from_drive/
-    ├── 02_unique_images/
-    ├── 02_duplicate_clusters/
-    ├── 03_biometric_processed/
-    ├── 04_final_output/
+    ├── deliverable/
     └── drive_metadata.json
 
 Usage:
@@ -102,13 +99,10 @@ class MasterPipeline:
         
         self.workspace.mkdir(parents=True, exist_ok=True)
         
-        # Derive folder structure from workspace path (not config) so per-folder workspaces work
+        # Simplified folder structure — only raw download and deliverable
         self.folders = {
             'downloaded': self.workspace / '01_downloaded_from_drive',
-            'unique': self.workspace / '02_unique_images',
-            'duplicate_clusters': self.workspace / '02_duplicate_clusters',
-            'processed_unique': self.workspace / '03_biometric_processed',
-            'final_output': self.workspace / '04_final_output',
+            'final_output': self.workspace / 'deliverable',
         }
         
         # Create all folders
@@ -389,9 +383,9 @@ class MasterPipeline:
         """
         Step 2: Run deduplication (within this folder's workspace only).
         
-        Creates:
-        - 02_unique_images/ - Unique images (originals)
-        - 02_duplicate_clusters/ - Folders for each duplicate group
+        DB-driven: marks duplicates via deduplication_stats.json,
+        which is read by import_pipeline_images.py to set is_duplicate / parent_image.
+        No intermediate folders are created.
         """
         print("\n" + "=" * 70)
         print("🔍 STEP 2: Deduplication")
@@ -403,8 +397,6 @@ class MasterPipeline:
         max_llm_validations = max_llm_validations if max_llm_validations is not None else self.config.max_llm_validations
         
         input_folder = self.folders['downloaded']
-        unique_folder = self.folders['unique']
-        clusters_folder = self.folders['duplicate_clusters']
         
         # Check if using LLM
         if use_llm:
@@ -485,9 +477,7 @@ class MasterPipeline:
                 extended_duplicates.add(heic_source)
                 print(f"  ℹ️  Also excluding HEIC source: {heic_source} (conversion of duplicate {dup_jpg})")
         
-        # Organize into clusters
-        print("\n📂 Creating cluster structure...")
-        
+        # Count originals vs duplicates (for stats only — no file copy)
         all_images = list(input_folder.glob('*'))
         originals = set()
         duplicates = set()
@@ -500,50 +490,21 @@ class MasterPipeline:
             if img_name in extended_duplicates:
                 duplicates.add(img_name)
             else:
-                    originals.add(img_name)
-        
-        # Copy originals to unique folder
-        print(f"\n📋 Copying {len(originals)} unique images...")
-        for img_name in tqdm(originals, desc="Copying unique"):
-            src = input_folder / img_name
-            dst = unique_folder / img_name
-            if not dst.exists() and src.is_file():
-                shutil.copy2(src, dst)
-        
-        # Create duplicate clusters
-        print(f"\n📁 Creating duplicate clusters...")
-        
-        clusters = {}
-        for dup, orig in duplicate_map.items():
-            if orig not in clusters:
-                clusters[orig] = []
-            clusters[orig].append(dup)
-        
-        for cluster_id, (original, duplicates_list) in enumerate(clusters.items(), 1):
-            cluster_folder = clusters_folder / f"cluster_{cluster_id:04d}_{Path(original).stem}"
-            cluster_folder.mkdir(exist_ok=True)
-            
-            src = input_folder / original
-            if src.exists():
-                shutil.copy2(src, cluster_folder / f"ORIGINAL_{original}")
-            
-            for dup in duplicates_list:
-                src = input_folder / dup
-                if src.exists():
-                    shutil.copy2(src, cluster_folder / f"duplicate_{dup}")
+                originals.add(img_name)
         
         # Clean up temp folder
         if not use_llm:
             temp_dedup_output = self.workspace / 'temp_dedup'
             if temp_dedup_output.exists():
-            shutil.rmtree(temp_dedup_output)
+                shutil.rmtree(temp_dedup_output)
         
         stats = {
             'total_images': len([f for f in all_images if f.is_file() and not f.name.startswith(('_', '.'))]),
             'unique_images': len(originals),
             'duplicate_images': len(duplicates),
             'duplicate_pairs': len(duplicate_map),
-            'clusters': len(clusters),
+            'duplicate_map': duplicate_map,  # stored so import step can read it
+            'duplicate_filenames': list(extended_duplicates),
             'compression_ratio': f"{(1 - len(originals) / max(len(originals) + len(duplicates), 1)) * 100:.1f}%"
         }
         
@@ -551,7 +512,6 @@ class MasterPipeline:
         print(f"   Total images: {stats['total_images']}")
         print(f"   Unique images: {stats['unique_images']}")
         print(f"   Duplicate images: {stats['duplicate_images']}")
-        print(f"   Clusters created: {stats['clusters']}")
         print(f"   Compression: {stats['compression_ratio']}")
         
         with open(self.workspace / 'deduplication_stats.json', 'w') as f:
@@ -563,39 +523,67 @@ class MasterPipeline:
         """
         Step 3: Run biometric compliance pipeline on unique images only.
         
-        Processes: 02_unique_images/ → 03_biometric_processed/
+        Reads from 01_downloaded_from_drive/ (skipping duplicates via dedup stats),
+        outputs directly to deliverable/.
         """
         print("\n" + "=" * 70)
         print("🔐 STEP 3: Biometric Compliance Pipeline")
         print("=" * 70)
         
-        input_folder = self.folders['unique']
-        output_folder = self.folders['processed_unique']
-        
-        # Create subfolders
-        blurred_folder = output_folder / 'blurred'
-        clean_folder = output_folder / 'clean'
-        blurred_folder.mkdir(exist_ok=True)
-        clean_folder.mkdir(exist_ok=True)
+        input_folder = self.folders['downloaded']
+        output_folder = self.folders['final_output']  # deliverable/
         
         print(f"📥 Input: {input_folder}")
         print(f"📤 Output: {output_folder}")
         
-        # Get images to process
-        images = list(input_folder.glob('*'))
+        # Load deduplication stats to skip duplicates
+        dedup_stats_path = self.workspace / 'deduplication_stats.json'
+        duplicate_filenames = set()
+        if dedup_stats_path.exists():
+            try:
+                with open(dedup_stats_path, 'r') as f:
+                    dedup_stats = json.load(f)
+                duplicate_filenames = set(dedup_stats.get('duplicate_filenames', []))
+                print(f"   Skipping {len(duplicate_filenames)} duplicates from dedup step")
+            except Exception as e:
+                print(f"   ⚠️  Could not load dedup stats: {e}")
+        
+        # Filter to unique images only (create a temp input dir with symlinks/copies)
+        temp_input = self.workspace / '_temp_biometric_input'
+        temp_input.mkdir(exist_ok=True)
+        
+        image_exts = {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff', '.tif'}
+        unique_count = 0
+        for img_path in input_folder.iterdir():
+            if not img_path.is_file():
+                continue
+            if img_path.name.startswith(('_', '.')):
+                continue
+            if img_path.suffix.lower() not in image_exts:
+                continue
+            if img_path.name in duplicate_filenames:
+                continue
+            # Symlink to temp input (avoids copying)
+            link_path = temp_input / img_path.name
+            if not link_path.exists():
+                try:
+                    os.symlink(img_path.resolve(), link_path)
+                except OSError:
+                    shutil.copy2(img_path, link_path)
+            unique_count += 1
+        
+        print(f"\n🖼️  Processing {unique_count} unique images...")
         
         # Apply image limit if in testing mode
-        if self.config.limit_images and len(images) > self.config.limit_images:
+        if self.config.limit_images and unique_count > self.config.limit_images:
             print(f"\n⚠️  Testing mode: Processing only first {self.config.limit_images} images")
-            images = images[:self.config.limit_images]
         
-        print(f"\n🖼️  Processing {len(images)} unique images...")
-        
-        # Run pipeline on the entire directory (batch processing)
+        # Run pipeline on the filtered directory
         pipeline_script = self.config.biometric_run_script
         
         if not pipeline_script.exists():
             print(f"❌ Pipeline script not found: {pipeline_script}")
+            shutil.rmtree(temp_input, ignore_errors=True)
             return {}
         
         # Create temporary output directory for pipeline
@@ -607,8 +595,8 @@ class MasterPipeline:
         
         print("\n🚀 Running biometric compliance pipeline...")
         print("   This will detect and blur human faces...")
-        print(f"   Input folder: {input_folder}")
-        print(f"   Processing {len(images)} images...")
+        print(f"   Input folder: {temp_input}")
+        print(f"   Processing {unique_count} images...")
         print()
         
         try:
@@ -618,7 +606,7 @@ class MasterPipeline:
                 [
                     'python3',
                     str(pipeline_script),
-                    '--input', str(input_folder),
+                    '--input', str(temp_input),
                     '--output', str(temp_pipeline_output),
                     '--qa-dir', str(temp_qa_dir)
                 ],
@@ -661,54 +649,57 @@ class MasterPipeline:
             print("\n❌ Pipeline timed out after 1 hour")
             if process:
                 process.kill()
-            return {'blurred': 0, 'clean': 0, 'qa_required': 0, 'skipped': 0, 'failed': len(images)}
+            shutil.rmtree(temp_input, ignore_errors=True)
+            return {'blurred': 0, 'clean': 0, 'qa_required': 0, 'skipped': 0, 'failed': unique_count}
         except Exception as e:
             print(f"\n❌ Pipeline error: {e}")
             import traceback
             traceback.print_exc()
-            return {'blurred': 0, 'clean': 0, 'qa_required': 0, 'skipped': 0, 'failed': len(images)}
+            shutil.rmtree(temp_input, ignore_errors=True)
+            return {'blurred': 0, 'clean': 0, 'qa_required': 0, 'skipped': 0, 'failed': unique_count}
         
-        # The biometric pipeline writes clean images to a fixed location
+        # The biometric pipeline writes blurred images to temp_pipeline_output,
+        # clean images to biometric_clean_dir, QA to temp_qa_dir.
         pipeline_obfuscated_folder = temp_pipeline_output
         pipeline_clean_folder = self.config.biometric_clean_dir
         pipeline_qa_folder = temp_qa_dir
         
         processed_stats = {'blurred': 0, 'clean': 0, 'qa_required': 0, 'skipped': 0, 'failed': 0}
         
-        print("\n📂 Organizing processed images...")
+        print("\n📂 Moving processed images to deliverable/...")
         
-        # Copy blurred/obfuscated images
+        # Copy blurred/obfuscated images → deliverable/
         if pipeline_obfuscated_folder.exists():
             obfuscated_images = list(pipeline_obfuscated_folder.glob('*'))
             print(f"   Found {len(obfuscated_images)} obfuscated images")
             for img_path in obfuscated_images:
                 if img_path.is_file() and not img_path.name.startswith('.'):
                     try:
-                        shutil.copy2(img_path, blurred_folder / img_path.name)
+                        shutil.copy2(img_path, output_folder / img_path.name)
                         processed_stats['blurred'] += 1
                     except Exception as e:
                         print(f"   ⚠️  Error copying blurred image {img_path.name}: {e}")
         
-        # Copy clean images (no faces)
+        # Copy clean images (no faces) → deliverable/
         if pipeline_clean_folder.exists():
             clean_images = list(pipeline_clean_folder.glob('*'))
             print(f"   Found {len(clean_images)} clean images")
             for img_path in clean_images:
                 if img_path.is_file() and not img_path.name.startswith('.'):
                     try:
-                        shutil.copy2(img_path, clean_folder / img_path.name)
+                        shutil.copy2(img_path, output_folder / img_path.name)
                         processed_stats['clean'] += 1
                     except Exception as e:
                         print(f"   ⚠️  Error copying clean image {img_path.name}: {e}")
         
-        # Copy QA review images (verification failed) - treat as blurred
+        # Copy QA review images (verification failed) → deliverable/ (treat as blurred)
         if pipeline_qa_folder.exists():
             qa_images = list(pipeline_qa_folder.glob('*'))
-            print(f"   Found {len(qa_images)} QA review images (adding to blurred folder)")
+            print(f"   Found {len(qa_images)} QA review images (adding to deliverable)")
             for img_path in qa_images:
                 if img_path.is_file() and not img_path.name.startswith('.'):
                     try:
-                        shutil.copy2(img_path, blurred_folder / img_path.name)
+                        shutil.copy2(img_path, output_folder / img_path.name)
                         processed_stats['qa_required'] += 1
                     except Exception as e:
                         print(f"   ⚠️  Error copying QA image {img_path.name}: {e}")
@@ -733,15 +724,14 @@ class MasterPipeline:
         
         # Calculate actual skipped/failed from input vs output
         total_output = processed_stats['blurred'] + processed_stats['clean'] + processed_stats['qa_required']
-        input_count = len(images)
         
         if processed_stats['failed'] == 0 and processed_stats['skipped'] == 0:
-            unaccounted = input_count - total_output
+            unaccounted = unique_count - total_output
             if unaccounted > 0:
                 processed_stats['failed'] = unaccounted
                 print(f"   ⚠️  {unaccounted} images unaccounted for (marked as failed)")
         
-        print(f"\n🧹 Cleaning up pipeline output folders...")
+        print(f"\n🧹 Cleaning up temporary folders...")
         for folder in [pipeline_obfuscated_folder, pipeline_clean_folder, pipeline_qa_folder]:
             if folder.exists():
                 for img_path in folder.glob('*'):
@@ -754,6 +744,7 @@ class MasterPipeline:
         # Clean up temp folders
         shutil.rmtree(temp_pipeline_output, ignore_errors=True)
         shutil.rmtree(temp_qa_dir, ignore_errors=True)
+        shutil.rmtree(temp_input, ignore_errors=True)
         
         # Copy failed images log if it exists
         failed_log = self.config.biometric_results_dir / 'failed_images.log'
@@ -761,7 +752,7 @@ class MasterPipeline:
             shutil.copy2(failed_log, self.workspace / 'failed_images.log')
         
         print("\n📊 Pipeline Results:")
-        print(f"   📥 Input images: {input_count}")
+        print(f"   📥 Input images: {unique_count}")
         print(f"   🔐 Blurred (faces detected): {processed_stats['blurred']}")
         print(f"   ✅ Clean (no faces): {processed_stats['clean']}")
         print(f"   ❌ Failed to process: {processed_stats['failed']}")
@@ -771,42 +762,6 @@ class MasterPipeline:
             json.dump(processed_stats, f, indent=2)
         
         return processed_stats
-    
-    def step4_consolidate_output(self) -> Dict:
-        """
-        Step 4: Consolidate final output.
-        
-        Creates final_output/ with all processed images (blurred + clean).
-        """
-        print("\n" + "=" * 70)
-        print("📦 STEP 4: Consolidate Final Output")
-        print("=" * 70)
-        
-        final_folder = self.folders['final_output']
-        processed_folder = self.folders['processed_unique']
-        
-        for subfolder in ['blurred', 'clean']:
-            src_folder = processed_folder / subfolder
-            if src_folder.exists():
-                for img in src_folder.glob('*'):
-                    if img.is_file():
-                    shutil.copy2(img, final_folder / img.name)
-        
-        final_count = len([f for f in final_folder.glob('*') if f.is_file() and f.name != 'manifest.json'])
-        
-        manifest = {
-            'processing_date': datetime.now().isoformat(),
-            'total_final_images': final_count,
-            'workspace': str(self.workspace),
-        }
-        
-        with open(final_folder / 'manifest.json', 'w') as f:
-            json.dump(manifest, f, indent=2)
-        
-        print(f"\n✅ Final output ready: {final_folder}")
-        print(f"   📊 {final_count} images ready for annotation")
-        
-        return manifest
     
     def run_complete_pipeline(
         self,
@@ -859,28 +814,48 @@ class MasterPipeline:
                 print("❌ No images to process")
                 return
         
-        # Step 2: Deduplicate (within this folder only)
+        # Step 2: Deduplicate (within this folder only — DB-driven, no file copy)
         if deduplicate:
             self.step2_deduplicate(use_llm=use_llm, threshold=dedup_threshold)
-        else:
-            # If skipping dedup, copy downloaded images directly to unique
-            print("\n⏭️  Skipping deduplication — copying all downloaded to unique...")
+        
+        # Step 3: Biometric Pipeline → outputs directly to deliverable/
+        if pipeline:
+            self.step3_biometric_pipeline()
+        elif not deduplicate:
+            # If skipping both dedup and biometric, copy all downloaded to deliverable
+            print("\n⏭️  Skipping dedup + biometric — copying all downloaded to deliverable...")
             downloaded_dir = self.folders['downloaded']
-            unique_dir = self.folders['unique']
+            deliverable_dir = self.folders['final_output']
             image_exts = {'.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif', '.avif', '.bmp', '.tiff', '.tif'}
             copied = 0
             for f in downloaded_dir.iterdir():
-                if f.is_file() and f.suffix.lower() in image_exts and not (unique_dir / f.name).exists():
-                    shutil.copy2(f, unique_dir / f.name)
+                if f.is_file() and f.suffix.lower() in image_exts and not f.name.startswith(('_', '.')) and not (deliverable_dir / f.name).exists():
+                    shutil.copy2(f, deliverable_dir / f.name)
                     copied += 1
-            print(f"   Copied {copied} images to unique folder")
-        
-        # Step 3: Biometric Pipeline
-        if pipeline:
-            self.step3_biometric_pipeline()
-        
-        # Step 4: Consolidate
-        self.step4_consolidate_output()
+            print(f"   Copied {copied} images to deliverable/")
+        else:
+            # Dedup ran but biometric skipped — copy unique images to deliverable
+            print("\n⏭️  Skipping biometric — copying unique images to deliverable...")
+            dedup_stats_path = self.workspace / 'deduplication_stats.json'
+            duplicate_filenames = set()
+            if dedup_stats_path.exists():
+                try:
+                    with open(dedup_stats_path, 'r') as f:
+                        dedup_stats = json.load(f)
+                    duplicate_filenames = set(dedup_stats.get('duplicate_filenames', []))
+                except Exception:
+                    pass
+            
+            downloaded_dir = self.folders['downloaded']
+            deliverable_dir = self.folders['final_output']
+            image_exts = {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff', '.tif'}
+            copied = 0
+            for f in downloaded_dir.iterdir():
+                if f.is_file() and f.suffix.lower() in image_exts and not f.name.startswith(('_', '.')) and f.name not in duplicate_filenames:
+                    if not (deliverable_dir / f.name).exists():
+                        shutil.copy2(f, deliverable_dir / f.name)
+                        copied += 1
+            print(f"   Copied {copied} unique images to deliverable/")
         
         # Final summary
         end_time = datetime.now()
@@ -1052,15 +1027,15 @@ def main():
         )
     else:
         # Legacy: single folder from config (or no download)
-    pipeline = MasterPipeline(workspace_dir=args.workspace, config=config)
-    pipeline.run_complete_pipeline(
-        download=args.download,
-        deduplicate=args.deduplicate,
-        pipeline=args.pipeline,
-        use_llm=args.use_llm,
+        pipeline = MasterPipeline(workspace_dir=args.workspace, config=config)
+        pipeline.run_complete_pipeline(
+            download=args.download,
+            deduplicate=args.deduplicate,
+            pipeline=args.pipeline,
+            use_llm=args.use_llm,
             dedup_threshold=threshold,
             folder_id=config.google_drive_folder_id
-    )
+        )
     
     return 0
 

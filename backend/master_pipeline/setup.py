@@ -42,11 +42,7 @@ def create_folder_structure():
     
     folders = [
         "pipeline_workspace/01_downloaded_from_drive",
-        "pipeline_workspace/02_unique_images",
-        "pipeline_workspace/02_duplicate_clusters",
-        "pipeline_workspace/03_biometric_processed/clean",
-        "pipeline_workspace/03_biometric_processed/blurred",
-        "pipeline_workspace/04_final_output",
+        "pipeline_workspace/deliverable",
         "biometric_compliance_pipeline/data/clean",
         "biometric_compliance_pipeline/data/obfuscated",
         "biometric_compliance_pipeline/data/qa_review",

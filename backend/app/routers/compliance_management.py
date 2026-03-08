@@ -17,6 +17,7 @@ from app.dependencies import require_admin
 from app.models.user import User
 from app.models.image import Image
 from app.models.annotation import Annotation
+from app.utils.deliverable import update_biometric_if_delivered, move_image_to_deliverable
 
 
 def _read_backend_env() -> dict:
@@ -74,7 +75,11 @@ def revert_to_original(
     log_entry = f"\n[REVERTED by {admin.username}] Reason: {payload.reason or 'N/A'}"
     image.processing_log = (image.processing_log or "") + log_entry
     
+    image.is_manually_modified = True
     db.commit()
+
+    # Admin/reviewer modifications go directly to deliverable/
+    move_image_to_deliverable(image, db)
     
     return {
         "success": True,
@@ -114,7 +119,11 @@ async def reprocess_with_openai(
         log_entry = f"\n[REPROCESSED with OpenAI by {admin.username}] Faces: {result['faces_detected']}, Reason: {payload.reason or 'N/A'}"
         image.processing_log = (image.processing_log or "") + log_entry
         
+        image.is_manually_modified = True
         db.commit()
+
+        # Admin/reviewer modifications go directly to deliverable/
+        move_image_to_deliverable(image, db)
         
         return {
             "success": True,

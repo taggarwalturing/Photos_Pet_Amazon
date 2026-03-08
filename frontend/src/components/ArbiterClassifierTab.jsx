@@ -326,7 +326,7 @@ export default function ArbiterClassifierTab() {
           <ConfigCard label="Model 1" value={config.gemini_model} sub={config.gemini_provider} icon="🔵" />
           <ConfigCard label="Model 2" value={config.openai_model} sub={config.openai_provider} icon="🟢" />
           <ConfigCard label="Arbiter" value={config.arbiter_model} sub={config.arbiter_provider} icon="⚖️" />
-          <ConfigCard label="Images Available" value={config.available_images} sub="in 04_final_output/" icon="🖼️" />
+          <ConfigCard label="Images Available" value={config.available_images} sub="in deliverable/" icon="🖼️" />
         </div>
       )}
 
@@ -900,6 +900,11 @@ function PredictionTrackingSection() {
                       <tr className="hover:bg-gray-50/50 transition-colors cursor-pointer"
                         onClick={() => setExpandedRow(isExpanded ? null : row.image_id)}>
                         <td className="px-4 py-2.5">
+                          {row.image_drive_id && (
+                            <span className="text-[9px] font-mono text-blue-500 truncate block max-w-[180px]" title={row.image_drive_id}>
+                              {row.image_drive_id.slice(0, 16)}…
+                            </span>
+                          )}
                           <span className="font-medium text-gray-900 truncate block max-w-[180px]" title={row.filename}>
                             {row.filename}
                           </span>

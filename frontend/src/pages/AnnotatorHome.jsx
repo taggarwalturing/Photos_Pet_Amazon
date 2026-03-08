@@ -467,7 +467,12 @@ export default function AnnotatorHome() {
                         </div>
                         
                         {/* Filename - top right */}
-                        <div className="absolute top-3 right-3 max-w-[65%]">
+                        <div className="absolute top-3 right-3 max-w-[65%] flex flex-col items-end gap-0.5">
+                          {img.image_drive_id && (
+                            <span className="px-2 py-0.5 bg-blue-600/70 text-white text-[9px] font-mono rounded-md backdrop-blur-sm truncate block max-w-full" title={img.image_drive_id}>
+                              {img.image_drive_id.slice(0, 16)}…
+                            </span>
+                          )}
                           <span className="px-2 py-1 bg-black/50 text-white text-[10px] font-medium rounded-lg backdrop-blur-sm truncate block">
                             {img.filename}
                           </span>

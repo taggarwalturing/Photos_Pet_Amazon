@@ -28,7 +28,7 @@ except ImportError:
     HEIF_SUPPORT = False
 
 # Import all models so Base knows about them
-from app.models import user, image, category, option, annotator_category, annotation, image_assignment, edit_request, notification, drive_folder  # noqa
+from app.models import user, image, category, option, annotator_category, annotation, edit_request, notification, drive_folder, final_label  # noqa
 from app.models import settings as settings_model  # noqa - rename to avoid conflict with config.settings
 
 # Google Drive service account setup from settings
@@ -149,9 +149,46 @@ def _migrate():
             # Add deliverable image tracking columns
             if "deliverable_image_path" not in existing_img:
                 conn.execute(text("ALTER TABLE images ADD COLUMN deliverable_image_path TEXT"))
-            if "is_modified" not in existing_img:
-                conn.execute(text("ALTER TABLE images ADD COLUMN is_modified BOOLEAN"))
-        print("[MIGRATE] Checked/added improper, AI-generated, arbiter, and deliverable columns to images table")
+            # Add clean status columns (user-requested)
+            if "is_manually_modified" not in existing_img:
+                conn.execute(text("ALTER TABLE images ADD COLUMN is_manually_modified BOOLEAN DEFAULT FALSE NOT NULL"))
+            if "is_programmatically_blurred" not in existing_img:
+                conn.execute(text("ALTER TABLE images ADD COLUMN is_programmatically_blurred BOOLEAN DEFAULT FALSE NOT NULL"))
+            if "is_duplicate" not in existing_img:
+                conn.execute(text("ALTER TABLE images ADD COLUMN is_duplicate BOOLEAN DEFAULT FALSE NOT NULL"))
+            if "parent_image" not in existing_img:
+                conn.execute(text("ALTER TABLE images ADD COLUMN parent_image VARCHAR(255)"))
+            if "image_path" not in existing_img:
+                conn.execute(text("ALTER TABLE images ADD COLUMN image_path TEXT"))
+            # Drop legacy is_modified column (replaced by is_manually_modified)
+            if "is_modified" in existing_img:
+                conn.execute(text("ALTER TABLE images DROP COLUMN is_modified"))
+                print("[MIGRATE] Dropped legacy is_modified column from images")
+        print("[MIGRATE] Checked/added improper, AI-generated, arbiter, deliverable, and status columns to images table")
+
+    # Drop dead annotator_image_assignments table (all annotators access all images now)
+    if "annotator_image_assignments" in inspector.get_table_names():
+        with engine.begin() as conn:
+            conn.execute(text("DROP TABLE annotator_image_assignments"))
+        print("[MIGRATE] Dropped dead table annotator_image_assignments")
+
+    # ── Add performance indexes ─────────────────────────────────────
+    with engine.begin() as conn:
+        # Filename lookups (photo registry, dedup checks)
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_images_filename ON images(filename)"))
+        # Deliverable filter queries
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_images_deliverable ON images(deliverable_image_path) WHERE deliverable_image_path IS NOT NULL"))
+        # Annotation composite index (most common join pattern)
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_annotations_image_category ON annotations(image_id, category_id)"))
+        # Annotator lookup + date for daily stats
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_annotations_annotator_updated ON annotations(annotator_id, updated_at)"))
+        # Review status filtering
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_annotations_review_status ON annotations(review_status) WHERE review_status IS NOT NULL"))
+        # Image compliance status
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_images_compliance ON images(compliance_status)"))
+        # Manually blurred filter
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_images_manually_blurred ON images(manually_blurred) WHERE manually_blurred = TRUE"))
+    print("[MIGRATE] Ensured performance indexes exist")
 
 _migrate()
 
@@ -303,24 +340,12 @@ def proxy_image(image_id: int):
                 for search_root in search_roots:
                     if found:
                         break
-                    for sub in ["04_final_output", "03_biometric_processed", "02_unique_images", "02_deduplicated", "01_downloaded_from_drive", "01_downloaded"]:
+                    for sub in ["deliverable", "01_downloaded_from_drive"]:
                         candidate = os.path.join(search_root, sub, filename)
                         if os.path.exists(candidate) and os.path.getsize(candidate) > 0:
                             local_path = candidate
                             found = True
                             break
-                        # Also check subdirectories (e.g. blurred/clean inside 03_biometric_processed)
-                        sub_dir = os.path.join(search_root, sub)
-                        if os.path.isdir(sub_dir):
-                            for root, dirs, files in os.walk(sub_dir):
-                                if filename in files:
-                                    candidate = os.path.join(root, filename)
-                                    if os.path.getsize(candidate) > 0:
-                                        local_path = candidate
-                                        found = True
-                                        break
-                            if found:
-                                break
                 if not found:
                     # Last resort: try re-downloading from Google Drive
                     try:

@@ -1,12 +1,20 @@
 """
-Import images from master pipeline's final output into the database.
+Import images from master pipeline's deliverable output into the database.
 
 Supports two workspace layouts:
-  1. Per-folder workspaces (new):  pipeline_workspace/folders/{folder_id}/04_final_output/
-  2. Legacy flat workspace:        pipeline_workspace/04_final_output/
+  1. Per-folder workspaces (new):  pipeline_workspace/folders/{folder_id}/deliverable/
+  2. Legacy flat workspace:        pipeline_workspace/deliverable/
 
 Each per-folder workspace carries its own drive_metadata.json, obfuscation_results.json,
-and 03_biometric_processed/{blurred,clean} folders.
+and deduplication_stats.json.
+
+Folder structure (simplified):
+  pipeline_workspace/folders/{folder_id}/
+    ├── 01_downloaded_from_drive/   ← raw downloads + HEIC conversions
+    ├── deliverable/                ← final processed images
+    ├── drive_metadata.json
+    ├── deduplication_stats.json
+    └── obfuscation_results.json
 """
 import sys
 import json
@@ -29,8 +37,7 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
     Returns:
         dict with counts: new, updated, blurred, clean
     """
-    final_output = workspace / "04_final_output"
-    biometric_processed = workspace / "03_biometric_processed"
+    final_output = workspace / "deliverable"
     
     if not final_output.exists():
         return {'new': 0, 'updated': 0, 'blurred': 0, 'clean': 0}
@@ -57,19 +64,22 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
         except Exception as e:
             print(f"   ⚠️  Could not load biometric results: {e}")
     
-    # Check blurred vs clean folders
-    blurred_folder = biometric_processed / "blurred"
-    clean_folder = biometric_processed / "clean"
+    # Load deduplication stats for is_duplicate / parent_image
+    dedup_stats_path = workspace / "deduplication_stats.json"
+    duplicate_map = {}      # filename → parent_filename
+    duplicate_filenames = set()
+    if dedup_stats_path.exists():
+        try:
+            with open(dedup_stats_path, 'r') as f:
+                dedup_stats = json.load(f)
+            duplicate_map = dedup_stats.get('duplicate_map', {})
+            duplicate_filenames = set(dedup_stats.get('duplicate_filenames', []))
+            if duplicate_map:
+                print(f"   📊 Loaded dedup info: {len(duplicate_map)} duplicate pairs")
+        except Exception as e:
+            print(f"   ⚠️  Could not load dedup stats: {e}")
     
-    blurred_images = set()
-    clean_images = set()
-    
-    if blurred_folder.exists():
-        blurred_images = {f.name for f in blurred_folder.iterdir() if f.is_file()}
-    if clean_folder.exists():
-        clean_images = {f.name for f in clean_folder.iterdir() if f.is_file()}
-    
-    # Get all image files from final output
+    # Get all image files from deliverable output
     image_extensions = {'.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif', '.avif'}
     image_files = [
         f for f in final_output.iterdir() 
@@ -79,11 +89,10 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
     if not image_files:
         return {'new': 0, 'updated': 0, 'blurred': 0, 'clean': 0}
     
-    print(f"   📁 Found {len(image_files)} images in final output")
+    print(f"   📁 Found {len(image_files)} images in deliverable/")
     
     # HEIC conversion map
     download_dir = workspace / "01_downloaded_from_drive"
-    unique_dir = workspace / "02_unique_images"
     
     heic_conversion_map = {}
     manifest_path = download_dir / "_heic_conversions.json"
@@ -102,7 +111,7 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
     if not heic_conversion_map:
         heic_on_disk = set()
         heic_originals_dir = download_dir / '_heic_originals'
-        scan_dirs = [download_dir, unique_dir]
+        scan_dirs = [download_dir]
         if heic_originals_dir.is_dir():
             scan_dirs.append(heic_originals_dir)
         for d in scan_dirs:
@@ -138,8 +147,8 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
     counts = {'new': 0, 'updated': 0, 'blurred': 0, 'clean': 0}
     
     # Determine relative path prefix for URLs
-    # For per-folder workspaces: master_pipeline/pipeline_workspace/folders/{folder_id}/04_final_output/
-    # For legacy:                master_pipeline/pipeline_workspace/04_final_output/
+    # For per-folder workspaces: master_pipeline/pipeline_workspace/folders/{folder_id}/deliverable/
+    # For legacy:                master_pipeline/pipeline_workspace/deliverable/
     pipeline_ws = Path(__file__).parent / "master_pipeline" / "pipeline_workspace"
     try:
         rel_workspace = workspace.relative_to(pipeline_ws.parent.parent)  # relative to backend/
@@ -153,16 +162,8 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
         action = metadata.get('action', 'unknown')
         face_count = metadata.get('face_count', 0)
         
-        is_blurred = filename in blurred_images
-        is_clean = filename in clean_images
-        
-        if is_blurred:
-            compliance_status = 'blurred'
-            counts['blurred'] += 1
-        elif is_clean:
-            compliance_status = 'clean'
-            counts['clean'] += 1
-        elif action == 'obfuscated':
+        # Determine compliance status from biometric metadata
+        if action == 'obfuscated':
             compliance_status = 'blurred'
             counts['blurred'] += 1
         elif action == 'no_face':
@@ -183,10 +184,14 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
         drive_file_id = filename_to_drive_id.get(lookup_name_for_drive) or filename_to_drive_id.get(filename)
         
         # URL path relative to backend directory
-        relative_path = f"{rel_workspace}/04_final_output/{filename}"
+        relative_path = f"{rel_workspace}/deliverable/{filename}"
         url = f"file://{relative_path}"
+        image_path = str(img_file)
+        
+        # Determine if pipeline blurred this image
+        is_prog_blurred = compliance_status in ("blurred", "processed", "obfuscated")
             
-            if filename in existing_filenames:
+        if filename in existing_filenames:
             db.execute(text('''
                 UPDATE images 
                 SET 
@@ -199,7 +204,9 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                     image_drive_id = COALESCE(image_drive_id, :image_drive_id),
                     url = :url,
                     original_url = :original_url,
-                    processed_url = :processed_url
+                    processed_url = :processed_url,
+                    is_programmatically_blurred = :is_programmatically_blurred,
+                    image_path = :image_path
                 WHERE filename = :filename
             '''), {
                 'filename': filename,
@@ -211,12 +218,14 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                 'url': url,
                 'original_url': relative_path,
                 'processed_url': relative_path,
+                'is_programmatically_blurred': is_prog_blurred,
+                'image_path': image_path,
             })
             counts['updated'] += 1
         else:
             heic_original = heic_conversion_map.get(filename)
             orig_format = "HEIC" if heic_original else None
-            
+
             db.execute(text('''
                 INSERT INTO images (
                     filename, original_filename, original_format,
@@ -224,7 +233,9 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                     original_url, processed_url, is_improper,
                     human_faces_detected, is_using_processed,
                     processing_log, source_drive_folder_id,
-                    image_drive_id, manually_blurred
+                    image_drive_id, manually_blurred,
+                    is_programmatically_blurred, is_manually_modified,
+                    is_duplicate, parent_image, image_path
                 )
                 VALUES (
                     :filename, :original_filename, :original_format,
@@ -232,7 +243,9 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                     :original_url, :processed_url, FALSE,
                     :face_count, TRUE,
                     :processing_log, :source_drive_folder_id,
-                    :image_drive_id, FALSE
+                    :image_drive_id, FALSE,
+                    :is_programmatically_blurred, FALSE,
+                    FALSE, NULL, :image_path
                 )
             '''), {
                 'filename': filename,
@@ -246,9 +259,69 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                 'processing_log': f"Action: {action}, Faces: {face_count}",
                 'source_drive_folder_id': source_fid,
                 'image_drive_id': drive_file_id,
+                'is_programmatically_blurred': is_prog_blurred,
+                'image_path': image_path,
             })
             counts['new'] += 1
             existing_filenames.add(filename)  # prevent duplicates across folders
+    
+    # Now mark duplicates in DB from dedup stats (images not in deliverable but in raw downloads)
+    if duplicate_map:
+        dup_count = 0
+        for dup_filename, parent_filename in duplicate_map.items():
+            # These files are NOT in deliverable (they were excluded), so record them separately
+            if dup_filename not in existing_filenames:
+                # Check if raw file exists on disk
+                raw_path = download_dir / dup_filename
+                if not raw_path.exists():
+                    continue
+                    
+                # Resolve drive metadata
+                lookup_name_for_drive = heic_conversion_map.get(dup_filename, dup_filename)
+                drive_file_id = filename_to_drive_id.get(lookup_name_for_drive) or filename_to_drive_id.get(dup_filename)
+                heic_original = heic_conversion_map.get(dup_filename)
+                orig_format = "HEIC" if heic_original else None
+                
+                relative_dup_path = f"{rel_workspace}/01_downloaded_from_drive/{dup_filename}"
+                dup_url = f"file://{relative_dup_path}"
+
+                db.execute(text('''
+                    INSERT INTO images (
+                        filename, original_filename, original_format,
+                        url, compliance_processed, compliance_status,
+                        original_url, processed_url, is_improper,
+                        human_faces_detected, is_using_processed,
+                        processing_log, source_drive_folder_id,
+                        image_drive_id, manually_blurred,
+                        is_programmatically_blurred, is_manually_modified,
+                        is_duplicate, parent_image, image_path
+                    )
+                    VALUES (
+                        :filename, :original_filename, :original_format,
+                        :url, FALSE, 'duplicate',
+                        :original_url, NULL, FALSE,
+                        0, FALSE,
+                        'Marked as duplicate', :source_drive_folder_id,
+                        :image_drive_id, FALSE,
+                        FALSE, FALSE,
+                        TRUE, :parent_image, :image_path
+                    )
+                '''), {
+                    'filename': dup_filename,
+                    'original_filename': heic_original,
+                    'original_format': orig_format,
+                    'url': dup_url,
+                    'original_url': relative_dup_path,
+                    'source_drive_folder_id': source_fid,
+                    'image_drive_id': drive_file_id,
+                    'parent_image': parent_filename,
+                    'image_path': str(raw_path),
+                })
+                dup_count += 1
+                existing_filenames.add(dup_filename)
+        
+        if dup_count:
+            print(f"   📊 Recorded {dup_count} duplicate images in DB")
     
     return counts
 
@@ -301,7 +374,7 @@ def import_images_from_pipeline():
                           f"Blurred: {counts['blurred']}, Clean: {counts['clean']}")
         
         # ── Check for legacy flat workspace ──
-        legacy_final = pipeline_workspace / "04_final_output"
+        legacy_final = pipeline_workspace / "deliverable"
         if legacy_final.exists() and any(legacy_final.iterdir()):
             if not per_folder_found:
                 print(f"\n📂 Found legacy flat workspace")

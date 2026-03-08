@@ -1,6 +1,5 @@
 import json
 import os
-import shutil
 from datetime import datetime, timezone, date, timedelta
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -14,7 +13,6 @@ from app.models.category import Category
 from app.models.image import Image
 from app.models.annotation import Annotation
 from app.models.annotator_category import AnnotatorCategory
-from app.models.image_assignment import AnnotatorImageAssignment
 from app.schemas.user import UserCreate, UserUpdate, UserResponse, AssignCategoriesRequest
 from app.schemas.category import CategoryResponse
 from app.models.annotation import AnnotationSelection
@@ -27,122 +25,17 @@ from app.schemas.annotation import (
     ReviewTableCell, ReviewTableRow, ReviewTableCategory, ReviewTableResponse,
 )
 from app.services.auth import hash_password
+from app.utils.deliverable import check_and_deliver_image, update_biometric_if_delivered
+from app.models.final_label import FinalLabel
 from pydantic import BaseModel
 
-
-class AssignImagesRequest(BaseModel):
-    count: int  # Number of images to assign
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
 
 # ── Deliverable Images Helper ────────────────────────────────────
-
-BACKEND_DIR = Path(__file__).resolve().parent.parent.parent  # backend/
-PIPELINE_WORKSPACE = BACKEND_DIR / "master_pipeline" / "pipeline_workspace"
-IMAGE_CACHE_DIR = BACKEND_DIR / "image_cache"
-
-
-def _check_and_copy_to_deliverable(image_id: int, db: Session):
-    """
-    After an annotation is approved, check if ALL annotations for this image
-    are now approved. If so, copy the current image version to
-    deliverable_images/{folder_id}/ and update the Image record.
-    
-    The image is only moved to deliverable once the reviewer has approved.
-    """
-    image = db.query(Image).filter(Image.id == image_id).first()
-    if not image:
-        return
-    
-    # Already delivered — skip
-    if image.deliverable_image_path:
-        return
-    
-    # Check if ALL annotations for this image are approved
-    all_annotations = (
-        db.query(Annotation)
-        .filter(
-            Annotation.image_id == image_id,
-            Annotation.status == "completed",
-        )
-        .all()
-    )
-    
-    if not all_annotations:
-        return
-    
-    # Every completed annotation must be approved
-    all_approved = all(a.review_status == "approved" for a in all_annotations)
-    if not all_approved:
-        return
-    
-    # Determine folder_id for the deliverable directory
-    folder_id = image.source_drive_folder_id or "unknown"
-    
-    # Create deliverable directory
-    deliverable_dir = PIPELINE_WORKSPACE / "folders" / folder_id / "deliverable_images"
-    deliverable_dir.mkdir(parents=True, exist_ok=True)
-    
-    # Find the current image file to copy
-    source_bytes = None
-    source_path = None
-    
-    # Priority 1: Image cache (has the latest version - blurred or restored)
-    cache_path = IMAGE_CACHE_DIR / f"{image.id}.jpg"
-    if cache_path.exists() and cache_path.stat().st_size > 0:
-        source_path = cache_path
-    
-    # Priority 2: Annotated blur file
-    if not source_path and image.annotated_blur_url:
-        blur_path = PIPELINE_WORKSPACE / image.annotated_blur_url
-        if blur_path.exists() and blur_path.stat().st_size > 0:
-            source_path = blur_path
-    
-    # Priority 3: Pipeline final output (per-folder)
-    if not source_path:
-        folder_final = PIPELINE_WORKSPACE / "folders" / folder_id / "04_final_output" / image.filename
-        if folder_final.exists() and folder_final.stat().st_size > 0:
-            source_path = folder_final
-    
-    # Priority 4: Search all per-folder workspaces
-    if not source_path:
-        folders_dir = PIPELINE_WORKSPACE / "folders"
-        if folders_dir.is_dir():
-            for fd in sorted(folders_dir.iterdir()):
-                if fd.is_dir():
-                    for sub in ["04_final_output", "03_biometric_processed", "02_unique_images"]:
-                        candidate = fd / sub / image.filename
-                        if candidate.exists() and candidate.stat().st_size > 0:
-                            source_path = candidate
-                            break
-                if source_path:
-                    break
-    
-    if not source_path:
-        print(f"[Deliverable] WARNING: Could not find source image for image_id={image.id} ({image.filename})")
-        return
-    
-    # Copy to deliverable folder
-    dest_path = deliverable_dir / image.filename
-    try:
-        shutil.copy2(str(source_path), str(dest_path))
-    except Exception as e:
-        print(f"[Deliverable] ERROR copying image {image.id}: {e}")
-        return
-    
-    # Determine if the image was modified by the annotator
-    is_modified = bool(image.is_blurred_annotator or image.is_restore_annotator)
-    
-    # Store relative path from pipeline_workspace root
-    relative_path = str(dest_path.relative_to(PIPELINE_WORKSPACE))
-    
-    # Update image record
-    image.deliverable_image_path = relative_path
-    image.is_modified = is_modified
-    db.commit()
-    
-    print(f"[Deliverable] ✅ Image {image.id} ({image.filename}) → {relative_path} (modified={is_modified})")
+# Delegates to app.utils.deliverable for moving images to
+# deliverable/ folder management
 
 
 # ── User Management ──────────────────────────────────────────────
@@ -499,146 +392,6 @@ def assign_categories(
     return {"message": "Categories assigned", "category_ids": payload.category_ids}
 
 
-# ── Image Assignment ──────────────────────────────────────────────
-
-@router.get("/users/{user_id}/images")
-def get_user_image_assignments(
-    user_id: int,
-    db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
-):
-    """Get all images assigned to a user."""
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    assignments = (
-        db.query(AnnotatorImageAssignment)
-        .filter(AnnotatorImageAssignment.user_id == user_id)
-        .options(joinedload(AnnotatorImageAssignment.image))
-        .order_by(AnnotatorImageAssignment.image_id)
-        .all()
-    )
-    
-    return {
-        "user_id": user_id,
-        "username": user.username,
-        "assigned_count": len(assignments),
-        "images": [
-            {
-                "id": a.image.id,
-                "filename": a.image.filename,
-                "url": a.image.url,
-                "assigned_at": a.assigned_at,
-            }
-            for a in assignments
-        ],
-    }
-
-
-@router.post("/users/{user_id}/images/assign")
-def assign_images_to_user(
-    user_id: int,
-    payload: AssignImagesRequest,
-    db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
-):
-    """
-    Assign N unassigned images to a user.
-    Images are assigned in order (lowest ID first).
-    No duplicate assignments - each image can only be assigned to one user.
-    """
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    if user.role != "annotator":
-        raise HTTPException(status_code=400, detail="Can only assign images to annotators")
-    
-    if payload.count <= 0:
-        raise HTTPException(status_code=400, detail="Count must be greater than 0")
-    
-    # Get IDs of already assigned images
-    assigned_image_ids = set(
-        row.image_id
-        for row in db.query(AnnotatorImageAssignment.image_id).all()
-    )
-    
-    # Get unassigned images (ordered by ID)
-    all_images = db.query(Image).order_by(Image.id).all()
-    unassigned_images = [img for img in all_images if img.id not in assigned_image_ids]
-    
-    if len(unassigned_images) == 0:
-        raise HTTPException(status_code=400, detail="No unassigned images available")
-    
-    # Take the requested count (or fewer if not enough available)
-    to_assign = unassigned_images[:payload.count]
-    
-    # Create assignments
-    for img in to_assign:
-        db.add(AnnotatorImageAssignment(user_id=user_id, image_id=img.id))
-    
-    db.commit()
-    
-    return {
-        "message": f"Assigned {len(to_assign)} images to {user.username}",
-        "assigned_count": len(to_assign),
-        "requested_count": payload.count,
-        "remaining_unassigned": len(unassigned_images) - len(to_assign),
-    }
-
-
-@router.delete("/users/{user_id}/images/unassign")
-def unassign_all_images_from_user(
-    user_id: int,
-    db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
-):
-    """Remove all image assignments from a user."""
-    user = db.query(User).filter(User.id == user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    
-    count = db.query(AnnotatorImageAssignment).filter(
-        AnnotatorImageAssignment.user_id == user_id
-    ).delete()
-    db.commit()
-    
-    return {"message": f"Unassigned {count} images from {user.username}", "count": count}
-
-
-@router.get("/images/assignments")
-def get_all_image_assignments(
-    db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
-):
-    """Get assignment summary for all images."""
-    total_images = db.query(Image).count()
-    
-    assignments = (
-        db.query(AnnotatorImageAssignment)
-        .options(joinedload(AnnotatorImageAssignment.user))
-        .all()
-    )
-    
-    # Group by user
-    by_user = {}
-    for a in assignments:
-        if a.user_id not in by_user:
-            by_user[a.user_id] = {
-                "user_id": a.user_id,
-                "username": a.user.username,
-                "count": 0,
-            }
-        by_user[a.user_id]["count"] += 1
-    
-    return {
-        "total_images": total_images,
-        "assigned_count": len(assignments),
-        "unassigned_count": total_images - len(assignments),
-        "by_user": list(by_user.values()),
-    }
-
-
 # ── Categories ────────────────────────────────────────────────────
 
 @router.get("/categories", response_model=list[CategoryResponse])
@@ -698,62 +451,193 @@ def list_images(
 
     images = query.all()
 
-    # Compute summary stats (unfiltered) for the filter badges
-    total = db.query(Image).count()
-    blurred_count = db.query(Image).filter(
-        or_(
-            Image.compliance_status.in_(["blurred", "processed", "obfuscated"]),
-            Image.manually_blurred == True,
-        )
-    ).count()
-    clean_count = db.query(Image).filter(
-        Image.compliance_status == "clean",
-        or_(Image.manually_blurred == False, Image.manually_blurred.is_(None)),
-    ).count()
-    manually_blurred_count = db.query(Image).filter(Image.manually_blurred == True).count()
-    ai_count = db.query(Image).filter(Image.is_ai_generated == True).count()
-    human_visible_count = db.query(Image).filter(Image.human_visible == True).count()
-    improper_count = db.query(Image).filter(Image.is_improper == True).count()
-    delivered_count = db.query(Image).filter(Image.deliverable_image_path.isnot(None)).count()
+    # Compute summary stats (unfiltered) in a SINGLE aggregate query (optimized from 8 → 1)
+    from sqlalchemy import case
+    summary_row = db.query(
+        func.count().label("total"),
+        func.sum(case(
+            (or_(
+                Image.compliance_status.in_(["blurred", "processed", "obfuscated"]),
+                Image.manually_blurred == True,
+            ), 1), else_=0
+        )).label("blurred"),
+        func.sum(case(
+            (and_(
+                Image.compliance_status == "clean",
+                or_(Image.manually_blurred == False, Image.manually_blurred.is_(None)),
+            ), 1), else_=0
+        )).label("clean"),
+        func.sum(case((Image.manually_blurred == True, 1), else_=0)).label("manually_blurred"),
+        func.sum(case((Image.is_ai_generated == True, 1), else_=0)).label("ai_generated"),
+        func.sum(case((Image.human_visible == True, 1), else_=0)).label("human_visible"),
+        func.sum(case((Image.is_improper == True, 1), else_=0)).label("improper"),
+        func.sum(case((Image.deliverable_image_path.isnot(None), 1), else_=0)).label("delivered"),
+    ).one()
+
+    # ── Batch-load label data for all images ──────────────────────
+    from collections import defaultdict
+
+    # Arbiter label mappings (same as annotator.py)
+    _DB_CAT_TO_ARBITER = {
+        "Lighting Variation": "lighting",
+        "Angle & Perspective Variation": "viewpoint",
+        "Environmental Context Variation": "environment",
+        "Occlusion & Partial Visibility": "occlusion",
+        "Activity & Motion": "activity",
+        "Multi-Pet Disambiguation": "multipet",
+    }
+    _ARBITER_LABEL_TO_OPTION = {
+        "dusk_dawn": "Dusk-dawn lighting",
+        "harsh_sunlight": "Harsh outdoor sunlight with shadows",
+        "low_light": "Low light conditions",
+        "well_lit": "Well-lit conditions (typical)",
+        "front_eye_level": "Front-facing at eye level (typical)",
+        "ground_level": "Ground-level view",
+        "no_head": "No head showing",
+        "head_only": "Partial view (head only)",
+        "top_down": "Top-down view",
+        "car_carrier": "In car-carrier",
+        "indoor": "Indoor setting (typical)",
+        "outdoor_dirt": "Outdoor dirt road",
+        "snow": "Snow environment",
+        "vet_clinic": "Vet clinic",
+        "yard_complex": "Yard with a complex background",
+        "behind_furniture": "Behind furniture (face only)",
+        "full_body": "Full-body, unobstructed (typical)",
+        "under_blanket": "Partially hidden under a blanket",
+        "peeking_box": "Peeking out of box-carrier",
+        "toy_obscuring": "Toy obscuring part of body",
+        "eating_drinking": "Eating-drinking",
+        "jumping": "Jumping to catch toy",
+        "playing": "Playing with another pet",
+        "running": "Running with motion blur",
+        "sitting_posed": "Sitting still-posed (typical)",
+        "sleeping": "Sleeping-curled up",
+        "pet_with_lookalike": "Pet with breed lookalike",
+        "single_pet": "Single pet (typical)",
+        "three_same": "Three pets of same breed",
+        "two_similar": "Two similar-looking pets together",
+        "None": "None of the Above",
+    }
+
+    # Load all categories
+    all_categories = db.query(Category).options(joinedload(Category.options)).order_by(Category.display_order).all()
+    cat_by_id = {c.id: c for c in all_categories}
+
+    # Build option id → label lookup
+    option_label_map = {}
+    for cat in all_categories:
+        for o in cat.options:
+            option_label_map[o.id] = o.label
+
+    # Batch load all completed annotations with selections
+    image_ids = [img.id for img in images]
+    all_annotations = (
+        db.query(Annotation)
+        .filter(Annotation.image_id.in_(image_ids), Annotation.status == "completed")
+        .options(joinedload(Annotation.selections))
+        .all()
+    ) if image_ids else []
+
+    # Index annotations by image_id
+    anns_by_image = defaultdict(list)
+    for ann in all_annotations:
+        anns_by_image[ann.image_id].append(ann)
+
+    # Build per-image label data
+    def _build_labels(img):
+        """Resolve labels: human annotations take priority, then AI predictions."""
+        category_labels = {}   # cat_id → [label strings]
+        label_source = {}      # cat_id → "human" | "ai" | "approved"
+        annotation_status = {} # cat_id → status string
+
+        # Human annotations
+        img_anns = anns_by_image.get(img.id, [])
+        for ann in img_anns:
+            cat = cat_by_id.get(ann.category_id)
+            if not cat:
+                continue
+            selected_labels = [option_label_map.get(s.option_id, "") for s in ann.selections]
+            selected_labels = [l for l in selected_labels if l]
+            if selected_labels:
+                category_labels[str(ann.category_id)] = selected_labels
+                if ann.review_status == "approved":
+                    label_source[str(ann.category_id)] = "approved"
+                    annotation_status[str(ann.category_id)] = "approved"
+                elif ann.review_status == "rework_requested":
+                    label_source[str(ann.category_id)] = "rework"
+                    annotation_status[str(ann.category_id)] = "rework"
+                else:
+                    label_source[str(ann.category_id)] = "human"
+                    annotation_status[str(ann.category_id)] = "completed"
+
+        # AI predictions for remaining categories
+        arbiter_labels = img.arbiter_labels or {}
+        if arbiter_labels:
+            for cat in all_categories:
+                if str(cat.id) in category_labels:
+                    continue  # Human label takes priority
+                arb_key = _DB_CAT_TO_ARBITER.get(cat.name)
+                if arb_key and arb_key in arbiter_labels:
+                    pred_data = arbiter_labels[arb_key]
+                    pred = pred_data.get("final", pred_data) if isinstance(pred_data, dict) else str(pred_data) if pred_data else None
+                    if pred:
+                        option_label = _ARBITER_LABEL_TO_OPTION.get(pred)
+                        if option_label:
+                            category_labels[str(cat.id)] = [option_label]
+                            label_source[str(cat.id)] = "ai"
+                            annotation_status[str(cat.id)] = "ai_predicted"
+
+        return category_labels, label_source, annotation_status
+
+    images_out = []
+    for img in images:
+        cat_labels, lbl_source, ann_status = _build_labels(img)
+        images_out.append({
+            "id": img.id,
+            "filename": img.filename,
+            "url": img.url,
+            "created_at": img.created_at,
+            "compliance_status": img.compliance_status,
+            "manually_blurred": img.manually_blurred or False,
+            "is_ai_generated": img.is_ai_generated or False,
+            "human_visible": img.human_visible,
+            "is_improper": img.is_improper or False,
+            "human_faces_detected": img.human_faces_detected or 0,
+            "is_using_processed": img.is_using_processed if img.is_using_processed is not None else True,
+            "is_blurred": (img.manually_blurred or False) or (
+                (img.is_using_processed is not False) and
+                (img.compliance_status or "") in ("blurred", "processed", "obfuscated")
+            ),
+            "source_drive_folder_id": img.source_drive_folder_id,
+            "image_drive_id": img.image_drive_id,
+            "is_blurred_annotator": img.is_blurred_annotator or False,
+            "is_restore_annotator": img.is_restore_annotator or False,
+            "deliverable_image_path": img.deliverable_image_path,
+            "is_manually_modified": img.is_manually_modified,
+            # Label data
+            "category_labels": cat_labels,
+            "category_label_source": lbl_source,
+            "annotation_status": ann_status,
+        })
 
     return {
         "summary": {
-            "total": total,
-            "blurred": blurred_count,
-            "clean": clean_count,
-            "manually_blurred": manually_blurred_count,
-            "ai_generated": ai_count,
-            "human_visible": human_visible_count,
-            "improper": improper_count,
-            "delivered": delivered_count,
+            "total": summary_row.total or 0,
+            "blurred": summary_row.blurred or 0,
+            "clean": summary_row.clean or 0,
+            "manually_blurred": summary_row.manually_blurred or 0,
+            "ai_generated": summary_row.ai_generated or 0,
+            "human_visible": summary_row.human_visible or 0,
+            "improper": summary_row.improper or 0,
+            "delivered": summary_row.delivered or 0,
         },
-        "total": len(images),
-        "images": [
-            {
-                "id": img.id,
-                "filename": img.filename,
-                "url": img.url,
-                "created_at": img.created_at,
-                "compliance_status": img.compliance_status,
-                "manually_blurred": img.manually_blurred or False,
-                "is_ai_generated": img.is_ai_generated or False,
-                "human_visible": img.human_visible,
-                "is_improper": img.is_improper or False,
-                "human_faces_detected": img.human_faces_detected or 0,
-                "is_using_processed": img.is_using_processed if img.is_using_processed is not None else True,
-                "is_blurred": (img.manually_blurred or False) or (
-                    (img.is_using_processed is not False) and
-                    (img.compliance_status or "") in ("blurred", "processed", "obfuscated")
-                ),
-                "source_drive_folder_id": img.source_drive_folder_id,
-                "image_drive_id": img.image_drive_id,
-                "is_blurred_annotator": img.is_blurred_annotator or False,
-                "is_restore_annotator": img.is_restore_annotator or False,
-                "deliverable_image_path": img.deliverable_image_path,
-                "is_modified": img.is_modified,
-            }
-        for img in images
+        "total": len(images_out),
+        "categories": [
+            {"id": c.id, "name": c.name}
+            for c in all_categories
         ],
+        "images": images_out,
     }
 
 
@@ -787,7 +671,7 @@ def get_image_status(
         "is_blurred_annotator": img.is_blurred_annotator or False,
         "is_restore_annotator": img.is_restore_annotator or False,
         "deliverable_image_path": img.deliverable_image_path,
-        "is_modified": img.is_modified,
+        "is_manually_modified": img.is_manually_modified,
     }
 
 
@@ -1165,6 +1049,7 @@ def review_table(
 
             rows.append(ReviewTableRow(
                 image_id=img_id,
+                image_drive_id=img.image_drive_id,
                 image_url=img.url,
                 image_filename=img.filename,
                 annotations=entry["annotations"],
@@ -1177,7 +1062,7 @@ def review_table(
                 is_blurred_annotator=img.is_blurred_annotator or False,
                 is_restore_annotator=img.is_restore_annotator or False,
                 deliverable_image_path=img.deliverable_image_path,
-                is_modified=img.is_modified,
+                is_manually_modified=img.is_manually_modified,
             ))
 
     # All categories for column headers
@@ -1234,11 +1119,11 @@ def review_stats(
     delivered = db.query(Image).filter(Image.deliverable_image_path.isnot(None)).count()
     delivered_modified = db.query(Image).filter(
         Image.deliverable_image_path.isnot(None),
-        Image.is_modified == True,
+        Image.is_manually_modified == True,
     ).count()
     delivered_original = db.query(Image).filter(
         Image.deliverable_image_path.isnot(None),
-        Image.is_modified == False,
+        Image.is_manually_modified == False,
     ).count()
 
     return {
@@ -1270,7 +1155,7 @@ def deliverable_stats(
         if fid not in folder_stats:
             folder_stats[fid] = {"folder_id": fid, "total": 0, "modified": 0, "original": 0}
         folder_stats[fid]["total"] += 1
-        if img.is_modified:
+        if img.is_manually_modified:
             folder_stats[fid]["modified"] += 1
         else:
             folder_stats[fid]["original"] += 1
@@ -1306,7 +1191,7 @@ def approve_annotation(
     db.commit()
 
     # Check if all annotations for this image are now approved → copy to deliverable
-    _check_and_copy_to_deliverable(annotation.image_id, db)
+    check_and_deliver_image(annotation.image_id, db)
 
     return {"message": "Annotation approved", "annotation_id": annotation_id}
 
@@ -1343,7 +1228,7 @@ def update_and_approve_annotation(
     db.commit()
 
     # Check if all annotations for this image are now approved → copy to deliverable
-    _check_and_copy_to_deliverable(annotation.image_id, db)
+    check_and_deliver_image(annotation.image_id, db)
 
     return {"message": "Annotation updated and approved", "annotation_id": annotation_id}
 
@@ -2080,6 +1965,19 @@ def get_photo_registry(
     # ── 1. Build duplicate map from cluster folders ──
     duplicate_map = {}      # duplicate_filename → original_filename
     for ws_root in workspace_roots:
+        # Load duplicate info from deduplication_stats.json (DB-driven approach)
+        dedup_stats_path = ws_root / "deduplication_stats.json"
+        if dedup_stats_path.exists():
+            try:
+                import json as _json
+                with open(dedup_stats_path, 'r') as f:
+                    dedup_stats = _json.load(f)
+                dm = dedup_stats.get('duplicate_map', {})
+                duplicate_map.update(dm)
+            except Exception:
+                pass
+
+        # Legacy: scan cluster folders if they exist
         clusters_dir = ws_root / "02_duplicate_clusters"
         if clusters_dir.is_dir():
             for cluster_folder in sorted(clusters_dir.iterdir()):
@@ -2126,9 +2024,9 @@ def get_photo_registry(
                 if f.is_file() and f.suffix.lower() in image_exts:
                     all_disk_files.add(f.name)
 
-        ws_uq = ws_root / "02_unique_images"
-        if ws_uq.is_dir():
-            for f in ws_uq.iterdir():
+        ws_del = ws_root / "deliverable"
+        if ws_del.is_dir():
+            for f in ws_del.iterdir():
                 if f.is_dir() or f.name.startswith('_'):
                     continue
                 if f.is_file() and f.suffix.lower() in image_exts:
@@ -2253,7 +2151,6 @@ def get_photo_registry(
         # Paths (search across all workspace roots)
         original_path = (
             _find_file_path("01_downloaded_from_drive", filename)
-            or _find_file_path("02_unique_images", filename)
             or ""
         )
 
@@ -2268,9 +2165,7 @@ def get_photo_registry(
                     break
 
         processed_path = (
-            _find_file_path("04_final_output", filename)
-            or _find_file_path(os.path.join("03_biometric_processed", "blurred"), filename)
-            or _find_file_path(os.path.join("03_biometric_processed", "clean"), filename)
+            _find_file_path("deliverable", filename)
             or ""
         )
 
@@ -2285,7 +2180,7 @@ def get_photo_registry(
             if manually_blurred and db_img.annotated_blur_url:
                 annotated_blur_path = db_img.annotated_blur_url
         else:
-            pipeline_blurred = _find_file_path(os.path.join("03_biometric_processed", "blurred"), filename) is not None
+            pipeline_blurred = bool(db_img and db_img.is_programmatically_blurred)
 
         if not annotated_blur_path:
             for ws_root in workspace_roots:
@@ -2352,7 +2247,7 @@ def get_photo_registry(
             "is_restore_annotator": (db_img.is_restore_annotator or False) if db_img else False,
             # Deliverable image tracking
             "deliverable_image_path": db_img.deliverable_image_path if db_img else None,
-            "is_modified": db_img.is_modified if db_img else None,
+            "is_manually_modified": db_img.is_manually_modified if db_img else None,
         }
         registry.append(entry)
 
@@ -2412,5 +2307,129 @@ def get_photo_registry(
         "per_page": per_page,
         "total_pages": (total + per_page - 1) // per_page,
         "data": page_data,
+    }
+
+
+# ── Final Labels ────────────────────────────────────────────────
+
+@router.get("/final-labels")
+def get_final_labels(
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    search: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """
+    Get the final_labels table — one row per image with reviewer-approved
+    labels for each category, plus reviewer and annotator names.
+    """
+    query = (
+        db.query(FinalLabel)
+        .join(Image, Image.id == FinalLabel.image_id)
+    )
+
+    if search:
+        query = query.filter(
+            or_(
+                Image.filename.ilike(f"%{search}%"),
+                Image.image_drive_id.ilike(f"%{search}%"),
+            )
+        )
+
+    total = query.count()
+    rows = (
+        query.order_by(FinalLabel.approved_at.desc().nullslast(), FinalLabel.id)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+
+    result = []
+    for fl in rows:
+        img = db.query(Image).filter(Image.id == fl.image_id).first()
+        result.append({
+            "image_id": fl.image_id,
+            "image_drive_id": img.image_drive_id if img else None,
+            "filename": img.filename if img else None,
+            "image_path": img.image_path if img else None,
+            "lighting_variation": fl.lighting_variation,
+            "angle_perspective_variation": fl.angle_perspective_variation,
+            "environmental_context_variation": fl.environmental_context_variation,
+            "occlusion_partial_visibility": fl.occlusion_partial_visibility,
+            "activity_motion": fl.activity_motion,
+            "multi_pet_disambiguation": fl.multi_pet_disambiguation,
+            "reviewer_name": fl.reviewer_name,
+            "annotator_name": fl.annotator_name,
+            "approved_at": fl.approved_at,
+        })
+
+    return {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "rows": result,
+    }
+
+
+@router.post("/final-labels/rebuild")
+def rebuild_final_labels(
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """
+    Rebuild the entire final_labels table from approved annotations.
+    Also backfills is_manually_modified, is_programmatically_blurred,
+    is_duplicate, parent_image, and image_path on the images table.
+    """
+    from app.utils.deliverable import populate_final_label, PIPELINE_WORKSPACE
+
+    # 1. Find all images that have ALL annotations approved
+    all_images = db.query(Image).all()
+    populated = 0
+    backfilled = 0
+
+    for img in all_images:
+        completed_annotations = (
+            db.query(Annotation)
+            .filter(
+                Annotation.image_id == img.id,
+                Annotation.status == "completed",
+            )
+            .all()
+        )
+
+        if completed_annotations and all(a.review_status == "approved" for a in completed_annotations):
+            populate_final_label(img.id, db)
+            populated += 1
+
+        # 2. Backfill image status columns
+        # is_manually_modified: True if annotator/reviewer blurred or restored the image
+        img.is_manually_modified = bool(
+            img.is_blurred_annotator or img.is_restore_annotator or img.manually_blurred
+        )
+
+        # is_programmatically_blurred: True if pipeline blurred (biometric compliance)
+        img.is_programmatically_blurred = bool(
+            img.compliance_status in ("blurred", "processed", "obfuscated")
+            and not img.manually_blurred
+        )
+
+        # image_path: resolve current file path
+        folder_id = img.source_drive_folder_id or "unknown"
+        for sub in ["deliverable", "01_downloaded_from_drive"]:
+            candidate = PIPELINE_WORKSPACE / "folders" / folder_id / sub / img.filename
+            if candidate.exists():
+                img.image_path = str(candidate)
+                break
+
+        backfilled += 1
+
+    db.commit()
+
+    return {
+        "message": f"Rebuilt final_labels for {populated} images, backfilled {backfilled} image records",
+        "final_labels_count": populated,
+        "images_backfilled": backfilled,
     }
 

@@ -305,7 +305,7 @@ pillow_heif.register_heif_opener(); \
 from PIL import Image; \
 ws = Path('master_pipeline/pipeline_workspace'); \
 total = 0; \
-for d in ['01_downloaded_from_drive', '02_unique_images']: \
+for d in ['01_downloaded_from_drive', 'deliverable']: \
     folder = ws / d; \
     if not folder.is_dir(): continue; \
     orig_dir = folder / '_heic_originals'; \
@@ -366,14 +366,14 @@ deduplicate-images: ## Remove duplicate images only
 	@cd $(BACKEND_DIR)/master_pipeline && \
 		source ../.venv/bin/activate && \
 		python master_pipeline.py --deduplicate
-	@echo "$(GREEN)✅ Unique images saved to pipeline_workspace/02_unique_images/$(NC)"
+	@echo "$(GREEN)✅ Deduplication complete — duplicates marked in DB$(NC)"
 
 process-biometric: ## Process images through biometric compliance pipeline only
 	@echo "$(CYAN)🔐 Processing images through biometric compliance...$(NC)"
 	@cd $(BACKEND_DIR)/master_pipeline && \
 		source ../.venv/bin/activate && \
 		python master_pipeline.py --pipeline
-	@echo "$(GREEN)✅ Processed images saved to pipeline_workspace/04_final_output/$(NC)"
+	@echo "$(GREEN)✅ Processed images saved to pipeline_workspace/deliverable/$(NC)"
 
 import-images: ## Import processed images to database
 	@echo "$(CYAN)📥 Importing processed images to database...$(NC)"
@@ -440,14 +440,14 @@ pipeline-status: ## Show pipeline workspace status
 	else \
 		echo "  📥 Downloaded: 0 images (folder doesn't exist)"; \
 	fi
-	@if [ -d "$(BACKEND_DIR)/master_pipeline/pipeline_workspace/02_unique_images" ]; then \
-		count=$$(find $(BACKEND_DIR)/master_pipeline/pipeline_workspace/02_unique_images -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" \) 2>/dev/null | wc -l | tr -d ' '); \
+	@if [ -d "$(BACKEND_DIR)/master_pipeline/pipeline_workspace/deliverable" ]; then \
+		count=$$(find $(BACKEND_DIR)/master_pipeline/pipeline_workspace/deliverable -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" \) 2>/dev/null | wc -l | tr -d ' '); \
 		echo "  🔍 Unique:     $$count images"; \
 	else \
 		echo "  🔍 Unique:     0 images (folder doesn't exist)"; \
 	fi
-	@if [ -d "$(BACKEND_DIR)/master_pipeline/pipeline_workspace/04_final_output" ]; then \
-		count=$$(find $(BACKEND_DIR)/master_pipeline/pipeline_workspace/04_final_output -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" \) 2>/dev/null | wc -l | tr -d ' '); \
+	@if [ -d "$(BACKEND_DIR)/master_pipeline/pipeline_workspace/deliverable" ]; then \
+		count=$$(find $(BACKEND_DIR)/master_pipeline/pipeline_workspace/deliverable -type f \( -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.png" \) 2>/dev/null | wc -l | tr -d ' '); \
 		echo "  ✅ Processed:  $$count images"; \
 	else \
 		echo "  ✅ Processed:  0 images (folder doesn't exist)"; \

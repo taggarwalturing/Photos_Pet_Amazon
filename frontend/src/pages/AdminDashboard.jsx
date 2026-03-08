@@ -497,10 +497,10 @@ function UsersTab() {
           <div>
             <h3 className="text-sm font-bold text-gray-900">📊 Daily Annotations (Images per Day)</h3>
             <p className="text-xs text-gray-500 mt-0.5">Distinct images annotated by each annotator per day</p>
-          </div>
+              </div>
           <div className="flex items-center gap-2">
             {[7, 14, 30].map((d) => (
-              <button
+                <button
                 key={d}
                 onClick={() => setDailyDays(d)}
                 className={`px-3 py-1 text-xs font-medium rounded-full transition cursor-pointer ${
@@ -510,10 +510,10 @@ function UsersTab() {
                 }`}
               >
                 {d}d
-              </button>
-            ))}
-          </div>
-        </div>
+                </button>
+              ))}
+            </div>
+            </div>
         {dailyStats && dailyStats.date_range?.length > 0 ? (
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
@@ -542,7 +542,7 @@ function UsersTab() {
                         <div className="flex items-center gap-2">
                           <Avatar name={username} size="sm" />
                           {username}
-                        </div>
+          </div>
                       </td>
                       {dailyStats.date_range.map((d) => {
                         const count = data.daily[d] || 0;
@@ -579,10 +579,10 @@ function UsersTab() {
                 )}
               </tbody>
             </table>
-          </div>
+        </div>
         ) : (
           <div className="px-5 py-8 text-center text-gray-400 text-sm">No daily stats available</div>
-        )}
+      )}
       </div>
     </div>
   );
@@ -858,6 +858,7 @@ function ImagesTab() {
 
   const images = data?.images || [];
   const summary = data?.summary || {};
+  const categories = data?.categories || [];
   const totalPages = Math.max(1, Math.ceil(images.length / imagesPerPage));
   const safePage = Math.min(page, totalPages);
   const paginatedImages = images.slice((safePage - 1) * imagesPerPage, safePage * imagesPerPage);
@@ -905,7 +906,9 @@ function ImagesTab() {
       badges.push({ label: `${img.human_faces_detected} face${img.human_faces_detected > 1 ? 's' : ''}`, className: 'bg-sky-500' });
     }
     if (img.deliverable_image_path) {
-      badges.push({ label: img.is_modified ? '📦 Modified' : '📦 Original', className: img.is_modified ? 'bg-teal-600' : 'bg-teal-500' });
+      const isBlurredDelivery = img.deliverable_image_path.includes('/blurred/');
+      const delivLabel = isBlurredDelivery ? '🔒 Blurred' : '✅ Clean';
+      badges.push({ label: img.is_manually_modified ? `${delivLabel} (Modified)` : delivLabel, className: isBlurredDelivery ? 'bg-amber-600' : 'bg-teal-500' });
     }
     if (img.is_blurred_annotator) {
       badges.push({ label: '🖌 Annotator Blurred', className: 'bg-purple-500' });
@@ -977,6 +980,8 @@ function ImagesTab() {
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
           {paginatedImages.map((img) => {
             const badges = getStatusBadges(img);
+            const catLabels = img.category_labels || {};
+            const catSources = img.category_label_source || {};
             return (
               <div
                 key={img.id}
@@ -997,8 +1002,51 @@ function ImagesTab() {
                         <span key={i} className={`px-1.5 py-0.5 text-[9px] font-bold text-white rounded-md shadow-sm ${b.className}`}>
                           {b.label}
                         </span>
-        ))}
-      </div>
+                      ))}
+                    </div>
+                  )}
+                  {/* Dark gradient for label readability */}
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none" />
+                  {/* Labels overlay – bottom */}
+                  {categories.length > 0 && (
+                    <div className="absolute bottom-0 left-0 right-0 p-2">
+                      <div className="flex flex-wrap gap-1">
+                        {categories.map((cat) => {
+                          const labels = catLabels[String(cat.id)] || [];
+                          const source = catSources[String(cat.id)];
+                          if (labels.length === 0) {
+                            return (
+                              <span
+                                key={cat.id}
+                                className="px-1.5 py-0.5 bg-gray-900/60 text-gray-400 text-[9px] rounded-md backdrop-blur-sm border border-gray-600/50"
+                                title={`${cat.name}: Not set`}
+                              >
+                                {cat.name.split(' ')[0]}: <span className="italic">?</span>
+                              </span>
+                            );
+                          }
+                          return labels.map((label, i) => (
+                            <span
+                              key={`${cat.id}-${i}`}
+                              className={`px-1.5 py-0.5 text-[9px] font-medium rounded-md backdrop-blur-sm border ${
+                                source === 'approved'
+                                  ? 'bg-emerald-500/80 text-white border-emerald-400'
+                                  : source === 'rework'
+                                    ? 'bg-orange-500/80 text-white border-orange-400'
+                                    : source === 'ai'
+                                      ? 'bg-purple-500/80 text-white border-purple-400'
+                                      : label === 'None of the Above'
+                                        ? 'bg-gray-700/80 text-gray-300 border-gray-600'
+                                        : 'bg-indigo-500/80 text-white border-indigo-400'
+                              }`}
+                              title={`${cat.name}${source === 'ai' ? ' (AI)' : source === 'approved' ? ' (Approved)' : source === 'rework' ? ' (Rework)' : ''}`}
+                            >
+                              {label}
+                            </span>
+                          ));
+                        })}
+                      </div>
+                    </div>
                   )}
                   {/* Hover overlay */}
                   <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-all flex items-center justify-center">
@@ -1009,6 +1057,9 @@ function ImagesTab() {
                   </div>
                 </div>
                 <div className="px-3 py-2">
+                  {img.image_drive_id && (
+                    <p className="text-[9px] text-blue-500 font-mono truncate" title={img.image_drive_id}>{img.image_drive_id}</p>
+                  )}
                   <p className="text-xs text-gray-600 truncate font-medium" title={img.filename}>{img.filename}</p>
                 </div>
               </div>
@@ -1262,6 +1313,9 @@ function ImageLightbox({ img, images, idx, getStatusBadges, onClose, onNavigate,
       <div className="shrink-0 px-6 py-3" onClick={(e) => e.stopPropagation()}>
         <div className="max-w-5xl mx-auto bg-gray-900/80 rounded-lg p-3 flex items-center justify-between backdrop-blur-sm">
           <div className="flex items-center gap-3 min-w-0">
+            {img.image_drive_id && (
+              <span className="text-blue-300 text-[10px] font-mono shrink-0" title={img.image_drive_id}>{img.image_drive_id.slice(0, 20)}…</span>
+            )}
             <span className="text-white text-sm font-medium truncate">{img.filename}</span>
             <div className="flex gap-1.5">
               {getStatusBadges(img).map((b, i) => (
@@ -1542,6 +1596,9 @@ function ImageDetailModal({ row, categories, tableImages, onApprove, onSaveEdits
         <div className="w-[65%] bg-gray-900 flex flex-col min-h-0">
           <div className="flex items-center justify-between px-6 py-3 shrink-0">
             <div className="flex items-center gap-3 min-w-0">
+              {row.image_drive_id && (
+                <span className="text-blue-300 text-[10px] font-mono shrink-0" title={row.image_drive_id}>{row.image_drive_id.slice(0, 20)}…</span>
+              )}
               <span className="text-white/80 text-sm font-medium truncate">{row.image_filename}</span>
               {row.reviewed_by_username && (
                 <span className="flex items-center gap-1.5 px-2.5 py-1 bg-green-500/20 text-green-300 text-[11px] font-medium rounded-full border border-green-500/30 shrink-0">
@@ -2283,14 +2340,19 @@ function ReviewTab() {
                             </span>
                           )}
                           {row.deliverable_image_path && (
-                            <span className="px-2 py-1 bg-teal-500 text-white text-xs font-bold rounded-lg shadow-lg" title={`Delivered: ${row.deliverable_image_path}`}>
-                              📦
+                            <span className={`px-2 py-1 text-white text-xs font-bold rounded-lg shadow-lg ${row.deliverable_image_path.includes('/blurred/') ? 'bg-amber-600' : 'bg-teal-500'}`} title={`Delivered: ${row.deliverable_image_path}`}>
+                              {row.deliverable_image_path.includes('/blurred/') ? '🔒' : '✅'}
                             </span>
                           )}
                               </div>
 
-                        {/* Filename - top right */}
-                        <div className="absolute top-3 right-3 max-w-[50%]">
+                        {/* Image ID + Filename - top right */}
+                        <div className="absolute top-3 right-3 max-w-[60%] flex flex-col items-end gap-0.5">
+                          {row.image_drive_id && (
+                            <span className="px-2 py-0.5 bg-blue-600/70 text-white text-[9px] font-mono rounded-md backdrop-blur-sm truncate block max-w-full" title={row.image_drive_id}>
+                              {row.image_drive_id.slice(0, 16)}…
+                            </span>
+                          )}
                           <span className="px-2 py-1 bg-black/50 text-white text-[10px] font-medium rounded-lg backdrop-blur-sm truncate block">
                             {row.image_filename}
                           </span>

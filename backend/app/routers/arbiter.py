@@ -40,7 +40,7 @@ router = APIRouter(prefix="/admin/arbiter", tags=["Arbiter Classifier"])
 # ─── Directories ──────────────────────────────────────────────
 ARBITER_DIR = Path(__file__).parent.parent.parent / "arbiter_classifier"
 PIPELINE_WORKSPACE = Path(__file__).parent.parent.parent / "master_pipeline" / "pipeline_workspace"
-FINAL_OUTPUT_DIR = PIPELINE_WORKSPACE / "04_final_output"  # legacy fallback
+FINAL_OUTPUT_DIR = PIPELINE_WORKSPACE / "deliverable"  # legacy fallback
 RESULTS_DIR = ARBITER_DIR / "results"
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
 RESULTS_FILE = RESULTS_DIR / "final_images_results.json"
@@ -62,7 +62,7 @@ def _get_all_final_images() -> list:
         for fd in sorted(folders_dir.iterdir()):
             if not fd.is_dir():
                 continue
-            final_dir = fd / "04_final_output"
+            final_dir = fd / "deliverable"
             if final_dir.exists():
                 for p in final_dir.iterdir():
                     if p.is_file() and p.suffix.lower() in supported_exts and p.name not in seen_names:
@@ -372,7 +372,7 @@ def _save_results_and_errors(results, failed_images, cfg):
             "arbiter_model": cfg["arbiter_model"],
             "total_images": len(results),
             "failed_count": len(failed_images),
-            "source": "04_final_output",
+            "source": "deliverable",
             "last_updated": datetime.now().isoformat(),
         },
     }
@@ -1303,6 +1303,7 @@ def get_prediction_tracking(
 
         row = {
             "image_id": img.id,
+            "image_drive_id": img.image_drive_id,
             "filename": img.filename,
             "classified_at": img.arbiter_classified_at.isoformat() if img.arbiter_classified_at else None,
             "categories": category_comparisons,

@@ -610,6 +610,11 @@ export default function ImageAnnotationPage() {
             </button>
             <div>
               <div className="flex items-center gap-2">
+                {data?.image_drive_id && (
+                  <span className="text-[10px] font-mono text-blue-500 bg-blue-50 px-2 py-0.5 rounded-md" title={data.image_drive_id}>
+                    {data.image_drive_id.slice(0, 16)}…
+                  </span>
+                )}
                 <h1 className="font-bold text-gray-900">{data?.filename}</h1>
                 {isImproper && <span className="px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-semibold">Improper</span>}
                 {isReworkMode && !isImproper && <span className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded-full text-xs font-semibold">Rework</span>}

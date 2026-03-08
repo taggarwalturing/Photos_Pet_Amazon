@@ -31,9 +31,7 @@ class IncrementalPipelineImporter:
         
         # Folder paths
         self.downloaded_dir = self.workspace / "01_downloaded_from_drive"
-        self.unique_dir = self.workspace / "02_unique_images"
-        self.processed_dir = self.workspace / "03_biometric_processed"
-        self.final_output_dir = self.workspace / "04_final_output"
+        self.final_output_dir = self.workspace / "deliverable"
         
         # State tracking file
         self.state_file = self.workspace / "pipeline_state.json"
@@ -256,7 +254,7 @@ class IncrementalPipelineImporter:
                     continue
                 
                 # Build URL
-                relative_path = f"master_pipeline/pipeline_workspace/04_final_output/{filename}"
+                relative_path = f"master_pipeline/pipeline_workspace/deliverable/{filename}"
                 url = f"file://{relative_path}"
                 
                 # Insert into database

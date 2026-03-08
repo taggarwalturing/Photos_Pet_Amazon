@@ -336,36 +336,33 @@ def _get_workspace_dedup_stats():
     cluster_count = 0
     
     try:
-        # Check per-folder workspaces first
+        # Read deduplication stats from JSON files (DB-driven approach)
         if folders_dir.exists():
             for folder_dir in folders_dir.iterdir():
                 if not folder_dir.is_dir():
                     continue
-                u_dir = folder_dir / "02_unique_images"
-                if u_dir.exists():
-                    unique_count += len([f for f in u_dir.iterdir() if f.is_file() and f.suffix.lower() in extensions])
-                c_dir = folder_dir / "02_duplicate_clusters"
-                if c_dir.exists():
-                    for cd in c_dir.iterdir():
-                        if cd.is_dir():
-                            cluster_count += 1
-                            dup_files = [f for f in cd.iterdir() if f.is_file() and f.name != '.gitkeep']
-                            if dup_files:
-                                duplicate_count += len(dup_files) - 1
+                dedup_stats_path = folder_dir / "deduplication_stats.json"
+                if dedup_stats_path.exists():
+                    import json as _json
+                    with open(dedup_stats_path, 'r') as f:
+                        dedup_stats = _json.load(f)
+                    unique_count += dedup_stats.get('unique_images', 0)
+                    duplicate_count += dedup_stats.get('duplicate_images', 0)
+                else:
+                    # Fallback: count deliverable/ images as unique
+                    d_dir = folder_dir / "deliverable"
+                    if d_dir.exists():
+                        unique_count += len([f for f in d_dir.iterdir() if f.is_file() and f.suffix.lower() in extensions])
         
         # Fallback: legacy workspace
         if unique_count == 0 and duplicate_count == 0:
-            u_dir = workspace / "02_unique_images"
-            if u_dir.exists():
-                unique_count = len([f for f in u_dir.iterdir() if f.is_file() and f.suffix.lower() in extensions])
-            c_dir = workspace / "02_duplicate_clusters"
-            if c_dir.exists():
-                for cd in c_dir.iterdir():
-                    if cd.is_dir():
-                        cluster_count += 1
-                        dup_files = [f for f in cd.iterdir() if f.is_file() and f.name != '.gitkeep']
-                        if dup_files:
-                            duplicate_count += len(dup_files) - 1
+            dedup_stats_path = workspace / "deduplication_stats.json"
+            if dedup_stats_path.exists():
+                import json as _json
+                with open(dedup_stats_path, 'r') as f:
+                    dedup_stats = _json.load(f)
+                unique_count = dedup_stats.get('unique_images', 0)
+                duplicate_count = dedup_stats.get('duplicate_images', 0)
     except Exception as e:
         print(f"Error reading deduplication stats: {e}")
     
@@ -844,20 +841,20 @@ def sync_pipeline_status(
                 if not fd.is_dir():
                     continue
                 dd = fd / "01_downloaded_from_drive"
-                ud = fd / "02_unique_images"
+                dl = fd / "deliverable"
                 if dd.exists():
                     downloaded_count += len(list(dd.glob("*.*")))
-                if ud.exists():
-                    unique_count += len(list(ud.glob("*.*")))
+                if dl.exists():
+                    unique_count += len(list(dl.glob("*.*")))
         
         # Fallback: legacy workspace
         if downloaded_count == 0:
             legacy_dd = workspace / "01_downloaded_from_drive"
-            legacy_ud = workspace / "02_unique_images"
+            legacy_dl = workspace / "deliverable"
             if legacy_dd.exists():
                 downloaded_count = len(list(legacy_dd.glob("*.*")))
-            if legacy_ud.exists():
-                unique_count = len(list(legacy_ud.glob("*.*")))
+            if legacy_dl.exists():
+                unique_count = len(list(legacy_dl.glob("*.*")))
         
         # Update pipeline status with actual results
         pipeline_status = {
@@ -982,7 +979,7 @@ def check_for_new_images(
                     if f.is_file() and f.suffix.lower() in extensions and f.name not in seen_dl:
                         downloaded_files.append(f.name)
                         seen_dl.add(f.name)
-            fo_dir = ws_root / "04_final_output"
+            fo_dir = ws_root / "deliverable"
             if fo_dir.exists():
                 for f in fo_dir.iterdir():
                     if f.is_file() and f.suffix.lower() in extensions and f.name not in seen_final:

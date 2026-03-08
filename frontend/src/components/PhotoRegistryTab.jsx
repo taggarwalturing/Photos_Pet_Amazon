@@ -286,9 +286,8 @@ export default function PhotoRegistryTab() {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider w-8">#</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider" title="Google Drive hex ID — unique identifier for each image">Image ID</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Filename</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider" title="Google Drive File ID">Drive File ID</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider" title="Source Google Drive Folder ID">Folder ID</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Format</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
@@ -320,9 +319,21 @@ export default function PhotoRegistryTab() {
               ) : (
                 data?.data?.map((row, idx) => (
                   <tr key={row.filename} className="hover:bg-gray-50/50 transition">
-                    {/* # */}
-                    <td className="px-4 py-2.5 text-xs text-gray-400 font-mono">
-                      {(page - 1) * perPage + idx + 1}
+                    {/* Image ID (Drive hex ID) */}
+                    <td className="px-4 py-2.5">
+                      {row.image_drive_id ? (
+                        <a
+                          href={`https://drive.google.com/file/d/${row.image_drive_id}/view`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[10px] font-mono text-blue-600 hover:text-blue-800 hover:underline truncate max-w-[140px] inline-block"
+                          title={row.image_drive_id}
+                        >
+                          {row.image_drive_id}
+                        </a>
+                      ) : (
+                        <span className="text-gray-300 text-[10px]">—</span>
+                      )}
                     </td>
 
                     {/* Filename */}
@@ -347,23 +358,6 @@ export default function PhotoRegistryTab() {
                           )}
                         </div>
                       </div>
-                    </td>
-
-                    {/* Drive File ID */}
-                    <td className="px-4 py-2.5">
-                      {row.image_drive_id ? (
-                        <a
-                          href={`https://drive.google.com/file/d/${row.image_drive_id}/view`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[10px] font-mono text-blue-600 hover:text-blue-800 hover:underline truncate max-w-[120px] inline-block"
-                          title={row.image_drive_id}
-                        >
-                          {row.image_drive_id.slice(0, 12)}…
-                        </a>
-                      ) : (
-                        <span className="text-gray-300 text-xs">—</span>
-                      )}
                     </td>
 
                     {/* Folder ID */}
@@ -470,8 +464,13 @@ export default function PhotoRegistryTab() {
                     <td className="px-4 py-2.5">
                       {row.deliverable_image_path ? (
                         <div className="flex flex-col gap-0.5">
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-teal-50 text-teal-700">
-                            📦 {row.is_modified ? 'Modified' : 'Original'}
+                          <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                            row.deliverable_image_path.includes('/blurred/') 
+                              ? 'bg-amber-50 text-amber-700' 
+                              : 'bg-teal-50 text-teal-700'
+                          }`}>
+                            {row.deliverable_image_path.includes('/blurred/') ? '🔒 Blurred' : '✅ Clean'}
+                            {row.is_manually_modified && ' (Modified)'}
                           </span>
                           <TruncatedPath path={row.deliverable_image_path} />
                         </div>

@@ -122,6 +122,7 @@ class ReviewTableCell(BaseModel):
 class ReviewTableRow(BaseModel):
     """One row = one image with annotations keyed by category_id."""
     image_id: int
+    image_drive_id: Optional[str] = None  # Google Drive hex ID (display identifier)
     image_url: str
     image_filename: str
     annotations: dict[str, ReviewTableCell]  # key = str(category_id)
@@ -138,7 +139,7 @@ class ReviewTableRow(BaseModel):
     is_restore_annotator: bool = False
     # Deliverable image tracking
     deliverable_image_path: Optional[str] = None
-    is_modified: Optional[bool] = None
+    is_manually_modified: Optional[bool] = None
 
 
 class ReviewTableCategory(BaseModel):

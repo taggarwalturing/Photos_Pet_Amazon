@@ -12,6 +12,7 @@ from app.models.user import User
 from app.models.image import Image
 from app.dependencies import get_current_user
 from app.utils.blur import blur_image_regions
+from app.utils.deliverable import update_biometric_if_delivered, move_image_to_deliverable
 
 router = APIRouter(prefix="/annotator/blur", tags=["Annotator Blur"])
 
@@ -62,7 +63,7 @@ def _get_image_bytes(image: Image) -> bytes:
     search_roots.append(workspace)  # legacy flat workspace as fallback
     
     for search_root in search_roots:
-        for sub in ["04_final_output", "03_biometric_processed", "02_unique_images", "02_deduplicated", "01_downloaded_from_drive", "01_downloaded"]:
+        for sub in ["deliverable", "01_downloaded_from_drive"]:
             folder = os.path.join(search_root, sub)
             if os.path.isdir(folder):
                 for fname in os.listdir(folder):
@@ -158,10 +159,17 @@ def apply_manual_blur(
         # Track annotator blur action
         if current_user.role == "annotator":
             image.is_blurred_annotator = True
-        image.is_modified = True
+        image.is_manually_modified = True
 
         db.commit()
         db.refresh(image)
+
+        # Admin/reviewer modifications go directly to deliverable/
+        if current_user.role == "admin":
+            move_image_to_deliverable(image, db)
+        else:
+            # Annotator: only re-copy if image was already delivered
+            update_biometric_if_delivered(image.id, db)
 
         return {
             "success": True,
@@ -249,8 +257,7 @@ def _find_original_image_bytes(image: Image) -> bytes | None:
     """
     Find the original (unblurred) image bytes.
     Searches pipeline workspace folders in order: downloaded > deduplicated > clean subfolder.
-    Skips post-processing folders (04_final_output, 03_biometric_processed/blurred)
-    because those contain pipeline-blurred images, not originals.
+    Skips deliverable/ because it may contain pipeline-blurred images, not originals.
     """
     workspace = os.path.join(
         os.path.dirname(__file__), "..", "..",
@@ -258,14 +265,11 @@ def _find_original_image_bytes(image: Image) -> bytes | None:
     )
 
     # Check original_url field — but ONLY if it points to a pre-blur location.
-    # If original_url points to 04_final_output or 03_biometric_processed,
-    # those are post-blur folders and NOT the actual original.
+    # If original_url points to deliverable/,
+    # it's a post-blur folder and NOT the actual original.
     if image.original_url:
         orig_path = image.original_url.replace("file://", "")
-        is_post_blur_path = any(seg in orig_path for seg in [
-            "04_final_output",
-            "03_biometric_processed",
-        ])
+        is_post_blur_path = "deliverable" in orig_path
         if not is_post_blur_path:
             backend_dir = os.path.join(os.path.dirname(__file__), "..", "..")
             full_path = os.path.join(backend_dir, orig_path)
@@ -287,10 +291,6 @@ def _find_original_image_bytes(image: Image) -> bytes | None:
     for search_root in search_roots:
         search_folders = [
             os.path.join(search_root, "01_downloaded_from_drive"),
-            os.path.join(search_root, "01_downloaded"),
-            os.path.join(search_root, "02_unique_images"),
-            os.path.join(search_root, "02_deduplicated"),
-            os.path.join(search_root, "03_biometric_processed", "clean"),
         ]
         for folder in search_folders:
             if os.path.isdir(folder):
@@ -384,9 +384,16 @@ def remove_blur(
         image.is_restore_annotator = True
     image.restored_by_annotator_id = current_user.id
     image.restored_at_annotator = datetime.utcnow()
-    image.is_modified = True
+    image.is_manually_modified = True
 
     db.commit()
+
+    # Admin/reviewer modifications go directly to deliverable/
+    if current_user.role == "admin":
+        move_image_to_deliverable(image, db)
+    else:
+        # Annotator: only re-copy if image was already delivered
+        update_biometric_if_delivered(image.id, db)
 
     return {
         "success": True,
@@ -404,8 +411,8 @@ def restore_image(
     """
     Restore an image by finding the best available version.
     Priority:
-      1. Local pipeline blurred version (03_biometric_processed/blurred, 04_final_output)
-      2. Local pipeline original (01_downloaded_from_drive, 02_unique_images)
+      1. Local pipeline blurred version (deliverable/)
+      2. Local pipeline original (01_downloaded_from_drive/)
       3. Re-download from Google Drive (main download source)
     """
     if current_user.role not in ("annotator", "admin"):
@@ -432,12 +439,8 @@ def restore_image(
     # 2. Try local pipeline folders (per-folder workspaces + legacy)
     if not restored_bytes:
         search_order = [
-            "03_biometric_processed/blurred",
-            "04_final_output",
-            "02_unique_images",
-            "02_deduplicated",
+            "deliverable",
             "01_downloaded_from_drive",
-            "01_downloaded",
         ]
         restore_search_roots = []
         restore_folders_dir = os.path.join(workspace, "folders")
@@ -495,7 +498,15 @@ def restore_image(
             f.write(restored_bytes)
 
     image.is_using_processed = True
+    image.is_manually_modified = True
     db.commit()
+
+    # Admin/reviewer modifications go directly to deliverable/
+    if current_user.role == "admin":
+        move_image_to_deliverable(image, db)
+    else:
+        # Annotator: only re-copy if image was already delivered
+        update_biometric_if_delivered(image.id, db)
 
     return {
         "success": True,

@@ -58,10 +58,7 @@ class PipelineConfig:
         
         # Stage folders
         self.downloaded_dir = self.workspace / _get('DOWNLOADED_IMAGES_DIR', '01_downloaded_from_drive')
-        self.unique_dir = self.workspace / _get('UNIQUE_IMAGES_DIR', '02_unique_images')
-        self.duplicate_clusters_dir = self.workspace / _get('DUPLICATE_CLUSTERS_DIR', '02_duplicate_clusters')
-        self.biometric_processed_dir = self.workspace / _get('BIOMETRIC_PROCESSED_DIR', '03_biometric_processed')
-        self.final_output_dir = self.workspace / _get('FINAL_OUTPUT_DIR', '04_final_output')
+        self.final_output_dir = self.workspace / _get('FINAL_OUTPUT_DIR', 'deliverable')
         
         # ==================== BIOMETRIC PIPELINE PATHS ====================
         biometric_base = _get('BIOMETRIC_PIPELINE_DIR', 'biometric_compliance_pipeline')
@@ -130,9 +127,6 @@ class PipelineConfig:
         directories = [
             self.workspace,
             self.downloaded_dir,
-            self.unique_dir,
-            self.duplicate_clusters_dir,
-            self.biometric_processed_dir,
             self.final_output_dir,
             self.biometric_input_dir,
             self.biometric_output_dir,
@@ -184,9 +178,6 @@ class PipelineConfig:
         print(f"\n📁 Workspace Paths:")
         print(f"   Workspace:           {self.workspace}")
         print(f"   Downloaded:          {self.downloaded_dir.name}")
-        print(f"   Unique:              {self.unique_dir.name}")
-        print(f"   Duplicate Clusters:  {self.duplicate_clusters_dir.name}")
-        print(f"   Biometric Processed: {self.biometric_processed_dir.name}")
         print(f"   Final Output:        {self.final_output_dir.name}")
         
         print(f"\n🔐 Biometric Pipeline:")

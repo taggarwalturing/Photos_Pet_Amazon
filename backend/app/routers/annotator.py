@@ -11,12 +11,12 @@ from app.models.category import Category
 from app.models.option import Option
 from app.models.annotation import Annotation, AnnotationSelection
 from app.models.annotator_category import AnnotatorCategory
-from app.models.image_assignment import AnnotatorImageAssignment
 from app.models.settings import SystemSettings
 from app.models.notification import Notification
 from app.schemas.category import CategoryWithProgress
 from app.schemas.annotation import AnnotationSave, AnnotationResponse, AnnotationTask
 from app.utils.blur import blur_image_regions
+from app.utils.deliverable import update_biometric_if_delivered
 import os
 
 
@@ -79,7 +79,7 @@ def _check_original_exists(image: Image) -> bool:
 
     # Check pipeline workspace folders for the filename
     workspace = os.path.join(backend_dir, "master_pipeline", "pipeline_workspace")
-    for sub in ["01_downloaded_from_drive", "01_downloaded", "02_unique_images", "02_deduplicated", "03_biometric_processed/clean"]:
+    for sub in ["deliverable", "01_downloaded_from_drive"]:
         fpath = os.path.join(workspace, sub, image.filename)
         if os.path.exists(fpath) and os.path.getsize(fpath) > 0:
             return True
@@ -95,10 +95,6 @@ def _get_available_image_ids(db: Session, user_id: int) -> set[int]:
     """
     return set(row.id for row in db.query(Image.id).all())
 
-
-def _get_assigned_image_ids(db: Session, user_id: int) -> set[int]:
-    """Alias for backward compatibility."""
-    return _get_available_image_ids(db, user_id)
 
 router = APIRouter(prefix="/annotator", tags=["Annotator"])
 
@@ -196,9 +192,11 @@ def list_images_for_annotator(
     user: User = Depends(require_annotator),
 ):
     """
-    List images assigned to this annotator with annotation status across assigned categories.
-    For the image-first annotation workflow.
+    List images with annotation status across assigned categories.
+    Optimized: pre-loads all annotations + selections in batch (N+1 → 3 queries).
     """
+    from collections import defaultdict
+
     # Get assigned category IDs
     assigned_cat_ids = [
         ac.category_id
@@ -206,10 +204,10 @@ def list_images_for_annotator(
         .filter(AnnotatorCategory.user_id == user.id)
         .all()
     ]
-    
-    # Get available image IDs for this user (unclaimed or claimed by this user)
-    available_image_ids = _get_available_image_ids(db, user.id)
-    
+
+    # Total image count (used for UI)
+    total_image_count = db.query(Image.id).count()
+
     if not assigned_cat_ids:
         return {
             "images": [],
@@ -217,17 +215,35 @@ def list_images_for_annotator(
             "page": page,
             "page_size": page_size,
             "assigned_categories": [],
-            "assigned_image_count": len(available_image_ids),
+            "assigned_image_count": total_image_count,
         }
-    
-    # Get only available images (ordered by ID)
-    all_images = (
-        db.query(Image)
-        .filter(Image.id.in_(available_image_ids))
-        .order_by(Image.id)
+
+    # Get ALL images (ordered by ID)
+    all_images = db.query(Image).order_by(Image.id).all()
+
+    # ── BATCH LOAD: all annotations for these images × categories (1 query) ──
+    all_annotations = (
+        db.query(Annotation)
+        .filter(Annotation.category_id.in_(assigned_cat_ids))
+        .options(joinedload(Annotation.selections))
         .all()
     )
-    
+
+    # Index annotations by (image_id, annotator_id) and by (image_id, completed)
+    my_anns_by_image = defaultdict(list)       # image_id → [Annotation by this user]
+    completed_by_image = defaultdict(set)       # image_id → set of completed category_ids
+    completed_anns_by_image = defaultdict(list) # image_id → [completed Annotations by anyone]
+    for ann in all_annotations:
+        if ann.annotator_id == user.id:
+            my_anns_by_image[ann.image_id].append(ann)
+        if ann.status == "completed":
+            completed_by_image[ann.image_id].add(ann.category_id)
+            completed_anns_by_image[ann.image_id].append(ann)
+
+    # ── BATCH LOAD: all options (1 query — small table, ~36 rows) ──
+    all_options = db.query(Option).all()
+    option_label_map = {o.id: o.label for o in all_options}
+
     # Pre-load categories for AI label resolution
     categories_for_ai = (
         db.query(Category)
@@ -236,73 +252,39 @@ def list_images_for_annotator(
         .all()
     )
     cat_by_id = {c.id: c for c in categories_for_ai}
-    
-    # Build image data with annotation status per category
+
+    # Build image data with annotation status per category (NO per-image queries)
     images_data = []
     for img in all_images:
-        # Get annotations for this image by this user or completed by anyone
-        my_annotations = (
-            db.query(Annotation)
-            .filter(
-                Annotation.image_id == img.id,
-                Annotation.annotator_id == user.id,
-                Annotation.category_id.in_(assigned_cat_ids),
-            )
-            .all()
-        )
-        
-        # Also check if completed by anyone else
-        completed_by_anyone = (
-            db.query(Annotation)
-            .filter(
-                Annotation.image_id == img.id,
-                Annotation.category_id.in_(assigned_cat_ids),
-                Annotation.status == "completed",
-            )
-            .all()
-        )
-        completed_cat_ids = {a.category_id for a in completed_by_anyone}
+        my_annotations = my_anns_by_image.get(img.id, [])
+        completed_cat_ids_for_img = completed_by_image.get(img.id, set())
+        completed_anns = completed_anns_by_image.get(img.id, [])
 
-        # Resolve AI labels for this image (if available)
         arbiter_labels = img.arbiter_labels or {}
-        
-        # Build status per category and collect selected labels
+
         category_status = {}
-        category_labels = {}  # category_id -> list of selected option labels
-        category_label_source = {}  # category_id -> "human" | "ai" | None
+        category_labels = {}
+        category_label_source = {}
         for cat_id in assigned_cat_ids:
             my_ann = next((a for a in my_annotations if a.category_id == cat_id), None)
             has_human_selection = False
             if my_ann:
                 category_status[str(cat_id)] = my_ann.status
-                # Get selected option labels
-                selections = (
-                    db.query(AnnotationSelection)
-                    .filter(AnnotationSelection.annotation_id == my_ann.id)
-                    .all()
-                )
-                selected_option_ids = [s.option_id for s in selections]
-                if selected_option_ids:
-                    options = db.query(Option).filter(Option.id.in_(selected_option_ids)).all()
-                    category_labels[str(cat_id)] = [o.label for o in options]
+                # Resolve labels from pre-loaded selections
+                selected_labels = [option_label_map.get(s.option_id, "") for s in my_ann.selections]
+                if selected_labels and any(selected_labels):
+                    category_labels[str(cat_id)] = [l for l in selected_labels if l]
                     category_label_source[str(cat_id)] = "human"
                     has_human_selection = True
                 else:
                     category_labels[str(cat_id)] = []
-            elif cat_id in completed_cat_ids:
+            elif cat_id in completed_cat_ids_for_img:
                 category_status[str(cat_id)] = "completed_by_other"
-                # Get labels from completed annotation
-                completed_ann = next((a for a in completed_by_anyone if a.category_id == cat_id), None)
+                completed_ann = next((a for a in completed_anns if a.category_id == cat_id), None)
                 if completed_ann:
-                    selections = (
-                        db.query(AnnotationSelection)
-                        .filter(AnnotationSelection.annotation_id == completed_ann.id)
-                        .all()
-                    )
-                    selected_option_ids = [s.option_id for s in selections]
-                    if selected_option_ids:
-                        options = db.query(Option).filter(Option.id.in_(selected_option_ids)).all()
-                        category_labels[str(cat_id)] = [o.label for o in options]
+                    selected_labels = [option_label_map.get(s.option_id, "") for s in completed_ann.selections]
+                    if selected_labels and any(selected_labels):
+                        category_labels[str(cat_id)] = [l for l in selected_labels if l]
                         category_label_source[str(cat_id)] = "human"
                         has_human_selection = True
                     else:
@@ -326,7 +308,7 @@ def list_images_for_annotator(
                             if option_label:
                                 category_labels[str(cat_id)] = [option_label]
                                 category_label_source[str(cat_id)] = "ai"
-        
+
         # Determine overall status
         statuses = list(category_status.values())
         if all(s in ("completed", "completed_by_other") for s in statuses):
@@ -335,54 +317,42 @@ def list_images_for_annotator(
             overall_status = "partial"
         else:
             overall_status = "pending"
-        
+
         # Apply filter
         if filter_status == "pending" and overall_status != "pending":
             continue
         if filter_status == "completed" and overall_status != "completed":
             continue
-        
-        # Check if any annotation needs rework
-        has_rework = any(
-            a.review_status == "rework_requested" for a in my_annotations
-        )
-        
-        # Check if any annotation is human-validated (locked)
-        is_human_validated = any(
-            a.human_validated for a in my_annotations
-        )
-        
+
+        has_rework = any(a.review_status == "rework_requested" for a in my_annotations)
+        is_human_validated = any(a.human_validated for a in my_annotations)
+
         images_data.append({
             "id": img.id,
+            "image_drive_id": img.image_drive_id,
             "filename": img.filename,
             "url": img.url,
             "category_status": category_status,
-            "category_labels": category_labels,  # Selected labels per category (human or AI)
-            "category_label_source": category_label_source,  # "human" | "ai" per category
+            "category_labels": category_labels,
+            "category_label_source": category_label_source,
             "overall_status": overall_status,
             "completed_count": sum(1 for s in statuses if s in ("completed", "completed_by_other")),
             "total_categories": len(assigned_cat_ids),
             "is_improper": img.is_improper,
             "improper_reason": img.improper_reason,
-            "has_rework": has_rework,  # True if any annotation needs rework
-            "is_human_validated": is_human_validated,  # True if validated by human (locked)
-            "has_ai_labels": bool(img.arbiter_labels),  # True if arbiter predictions exist
+            "has_rework": has_rework,
+            "is_human_validated": is_human_validated,
+            "has_ai_labels": bool(img.arbiter_labels),
         })
-    
-    # Paginate
+
+    # Paginate in Python (status filter requires app-level aggregation)
     total = len(images_data)
     start = (page - 1) * page_size
     paginated = images_data[start : start + page_size]
-    
-    # Get assigned categories with options
-    categories = (
-        db.query(Category)
-        .filter(Category.id.in_(assigned_cat_ids))
-        .options(joinedload(Category.options))
-        .order_by(Category.display_order)
-        .all()
-    )
-    
+
+    # Get assigned categories with options (reuse already loaded data)
+    categories = sorted(categories_for_ai, key=lambda c: c.display_order)
+
     return {
         "images": paginated,
         "total": total,
@@ -400,7 +370,7 @@ def list_images_for_annotator(
             }
             for c in categories
         ],
-        "assigned_image_count": len(available_image_ids),
+        "assigned_image_count": total_image_count,
     }
 
 
@@ -578,6 +548,7 @@ def get_image_for_annotation(
     
     return {
         "id": image.id,
+        "image_drive_id": image.image_drive_id,  # Google Drive hex ID
         "filename": image.filename,
         "url": image.url,
         "categories": categories_data,
@@ -1715,9 +1686,12 @@ def blur_image_regions_endpoint(
     # Track annotator blur action
     if user.role == "annotator":
         image.is_blurred_annotator = True
-    image.is_modified = True
+    image.is_manually_modified = True
 
     db.commit()
+
+    # If image was already delivered (all approved), re-move to blurred/ and update final_output
+    update_biometric_if_delivered(image.id, db)
 
     return {
         "status": "ok",
