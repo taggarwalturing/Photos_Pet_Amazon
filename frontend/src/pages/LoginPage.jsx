@@ -119,19 +119,19 @@ export default function LoginPage() {
               )}
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1.5">Username</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1.5">Turing ID</label>
                 <div className="relative">
                   <div className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400">
                     <svg className="w-4.5 h-4.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
                     </svg>
                   </div>
                   <input
-                    type="text"
+                    type="email"
                     value={username}
-                    onChange={(e) => setUsername(e.target.value)}
+                    onChange={(e) => setUsername(e.target.value.toLowerCase())}
                     className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-400 outline-none transition text-sm"
-                    placeholder="Enter your username"
+                    placeholder="yourname@turing.com"
                     required
                     autoFocus
                   />

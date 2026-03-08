@@ -217,14 +217,18 @@ function UsersTab() {
         <form onSubmit={createUser} className="bg-gradient-to-br from-indigo-50/80 to-purple-50/50 rounded-xl border border-indigo-100 p-5 space-y-4 animate-slide-up">
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Turing ID <span className="text-red-500">*</span></label>
               <input
-                type="text"
+                type="email"
                 value={form.username}
-                onChange={(e) => setForm({ ...form, username: e.target.value })}
+                onChange={(e) => setForm({ ...form, username: e.target.value.toLowerCase() })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="xyz@turing.com"
+                pattern=".+@turing\.com$"
+                title="Must be a valid Turing ID (e.g. xyz@turing.com)"
                 required
               />
+              <p className="text-[10px] text-gray-400 mt-0.5">Format: name@turing.com</p>
             </div>
             <div>
               <div className="flex items-center justify-between mb-1">
