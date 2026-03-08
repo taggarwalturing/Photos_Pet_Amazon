@@ -268,59 +268,7 @@ export default function ImageAnnotationPage() {
   const [imageVersion, setImageVersion] = useState(Date.now()); // cache-buster for image reload
   const imageContainerRef = useRef(null);
 
-  // Time limit settings (fetched from API)
-  const [maxAnnotationTime, setMaxAnnotationTime] = useState(20);
   const [isReworkMode, setIsReworkMode] = useState(false);
-
-  // Timer state — tracks time per image session (resets on every open)
-  // Time is ONLY saved on submit — not on navigate, close, or auto-save
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const isReworkRef = useRef(false); // mirrors isReworkMode
-  const isImproperRef = useRef(false); // mirrors improper status
-  const maxTimeRef = useRef(20); // mirrors maxAnnotationTime for use in timer
-
-  // Keep refs in sync with state
-  useEffect(() => { isReworkRef.current = isReworkMode; }, [isReworkMode]);
-  useEffect(() => { maxTimeRef.current = maxAnnotationTime; }, [maxAnnotationTime]);
-
-  // Reset timer to 0 whenever the image changes (always start fresh)
-  useEffect(() => {
-    setElapsedSeconds(0);
-  }, [imageId]);
-
-  // Fetch time limit settings from API on mount
-  useEffect(() => {
-    api.get('/annotator/settings/time-limits')
-      .then(res => {
-        setMaxAnnotationTime(res.data.max_annotation_time_seconds || 20);
-      })
-      .catch(() => {
-        setMaxAnnotationTime(20);
-      });
-  }, []);
-
-  // Timer tick — stops at max time, does not run for rework/improper
-  useEffect(() => {
-    const interval = setInterval(() => {
-      if (isReworkRef.current || isImproperRef.current) return;
-      setElapsedSeconds((prev) => {
-        if (prev >= maxTimeRef.current) return prev; // Stop at max
-        return prev + 1;
-      });
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, []);
-
-  const formatTime = (seconds) => {
-    const secs = Math.abs(seconds);
-    return `${secs}s`;
-  };
-
-  // Compute remaining time for countdown display
-  const remainingSeconds = maxAnnotationTime - elapsedSeconds;
-  // Whether we should show the timer (not for rework or improper)
-  const showTimer = !isReworkMode && !data?.is_improper;
 
   const loadImage = useCallback(async (id) => {
     setLoading(true);
@@ -373,13 +321,6 @@ export default function ImageAnnotationPage() {
         cat.annotation?.review_status === 'rework_requested' || cat.annotation?.is_rework
       );
       setIsReworkMode(hasRework);
-      isReworkRef.current = hasRework;
-      
-      // Track improper status for timer
-      isImproperRef.current = !!res.data.is_improper;
-      
-      // Always start timer fresh at 0 — time is only saved on submit
-      setElapsedSeconds(0);
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to load image');
     } finally {
@@ -427,11 +368,8 @@ export default function ImageAnnotationPage() {
     setError('');
     
     try {
-      // For rework/improper: send 0 time. For normal: send min(elapsed, max)
-      const timeToSave = isReworkMode || data?.is_improper ? 0 : Math.min(elapsedSeconds, maxAnnotationTime);
       await api.put(`/annotator/images/${imageId}/annotations`, {
         annotations: pendingChanges,
-        time_spent_seconds: timeToSave,
         is_rework: isReworkMode,
       });
       await loadImage(imageId);
@@ -682,21 +620,6 @@ export default function ImageAnnotationPage() {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            {/* Countdown Timer — hidden for rework & improper */}
-            {showTimer && (
-            <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold transition-all ${
-              remainingSeconds <= 0
-                  ? 'bg-red-100 text-red-700' 
-                  : remainingSeconds <= 5 
-                  ? 'bg-amber-100 text-amber-700' 
-                  : 'bg-emerald-100 text-emerald-700'
-            }`}>
-              <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-                {formatTime(remainingSeconds)}
-            </div>
-            )}
             <div className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-700 rounded-full text-xs font-semibold">
               <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
               {completedCount}/{data?.categories?.length}

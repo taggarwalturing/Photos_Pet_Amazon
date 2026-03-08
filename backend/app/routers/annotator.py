@@ -174,83 +174,14 @@ def _build_queue(db: Session, user_id: int, category_id: int) -> list[Image]:
 @router.patch("/images/{image_id}/time")
 def save_time_spent(
     image_id: int,
-    payload: dict,  # {"time_spent_seconds": int, "is_rework": bool}
+    payload: dict,
     db: Session = Depends(get_db),
     user: User = Depends(require_annotator),
 ):
     """
-    Lightweight endpoint to persist time for an image.
-    Only tracks time for initial annotation (not rework, not improper).
-    Time is capped at the max annotation time (default 20s).
+    Deprecated — time tracking per image is no longer used.
+    Kept for backward compatibility (returns ok without doing anything).
     """
-    time_spent = payload.get("time_spent_seconds", 0)
-    if not isinstance(time_spent, (int, float)) or time_spent < 0:
-        return {"ok": True}  # silently ignore bad data
-
-    is_rework = payload.get("is_rework", False)
-
-    # No timing for rework — silently skip
-    if is_rework:
-        return {"ok": True}
-
-    # Check if the image is marked as improper — no timing for improper images
-    image = db.query(Image).filter(Image.id == image_id).first()
-    if image and image.is_improper:
-        return {"ok": True}
-
-    # Cap time at max annotation limit (default 20s)
-    max_time = _get_max_annotation_time(db)
-    time_spent = min(int(time_spent), max_time)
-
-    # Auto-claim: create assignment record if it doesn't exist
-    existing_assignment = (
-        db.query(AnnotatorImageAssignment)
-        .filter(AnnotatorImageAssignment.image_id == image_id)
-        .first()
-    )
-    if not existing_assignment:
-        try:
-            db.add(AnnotatorImageAssignment(user_id=user.id, image_id=image_id))
-            db.flush()
-        except Exception:
-            db.rollback()
-
-    # Get assigned categories
-    assigned_cat_ids = [
-        ac.category_id
-        for ac in db.query(AnnotatorCategory)
-        .filter(AnnotatorCategory.user_id == user.id)
-        .all()
-    ]
-    if not assigned_cat_ids:
-        return {"ok": True}
-
-    # Update all existing annotations for this image+user
-    existing = (
-        db.query(Annotation)
-        .filter(
-            Annotation.image_id == image_id,
-            Annotation.annotator_id == user.id,
-            Annotation.category_id.in_(assigned_cat_ids),
-        )
-        .all()
-    )
-
-    if existing:
-        for ann in existing:
-            ann.time_spent_seconds = time_spent
-    else:
-        # No annotations yet — create an in_progress placeholder for the first category
-        annotation = Annotation(
-            image_id=image_id,
-            annotator_id=user.id,
-            category_id=assigned_cat_ids[0],
-            status="in_progress",
-            time_spent_seconds=time_spent,
-        )
-        db.add(annotation)
-
-    db.commit()
     return {"ok": True}
 
 
@@ -750,16 +681,7 @@ def save_image_annotations(
     assigned_cat_ids = set(assigned_cat_ids_list)
     
     annotations_data = payload.get("annotations", {})
-    time_spent_seconds = payload.get("time_spent_seconds", 0)
     is_rework_submission = payload.get("is_rework", False)
-    
-    # No timing for rework — time is 0 for rework submissions
-    # For normal annotation, cap at max limit (default 20s)
-    max_annotation_time = _get_max_annotation_time(db)
-    if is_rework_submission:
-        capped_time = 0
-    else:
-        capped_time = min(time_spent_seconds, max_annotation_time)
     
     # Validate that all assigned categories have at least one option selected
     # Check for categories that are not completed by others
@@ -825,11 +747,8 @@ def save_image_annotations(
             annotation.human_validated = True  # Mark as validated by human
             
             if was_rework:
-                # Rework — no timing, just update status
+                # Rework — just update status
                 annotation.review_status = "rework_completed"
-            else:
-                # Normal annotation — save capped time
-                annotation.time_spent_seconds = capped_time
             
             # Clear old selections
             db.query(AnnotationSelection).filter(
@@ -842,7 +761,7 @@ def save_image_annotations(
                 category_id=cat_id,
                 is_duplicate=is_duplicate,
                 status="completed",
-                time_spent_seconds=capped_time,
+                time_spent_seconds=0,
                 rework_time_seconds=0,
                 is_rework=is_rework_submission,
                 review_status="rework_completed" if is_rework_submission else None,
@@ -1139,9 +1058,6 @@ def save_annotation(
 
         annotation.is_duplicate = payload.is_duplicate
         annotation.status = payload.status
-        # Cap time at max annotation limit (default 20s)
-        max_time = _get_max_annotation_time(db)
-        annotation.time_spent_seconds = min(payload.time_spent_seconds, max_time)
         
         # Update image AI-generated status if provided
         if payload.is_ai_generated is not None:
@@ -1160,14 +1076,13 @@ def save_annotation(
             AnnotationSelection.annotation_id == annotation.id
         ).delete()
     else:
-        max_time = _get_max_annotation_time(db)
         annotation = Annotation(
             image_id=image_id,
             annotator_id=user.id,
             category_id=category_id,
             is_duplicate=payload.is_duplicate,
             status=payload.status,
-            time_spent_seconds=min(payload.time_spent_seconds, max_time),
+            time_spent_seconds=0,
         )
         db.add(annotation)
         db.flush()  # get annotation.id
@@ -1610,9 +1525,9 @@ def get_time_limits(
     db: Session = Depends(get_db),
     _user: User = Depends(require_annotator),
 ):
-    """Get time limit settings for countdown timer."""
+    """Deprecated — time tracking is no longer used. Kept for backward compatibility."""
     return {
-        "max_annotation_time_seconds": _get_max_annotation_time(db),
+        "max_annotation_time_seconds": 0,
     }
 
 

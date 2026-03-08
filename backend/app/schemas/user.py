@@ -29,6 +29,7 @@ class UserResponse(BaseModel):
     completed_annotations: int = 0
     total_annotations_needed: int = 0  # assigned_images * assigned_categories
     improper_marked_count: int = 0
+    today_image_count: int = 0  # distinct images annotated today
 
     class Config:
         from_attributes = True

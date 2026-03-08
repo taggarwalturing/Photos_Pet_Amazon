@@ -1,7 +1,7 @@
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import or_, and_
+from sqlalchemy import or_, and_, func, cast, Date
 from sqlalchemy.orm import Session, joinedload
 from typing import Optional
 from app.database import get_db
@@ -70,6 +70,19 @@ def list_users(
             .count()
         )
         
+        # Count images annotated today (distinct images with completed annotations updated today)
+        today = date.today()
+        today_image_count = (
+            db.query(Annotation.image_id)
+            .filter(
+                Annotation.annotator_id == u.id,
+                Annotation.status == "completed",
+                cast(Annotation.updated_at, Date) == today,
+            )
+            .distinct()
+            .count()
+        )
+        
         result.append(UserResponse(
             id=u.id,
             username=u.username,
@@ -82,8 +95,64 @@ def list_users(
             completed_annotations=completed_annotations,
             total_annotations_needed=total_annotations_needed,
             improper_marked_count=improper_marked_count,
+            today_image_count=today_image_count,
         ))
     return result
+
+
+@router.get("/users/daily-stats")
+def get_daily_annotation_stats(
+    days: int = Query(7, ge=1, le=90),
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """
+    Get daily annotation counts per annotator for the last N days.
+    Returns how many distinct images each annotator completed per day.
+    """
+    start_date = date.today() - timedelta(days=days - 1)
+    
+    # Query: group by annotator_id and date, count distinct images
+    rows = (
+        db.query(
+            Annotation.annotator_id,
+            cast(Annotation.updated_at, Date).label("annotation_date"),
+            func.count(func.distinct(Annotation.image_id)).label("image_count"),
+        )
+        .filter(
+            Annotation.status == "completed",
+            cast(Annotation.updated_at, Date) >= start_date,
+        )
+        .group_by(Annotation.annotator_id, cast(Annotation.updated_at, Date))
+        .all()
+    )
+    
+    # Get annotator usernames
+    annotators = (
+        db.query(User)
+        .filter(User.role == "annotator")
+        .all()
+    )
+    username_map = {u.id: u.username for u in annotators}
+    
+    # Build per-annotator daily stats
+    stats = {}
+    for annotator_id, annotation_date, image_count in rows:
+        username = username_map.get(annotator_id, f"user_{annotator_id}")
+        if username not in stats:
+            stats[username] = {"annotator_id": annotator_id, "daily": {}}
+        stats[username]["daily"][str(annotation_date)] = image_count
+    
+    # Build date range
+    date_range = []
+    for i in range(days):
+        d = start_date + timedelta(days=i)
+        date_range.append(str(d))
+    
+    return {
+        "date_range": date_range,
+        "annotators": stats,
+    }
 
 
 @router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)

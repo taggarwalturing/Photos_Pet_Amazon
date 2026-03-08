@@ -129,6 +129,8 @@ function UsersTab() {
   const [showPassword, setShowPassword] = useState(false);
   const [assignedCats, setAssignedCats] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [dailyStats, setDailyStats] = useState(null);
+  const [dailyDays, setDailyDays] = useState(7);
 
   const generatePassword = () => {
     const chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%&*';
@@ -140,12 +142,14 @@ function UsersTab() {
 
   const load = async () => {
     try {
-      const [usersRes, catsRes] = await Promise.all([
+      const [usersRes, catsRes, dailyRes] = await Promise.all([
         api.get('/admin/users'),
         api.get('/admin/categories'),
+        api.get(`/admin/users/daily-stats?days=${dailyDays}`),
       ]);
       setUsers(usersRes.data);
       setCategories(catsRes.data);
+      setDailyStats(dailyRes.data);
     } catch (err) {
       console.error(err);
     } finally {
@@ -153,7 +157,7 @@ function UsersTab() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [dailyDays]);
 
   const createUser = async (e) => {
     e.preventDefault();
@@ -306,6 +310,7 @@ function UsersTab() {
               <th className="px-5 py-3 font-medium">Role</th>
               <th className="px-5 py-3 font-medium">Categories</th>
               <th className="px-5 py-3 font-medium">Images</th>
+              <th className="px-5 py-3 font-medium">Today</th>
               <th className="px-5 py-3 font-medium">Progress</th>
               <th className="px-5 py-3 font-medium">Improper</th>
               <th className="px-5 py-3 font-medium">Status</th>
@@ -355,6 +360,15 @@ function UsersTab() {
                         userImageCount > 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
                       }`}>
                         {userImageCount} images
+                      </span>
+                    ) : '—'}
+                  </td>
+                  <td className="px-5 py-3">
+                    {u.role === 'annotator' ? (
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                        (u.today_image_count || 0) > 0 ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-400'
+                      }`}>
+                        {u.today_image_count || 0} images
                       </span>
                     ) : '—'}
                   </td>
@@ -476,7 +490,99 @@ function UsersTab() {
         </div>
       )}
 
-      
+      {/* Daily Annotation Stats */}
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+          <div>
+            <h3 className="text-sm font-bold text-gray-900">📊 Daily Annotations (Images per Day)</h3>
+            <p className="text-xs text-gray-500 mt-0.5">Distinct images annotated by each annotator per day</p>
+          </div>
+          <div className="flex items-center gap-2">
+            {[7, 14, 30].map((d) => (
+              <button
+                key={d}
+                onClick={() => setDailyDays(d)}
+                className={`px-3 py-1 text-xs font-medium rounded-full transition cursor-pointer ${
+                  dailyDays === d
+                    ? 'bg-indigo-600 text-white'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                {d}d
+              </button>
+            ))}
+          </div>
+        </div>
+        {dailyStats && dailyStats.date_range?.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="bg-gray-50 text-gray-500">
+                  <th className="px-4 py-2.5 text-left font-semibold sticky left-0 bg-gray-50 z-10">Annotator</th>
+                  {dailyStats.date_range.map((d) => {
+                    const dateObj = new Date(d + 'T00:00:00');
+                    const isToday = d === new Date().toISOString().split('T')[0];
+                    return (
+                      <th key={d} className={`px-3 py-2.5 text-center font-medium whitespace-nowrap ${isToday ? 'bg-indigo-50 text-indigo-700' : ''}`}>
+                        {dateObj.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        {isToday && <span className="block text-[9px] font-bold text-indigo-500">TODAY</span>}
+                      </th>
+                    );
+                  })}
+                  <th className="px-3 py-2.5 text-center font-semibold bg-gray-100">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {Object.entries(dailyStats.annotators).map(([username, data]) => {
+                  const total = dailyStats.date_range.reduce((sum, d) => sum + (data.daily[d] || 0), 0);
+                  return (
+                    <tr key={username} className="hover:bg-gray-50/50">
+                      <td className="px-4 py-2 font-medium text-gray-900 sticky left-0 bg-white z-10">
+                        <div className="flex items-center gap-2">
+                          <Avatar name={username} size="sm" />
+                          {username}
+                        </div>
+                      </td>
+                      {dailyStats.date_range.map((d) => {
+                        const count = data.daily[d] || 0;
+                        const isToday = d === new Date().toISOString().split('T')[0];
+                        return (
+                          <td key={d} className={`px-3 py-2 text-center ${isToday ? 'bg-indigo-50/50' : ''}`}>
+                            {count > 0 ? (
+                              <span className={`inline-block min-w-[24px] px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+                                count >= 50 ? 'bg-emerald-100 text-emerald-700' :
+                                count >= 20 ? 'bg-blue-100 text-blue-700' :
+                                count >= 5 ? 'bg-amber-100 text-amber-700' :
+                                'bg-gray-100 text-gray-600'
+                              }`}>
+                                {count}
+                              </span>
+                            ) : (
+                              <span className="text-gray-300">—</span>
+                            )}
+                          </td>
+                        );
+                      })}
+                      <td className="px-3 py-2 text-center bg-gray-50">
+                        <span className="font-bold text-gray-900">{total}</span>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {Object.keys(dailyStats.annotators).length === 0 && (
+                  <tr>
+                    <td colSpan={dailyStats.date_range.length + 2} className="px-4 py-8 text-center text-gray-400">
+                      No annotation activity in this period
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="px-5 py-8 text-center text-gray-400 text-sm">No daily stats available</div>
+        )}
+      </div>
     </div>
   );
 }
