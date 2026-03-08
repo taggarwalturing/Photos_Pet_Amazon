@@ -589,11 +589,11 @@ def get_image_for_annotation(
             "ai_suggestion": ai_suggestion,
         })
     
-    # Get prev/next image IDs for navigation (within assigned images only)
-    assigned_image_ids_sorted = sorted(assigned_image_ids)
-    current_idx = assigned_image_ids_sorted.index(image_id) if image_id in assigned_image_ids_sorted else 0
-    prev_id = assigned_image_ids_sorted[current_idx - 1] if current_idx > 0 else None
-    next_id = assigned_image_ids_sorted[current_idx + 1] if current_idx < len(assigned_image_ids_sorted) - 1 else None
+    # Get prev/next image IDs for navigation (all images available)
+    all_image_ids_sorted = sorted(row.id for row in db.query(Image.id).all())
+    current_idx = all_image_ids_sorted.index(image_id) if image_id in all_image_ids_sorted else 0
+    prev_id = all_image_ids_sorted[current_idx - 1] if current_idx > 0 else None
+    next_id = all_image_ids_sorted[current_idx + 1] if current_idx < len(all_image_ids_sorted) - 1 else None
     
     # Check edit lock status
     # Only lock if annotations have been human-validated (not just model predictions)
@@ -653,7 +653,7 @@ def get_image_for_annotation(
         "prev_image_id": prev_id,
         "next_image_id": next_id,
         "current_index": current_idx,
-        "total_images": len(assigned_image_ids_sorted),
+        "total_images": len(all_image_ids_sorted),
         "is_improper": image.is_improper,
         "improper_reason": image.improper_reason,
         "is_locked": is_locked,
@@ -692,11 +692,6 @@ def save_image_annotations(
     # Block saving annotations for improper images
     if image.is_improper:
         raise HTTPException(status_code=400, detail="Cannot save annotations for improper images")
-    
-    # Verify this image is assigned to the user
-    assigned_image_ids = _get_assigned_image_ids(db, user.id)
-    if image_id not in assigned_image_ids:
-        raise HTTPException(status_code=403, detail="This image is not assigned to you")
     
     # Get assigned categories for edit lock check
     assigned_cat_ids_list = [
@@ -1238,11 +1233,6 @@ def mark_image_as_improper(
     if image.is_improper:
         raise HTTPException(status_code=400, detail="Cannot save annotations for improper images")
     
-    # Verify this image is assigned to the user
-    assigned_image_ids = _get_assigned_image_ids(db, user.id)
-    if image_id not in assigned_image_ids:
-        raise HTTPException(status_code=403, detail="This image is not assigned to you")
-    
     # Get assigned categories for edit lock check
     assigned_cat_ids_list = [
         ac.category_id
@@ -1296,14 +1286,6 @@ def mark_image_as_improper(
             # Consume the approved request after saving (mark it as used)
             approved_request.status = "used"
     
-    # Verify this image is assigned to the user (already checked above)
-    # assigned_image_ids = _get_assigned_image_ids(db, user.id)
-    # if image_id not in assigned_image_ids:
-    #     raise HTTPException(status_code=403, detail="This image is not assigned to you")
-    assigned_image_ids = _get_assigned_image_ids(db, user.id)
-    if image_id not in assigned_image_ids:
-        raise HTTPException(status_code=403, detail="This image is not assigned to you")
-    
     # Mark as improper
     image.is_improper = True
     image.improper_reason = payload.reason
@@ -1354,11 +1336,7 @@ def request_edit_permission(
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
     
-    # Verify this image is assigned to the user
-    assigned_image_ids = _get_assigned_image_ids(db, user.id)
-    if image_id not in assigned_image_ids:
-        raise HTTPException(status_code=403, detail="This image is not assigned to you")
-    
+
     # Check if there's already a pending request
     existing_request = (
         db.query(EditRequest)
