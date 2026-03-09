@@ -109,7 +109,7 @@ function PipelineStatistics() {
                 <tr className="bg-gray-50 border-b border-gray-200">
                   <th className="px-3 py-2.5 text-left font-semibold text-gray-700 sticky left-0 bg-gray-50">Folder</th>
                   <th className="px-3 py-2.5 text-center font-semibold text-sky-700 cursor-help">
-                    <span title="Total image files found in this Google Drive folder (includes within-folder duplicate filenames)">☁️ Drive</span>
+                    <span title="Total image files found in GCS bucket (includes within-folder duplicate filenames)">☁️ GCS</span>
                   </th>
                   <th className="px-3 py-2.5 text-center font-semibold text-gray-700 cursor-help">
                     <span title="Unique images imported into the database after download, deduplication, and biometric processing">📥 In DB</span>
@@ -220,15 +220,15 @@ function PipelineStatistics() {
       {/* ── Aggregate View (cards) ── */}
       {(viewMode === 'aggregate' || !hasFolderData) && (
         <>
-          {/* Google Drive Source */}
+          {/* GCS Source */}
           {stats.total_in_drive > 0 && (
             <div className="mb-6">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">☁️ Google Drive Source</h3>
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">☁️ GCS Source</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="bg-sky-50 rounded-lg p-4">
-                  <div className="text-sm text-sky-600 font-medium mb-1">Total in Drive</div>
+                  <div className="text-sm text-sky-600 font-medium mb-1">Total in GCS</div>
                   <div className="text-2xl font-bold text-sky-900">{stats.total_in_drive}</div>
-                  <div className="text-xs text-sky-600 mt-1">All files found in Drive</div>
+                  <div className="text-xs text-sky-600 mt-1">All files found in GCS bucket</div>
                 </div>
                 <div className="bg-blue-50 rounded-lg p-4">
                   <div className="text-sm text-blue-600 font-medium mb-1">Unique Filenames</div>

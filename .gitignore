@@ -150,3 +150,6 @@ temp/
 # Arbiter Classifier
 # ===================================
 backend/arbiter_classifier/results/
+
+# GCS arbiter cache
+backend/master_pipeline/pipeline_workspace/_gcs_arbiter_cache/

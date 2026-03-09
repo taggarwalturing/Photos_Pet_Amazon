@@ -22,9 +22,13 @@ import json
 import shutil
 from pathlib import Path
 from sqlalchemy import text
+from dotenv import dotenv_values
 from app.database import SessionLocal
 from app.config import settings
-from app.utils.gcs import upload_file, gcs_path as build_gcs_path
+from app.utils.gcs import gcs_path as build_gcs_path
+
+# Explicitly load .env to avoid stale os.environ
+_BACKEND_ENV = dotenv_values(Path(__file__).parent / ".env")
 
 
 def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_filenames: set = None):
@@ -143,6 +147,7 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
     filename_folder_map = {}
     filename_to_drive_id = {}
     drive_meta_path = workspace / "drive_metadata.json"
+    gcs_meta_path = workspace / "gcs_metadata.json"
     if drive_meta_path.exists():
         try:
             with open(drive_meta_path, 'r') as f:
@@ -158,11 +163,35 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                 print(f"   📊 Loaded drive-id filename mapping for {len(disk_filename_to_drive_id)} images")
         except Exception as e:
             print(f"   ⚠️  Could not load drive metadata: {e}")
+    elif gcs_meta_path.exists():
+        try:
+            with open(gcs_meta_path, 'r') as f:
+                gcs_meta = json.load(f)
+            gcs_blob_to_filename = gcs_meta.get("gcs_blob_to_filename", {})
+            filename_to_gcs_blob = gcs_meta.get("filename_to_gcs_blob", {})
+            if not folder_id:
+                folder_id = gcs_meta.get("folder_id")
+            # For GCS-sourced images, filename on disk IS the blob filename
+            # No drive_id mapping needed — the filename itself is the key
+            print(f"   📊 Loaded GCS metadata for {gcs_meta.get('total_in_gcs', 0)} blobs")
+        except Exception as e:
+            print(f"   ⚠️  Could not load GCS metadata: {e}")
     
     counts = {'new': 0, 'updated': 0, 'blurred': 0, 'clean': 0}
     
-    bucket_name = os.getenv("GCS_BUCKET_NAME", "amazon-photo-pets")
+    bucket_name = _BACKEND_ENV.get("GCS_BUCKET_NAME") or os.getenv("GCS_BUCKET_NAME", "")
     use_gcs = bool(bucket_name)
+
+    # Load GCS folder map (tells us which images are in input/ vs annotated/)
+    gcs_folder_map = {}  # filename → "input" | "annotated"
+    gcs_map_path = workspace / "gcs_folder_map.json"
+    if gcs_map_path.exists():
+        try:
+            with open(gcs_map_path, 'r') as f:
+                gcs_folder_map = json.load(f)
+            print(f"   📊 Loaded GCS folder map for {len(gcs_folder_map)} images")
+        except Exception as e:
+            print(f"   ⚠️  Could not load GCS folder map: {e}")
     
     for img_file in image_files:
         filename = img_file.name
@@ -200,18 +229,15 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
             if not original_drive_name:
                 original_drive_name = heic_conversion_map.get(filename)
         
-        # Upload to GCS input/ folder and build gs:// URL
+        # Determine GCS folder stage for this image
+        img_gcs_folder = gcs_folder_map.get(filename, "input")
+
+        # Build gs:// URL based on GCS folder map
         if use_gcs and source_fid:
-            gcs_obj_path = build_gcs_path(source_fid, filename, "input")
-            try:
-                gs_uri = upload_file(str(img_file), gcs_obj_path)
-                url = gs_uri
-                image_path = gs_uri
-                print(f"      ☁️  Uploaded {filename} → {gcs_obj_path}")
-            except Exception as e:
-                print(f"      ⚠️  GCS upload failed for {filename}: {e}, falling back to file://")
-                url = f"file://{img_file}"
-                image_path = str(img_file)
+            gcs_obj_path = build_gcs_path(source_fid, filename, img_gcs_folder)
+            gs_uri = f"gs://{bucket_name}/{gcs_obj_path}"
+            url = gs_uri
+            image_path = gs_uri
         else:
             url = f"file://{img_file}"
             image_path = str(img_file)
@@ -235,7 +261,7 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                     processed_url = :url,
                     is_programmatically_blurred = :is_programmatically_blurred,
                     image_path = :image_path,
-                    gcs_folder = 'input'
+                    gcs_folder = :gcs_folder
                 WHERE filename = :filename
             '''), {
                 'filename': filename,
@@ -248,6 +274,7 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                 'url': url,
                 'is_programmatically_blurred': is_prog_blurred,
                 'image_path': image_path,
+                'gcs_folder': img_gcs_folder,
             })
             counts['updated'] += 1
         else:
@@ -276,7 +303,7 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                     :image_drive_id, FALSE,
                     :is_programmatically_blurred, FALSE,
                     FALSE, NULL, :image_path,
-                    'input'
+                    :gcs_folder
                 )
             '''), {
                 'filename': filename,
@@ -290,6 +317,7 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                 'image_drive_id': drive_file_id,
                 'is_programmatically_blurred': is_prog_blurred,
                 'image_path': image_path,
+                'gcs_folder': img_gcs_folder,
             })
             counts['new'] += 1
             existing_filenames.add(filename)
@@ -320,16 +348,11 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                 orig_format = "HEIC" if heic_original else None
                 orig_name_for_dup = dup_original_name or heic_original
                 
-                # Upload duplicate to GCS input/ as well
+                # Duplicates are always in input/ (they exist in GCS already)
                 if use_gcs and source_fid:
-                    dup_gcs_path = build_gcs_path(source_fid, dup_filename, "input")
-                    try:
-                        gs_uri = upload_file(str(raw_path), dup_gcs_path)
-                        dup_url = gs_uri
-                        dup_image_path = gs_uri
-                    except Exception:
-                        dup_url = f"file://{raw_path}"
-                        dup_image_path = str(raw_path)
+                    dup_gcs_obj = build_gcs_path(source_fid, dup_filename, "input")
+                    dup_url = f"gs://{bucket_name}/{dup_gcs_obj}"
+                    dup_image_path = dup_url
                 else:
                     dup_url = f"file://{raw_path}"
                     dup_image_path = str(raw_path)
@@ -379,7 +402,15 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
 def import_images_from_pipeline():
     """Import images from pipeline workspace to database with biometric metadata."""
     
-    pipeline_workspace = Path(__file__).parent / "master_pipeline" / "pipeline_workspace"
+    # Use PIPELINE_WORKSPACE from .env (e.g. /tmp/pipeline_workspace)
+    env_workspace = _BACKEND_ENV.get("PIPELINE_WORKSPACE") or os.getenv("PIPELINE_WORKSPACE")
+    if env_workspace:
+        pipeline_workspace = Path(env_workspace)
+    else:
+        # Fallback to legacy path relative to this file
+        pipeline_workspace = Path(__file__).parent / "master_pipeline" / "pipeline_workspace"
+    
+    print(f"📂 Pipeline workspace: {pipeline_workspace}")
     
     if not pipeline_workspace.exists():
         print(f"❌ Pipeline workspace not found: {pipeline_workspace}")

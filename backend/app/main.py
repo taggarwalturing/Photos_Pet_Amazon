@@ -345,7 +345,8 @@ def proxy_image(image_id: int):
             if not os.path.exists(local_path) or os.path.getsize(local_path) == 0:
                 # Fallback: scan pipeline workspace folders for the file by filename
                 filename = os.path.basename(local_path)
-                workspace = os.path.join(os.path.dirname(os.path.dirname(__file__)), "master_pipeline", "pipeline_workspace")
+                from app.utils import get_pipeline_workspace
+                workspace = str(get_pipeline_workspace())
                 found = False
                 
                 # Build search directories: per-folder workspaces + legacy flat workspace
@@ -367,6 +368,38 @@ def proxy_image(image_id: int):
                             local_path = candidate
                             found = True
                             break
+                if not found:
+                    # Try GCS as an intermediate fallback — use DB gcs_folder for direct path
+                    try:
+                        from app.utils.gcs import download_to_bytes, gcs_path as build_gcs_path, blob_exists as gcs_blob_exists
+                        gcs_bucket = os.getenv("GCS_BUCKET_NAME")
+                        fid = img.source_drive_folder_id
+                        if gcs_bucket and fid:
+                            # Try the DB-tracked stage first, then fallback stages
+                            stages = [img.gcs_folder or "input"]
+                            for s in ("annotated", "input"):
+                                if s not in stages:
+                                    stages.append(s)
+                            for stage in stages:
+                                blob_name = build_gcs_path(fid, filename, stage)
+                                if gcs_blob_exists(blob_name):
+                                    gcs_content = download_to_bytes(blob_name)
+                                    if len(gcs_content) > 0:
+                                        ext_c = os.path.splitext(filename)[1].lower()
+                                        mime_c = {'.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+                                                  '.png': 'image/png', '.gif': 'image/gif',
+                                                  '.webp': 'image/webp'}.get(ext_c, 'image/jpeg')
+                                        cache_image(image_id, gcs_content, mime_c)
+                                        return Response(
+                                            content=gcs_content, media_type=mime_c,
+                                            headers={"Cache-Control": "public, max-age=604800",
+                                                     "X-Cache": "GCS_FALLBACK", "X-Source": "gcs"}
+                                        )
+                    except ImportError:
+                        pass
+                    except Exception as gcs_fb_err:
+                        print(f"[Proxy] GCS fallback failed for {filename}: {gcs_fb_err}")
+
                 if not found:
                     # Last resort: try re-downloading from Google Drive
                     try:
@@ -554,7 +587,7 @@ def get_signed_url(image_id: int, folder: str = None):
             
             _, original_blob_path = parse_gs_uri(url)
             
-            if folder and folder in ("input", "annotated", "final") and img.source_drive_folder_id:
+            if folder and folder in ("input", "annotated") and img.source_drive_folder_id:
                 blob_path = build_gcs_path(img.source_drive_folder_id, img.filename, folder)
             else:
                 stage = img.gcs_folder or "input"

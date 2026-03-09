@@ -32,11 +32,11 @@ def _read_env_file(filepath):
     result = {}
     if Path(filepath).exists():
         with open(filepath) as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith('#') and '=' in line:
-                    key, value = line.split('=', 1)
-                    value = value.split('#')[0].strip()
+        for line in f:
+            line = line.strip()
+            if line and not line.startswith('#') and '=' in line:
+                key, value = line.split('=', 1)
+                value = value.split('#')[0].strip()
                     result[key.strip()] = value.strip()
     return result
 

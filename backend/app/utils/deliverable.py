@@ -1,12 +1,11 @@
 """
-Utility functions for managing image delivery to GCS final/ folder (or local deliverable/)
+Utility functions for managing image delivery to GCS annotated/ folder (or local deliverable/)
 and populating the final_labels table when all annotations are approved.
 
 GCS bucket structure:
   gs://amazon-photo-pets/
-    input/{folder_id}/{filename}       — originals
-    annotated/{folder_id}/{filename}   — after blur
-    final/{folder_id}/{filename}       — approved deliverable
+    input/{folder_id}/{filename}       — originals (clean, unmodified)
+    annotated/{folder_id}/{filename}   — any modified version (human blur, pipeline blur, or admin-approved)
 """
 import shutil
 from pathlib import Path
@@ -21,8 +20,17 @@ from app.models.user import User
 from app.utils.gcs import copy_blob, gcs_path as build_gcs_path, blob_exists
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent.parent  # backend/
-PIPELINE_WORKSPACE = BACKEND_DIR / "master_pipeline" / "pipeline_workspace"
 IMAGE_CACHE_DIR = BACKEND_DIR / "image_cache"
+
+
+def _get_ws() -> Path:
+    from app.utils import get_pipeline_workspace
+    return get_pipeline_workspace()
+
+
+# Kept for backwards compat — callers that import PIPELINE_WORKSPACE directly
+# will get the *module-load-time* value.  Prefer _get_ws() in new code.
+PIPELINE_WORKSPACE = _get_ws()
 
 
 def _get_image_source_path(image: Image) -> Path | None:
@@ -72,9 +80,9 @@ def _get_image_source_path(image: Image) -> Path | None:
 
 def move_image_to_deliverable(image: Image, db: Session):
     """
-    Copy the current image version to GCS final/ (or local deliverable/).
+    Copy the current image version to GCS annotated/ (or local deliverable/).
     
-    For GCS images: copies from the current stage (input or annotated) to final/.
+    For GCS images: copies from input/ to annotated/ if modified.
     For legacy images: copies from local disk to deliverable/.
     
     Called when:
@@ -84,25 +92,34 @@ def move_image_to_deliverable(image: Image, db: Session):
     folder_id = image.source_drive_folder_id or "unknown"
     is_modified = bool(image.is_blurred_annotator or image.is_restore_annotator or image.manually_blurred)
 
-    # GCS path: copy from current stage (annotated if blurred, input if not) to final/
+    # GCS path: copy from input/ to annotated/ if not already there
     if (image.url or "").startswith("gs://") and folder_id != "unknown":
         src_stage = image.gcs_folder or "input"
+        dst_stage = "annotated"
+        if src_stage == dst_stage:
+            # Already in annotated/ — just update DB
+            image.gcs_folder = "annotated"
+            image.deliverable_image_path = f"annotated/{folder_id}/{image.filename}"
+            image.is_manually_modified = is_modified
+            db.commit()
+            print(f"[Deliverable] ✅ Image {image.id} ({image.filename}) already in GCS annotated/ (modified={is_modified})")
+            return
         src_gcs = build_gcs_path(folder_id, image.filename, src_stage)
-        dst_gcs = build_gcs_path(folder_id, image.filename, "final")
+        dst_gcs = build_gcs_path(folder_id, image.filename, dst_stage)
         try:
             if blob_exists(src_gcs):
                 copy_blob(src_gcs, dst_gcs)
             else:
                 input_gcs = build_gcs_path(folder_id, image.filename, "input")
                 copy_blob(input_gcs, dst_gcs)
-            image.gcs_folder = "final"
-            image.deliverable_image_path = f"final/{folder_id}/{image.filename}"
+            image.gcs_folder = "annotated"
+            image.deliverable_image_path = f"annotated/{folder_id}/{image.filename}"
             image.is_manually_modified = is_modified
             db.commit()
-            print(f"[Deliverable] ✅ Image {image.id} ({image.filename}) → GCS final/ (modified={is_modified})")
+            print(f"[Deliverable] ✅ Image {image.id} ({image.filename}) → GCS annotated/ (modified={is_modified})")
             return
         except Exception as e:
-            print(f"[Deliverable] GCS copy to final/ failed: {e}, falling back to local")
+            print(f"[Deliverable] GCS copy to annotated/ failed: {e}, falling back to local")
 
     # Local fallback
     final_dir = PIPELINE_WORKSPACE / "folders" / folder_id / "deliverable"

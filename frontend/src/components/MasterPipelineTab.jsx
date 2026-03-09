@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import api from '../api/client';
 import PipelineStatistics from './PipelineStatistics';
@@ -12,23 +12,18 @@ export default function MasterPipelineTab() {
   const [loading, setLoading] = useState(false);
   const [starting, setStarting] = useState(false);
   
-  // Drive folders
+  // GCS folders (auto-discovered)
   const [folders, setFolders] = useState([]);
   const [unassignedCount, setUnassignedCount] = useState(0);
-  const [uploadingExcel, setUploadingExcel] = useState(false);
-  const [uploadResult, setUploadResult] = useState(null);
-  const [addFolderInput, setAddFolderInput] = useState('');
-  const [addFolderName, setAddFolderName] = useState('');
-  const [showAddFolder, setShowAddFolder] = useState(false);
-  const fileInputRef = useRef(null);
   
   // Pipeline options
   const [options, setOptions] = useState({
-    download: false,
-    deduplicate: false,
+    download: true,
+    deduplicate: true,
     biometric: true,
     use_llm: false,
-    threshold: 0.85
+    threshold: 0.85,
+    source: 'gcs',
   });
 
   // Fetch pipeline status
@@ -152,49 +147,6 @@ export default function MasterPipelineTab() {
     } catch (e) { console.error('Failed to fetch folders:', e); }
   }, []);
 
-  const handleExcelUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploadingExcel(true);
-    setUploadResult(null);
-    try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const res = await api.post('/admin/pipeline/folders/upload-excel', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      setUploadResult(res.data);
-      fetchFolders();
-    } catch (err) {
-      setUploadResult({ error: err.response?.data?.detail || 'Upload failed' });
-    } finally {
-      setUploadingExcel(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
-  };
-
-  const handleAddFolder = async () => {
-    if (!addFolderInput.trim()) return;
-    try {
-      await api.post(`/admin/pipeline/folders/add?folder_id=${encodeURIComponent(addFolderInput.trim())}&folder_name=${encodeURIComponent(addFolderName.trim())}`);
-      setAddFolderInput('');
-      setAddFolderName('');
-      setShowAddFolder(false);
-      fetchFolders();
-    } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to add folder');
-    }
-  };
-
-  const handleRemoveFolder = async (id, name) => {
-    if (!confirm(`Remove folder "${name}"?`)) return;
-    try {
-      await api.delete(`/admin/pipeline/folders/${id}`);
-      fetchFolders();
-    } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to remove folder');
-    }
-  };
 
   // Auto-refresh status when running
   useEffect(() => {
@@ -314,8 +266,8 @@ export default function MasterPipelineTab() {
                   className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
                 />
                 <div>
-                  <span className="text-sm font-medium text-gray-900">Download from Drive</span>
-                  <p className="text-xs text-gray-500">Download images from registered folders (each folder processed independently)</p>
+                  <span className="text-sm font-medium text-gray-900">Sync from GCS</span>
+                  <p className="text-xs text-gray-500">Pull images from GCS bucket to local workspace for processing</p>
                 </div>
               </label>
 
@@ -464,7 +416,7 @@ export default function MasterPipelineTab() {
                     {(isActive || folderStatus === 'completed' || folderStatus === 'failed') && (
                       <div className="ml-7 space-y-1.5">
                         {[
-                          { key: 'download', label: '📥 Download', textColor: 'text-blue-700', barColor: 'bg-blue-500' },
+                          { key: 'download', label: '☁️ Sync from GCS', textColor: 'text-blue-700', barColor: 'bg-blue-500' },
                           { key: 'deduplicate', label: '🔍 Deduplicate', textColor: 'text-purple-700', barColor: 'bg-purple-500' },
                           { key: 'biometric', label: '🔐 Biometric', textColor: 'text-green-700', barColor: 'bg-green-500' },
                         ].map(({ key, label, textColor, barColor }) => {
@@ -515,7 +467,7 @@ export default function MasterPipelineTab() {
             /* Fallback: global-level progress (no folders) */
             <div className="space-y-4">
               {[
-                { key: 'download', label: 'Step 1: Download from Drive', barColor: 'bg-blue-600' },
+                { key: 'download', label: 'Step 1: Sync from GCS', barColor: 'bg-blue-600' },
                 { key: 'deduplicate', label: 'Step 2: Deduplicate Images', barColor: 'bg-purple-600' },
                 { key: 'biometric', label: 'Step 3: Biometric Compliance', barColor: 'bg-green-600' },
               ].map(({ key, label, barColor }) => {
@@ -593,102 +545,26 @@ export default function MasterPipelineTab() {
         </div>
       )}
 
-      {/* ── Drive Folders Management ── */}
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+      {/* ── GCS Folders (auto-discovered) ── */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
         <div className="flex items-center justify-between mb-4">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">📂 Google Drive Folders</h2>
+            <h2 className="text-lg font-semibold text-gray-900">📂 GCS Folders</h2>
             <p className="text-xs text-gray-500 mt-0.5">
-              Upload an Excel/CSV with folder IDs or add manually. Each folder is processed independently (no cross-folder dedup).
+              Folders are auto-discovered from the GCS bucket (<code className="bg-gray-100 px-1 rounded">input/</code> prefixes). Each folder is processed independently.
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx,.xls,.csv"
-              className="hidden"
-              onChange={handleExcelUpload}
-            />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploadingExcel}
-              className="px-3 py-1.5 bg-emerald-600 text-white text-sm rounded-lg hover:bg-emerald-700 transition flex items-center gap-1.5 disabled:opacity-50"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
-              </svg>
-              {uploadingExcel ? 'Uploading...' : 'Upload Excel/CSV'}
-            </button>
-            <button
-              onClick={() => setShowAddFolder(!showAddFolder)}
-              className="px-3 py-1.5 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 transition"
-            >
-              + Add Folder
-            </button>
-            <button
-              onClick={() => { fetchFolders(); }}
-              className="px-3 py-1.5 bg-gray-100 text-gray-600 text-sm rounded-lg hover:bg-gray-200 border border-gray-300 transition flex items-center gap-1.5"
-              title="Refresh folder list"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-              </svg>
-              Refresh
-            </button>
-          </div>
-            </div>
-            
-        {/* Upload result banner */}
-        {uploadResult && (
-          <div className={`mb-4 p-3 rounded-lg border text-sm ${uploadResult.error ? 'bg-red-50 border-red-200 text-red-700' : 'bg-green-50 border-green-200 text-green-700'}`}>
-            {uploadResult.error ? (
-              <p>❌ {uploadResult.error}</p>
-            ) : (
-              <p>✅ {uploadResult.message} — Total folders: {uploadResult.total_folders}
-                {uploadResult.errors?.length > 0 && (
-                  <span className="block mt-1 text-xs text-amber-600">
-                    ⚠️ {uploadResult.errors.length} row error(s): {uploadResult.errors.slice(0, 3).join(', ')}
-                  </span>
-                )}
-              </p>
-            )}
-            <button onClick={() => setUploadResult(null)} className="text-xs underline mt-1">Dismiss</button>
-            </div>
-        )}
-
-        {/* Add folder inline form */}
-        {showAddFolder && (
-          <div className="mb-4 p-3 bg-gray-50 rounded-lg border border-gray-200 flex items-end gap-3">
-            <div className="flex-1">
-              <label className="text-xs font-medium text-gray-600 block mb-1">Folder ID *</label>
-              <input
-                value={addFolderInput}
-                onChange={e => setAddFolderInput(e.target.value)}
-                placeholder="e.g. 1A2B3C4D5E6F..."
-                className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-indigo-500 focus:border-indigo-500"
-              />
-            </div>
-            <div className="flex-1">
-              <label className="text-xs font-medium text-gray-600 block mb-1">Name (optional)</label>
-              <input
-                value={addFolderName}
-                onChange={e => setAddFolderName(e.target.value)}
-                placeholder="e.g. Batch 1 - Jan 2026"
-                className="w-full px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:ring-indigo-500 focus:border-indigo-500"
-              />
-            </div>
-            <button
-              onClick={handleAddFolder}
-              className="px-4 py-1.5 bg-indigo-600 text-white text-sm rounded-lg hover:bg-indigo-700 whitespace-nowrap"
-            >
-              Add
-            </button>
-            <button onClick={() => setShowAddFolder(false)} className="px-3 py-1.5 text-gray-500 text-sm hover:text-gray-700">
-              Cancel
-            </button>
-          </div>
-        )}
+          <button
+            onClick={() => { fetchFolders(); }}
+            className="px-3 py-1.5 bg-gray-100 text-gray-600 text-sm rounded-lg hover:bg-gray-200 border border-gray-300 transition flex items-center gap-1.5"
+            title="Refresh folder list"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Refresh
+          </button>
+        </div>
 
         {/* Folders list */}
         {folders.length > 0 ? (
@@ -699,12 +575,11 @@ export default function MasterPipelineTab() {
                   <th className="px-3 py-2 text-left font-medium text-gray-600">Name</th>
                   <th className="px-3 py-2 text-left font-medium text-gray-600">Folder ID</th>
                   <th className="px-3 py-2 text-center font-medium text-gray-600">Status</th>
-                  <th className="px-3 py-2 text-center font-medium text-gray-600">In Drive</th>
+                  <th className="px-3 py-2 text-center font-medium text-gray-600">In GCS</th>
                   <th className="px-3 py-2 text-center font-medium text-gray-600">In DB</th>
                   <th className="px-3 py-2 text-center font-medium text-gray-600">Blurred</th>
                   <th className="px-3 py-2 text-center font-medium text-gray-600">Clean</th>
                   <th className="px-3 py-2 text-left font-medium text-gray-600">Added</th>
-                  <th className="px-3 py-2 text-center font-medium text-gray-600">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -731,15 +606,6 @@ export default function MasterPipelineTab() {
                     <td className="px-3 py-2 text-xs text-gray-500">
                       {f.added_at ? new Date(f.added_at).toLocaleDateString() : '—'}
                     </td>
-                    <td className="px-3 py-2 text-center">
-                      <button
-                        onClick={() => handleRemoveFolder(f.id, f.folder_name)}
-                        className="text-red-500 hover:text-red-700 text-xs"
-                        title="Remove"
-                      >
-                        🗑️
-                      </button>
-                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -747,10 +613,10 @@ export default function MasterPipelineTab() {
           </div>
         ) : (
           <div className="text-center py-8 text-gray-400">
-            <p className="text-sm">No folders registered yet. Upload an Excel or add manually.</p>
-            <p className="text-xs mt-1">Excel should have a column named <code className="bg-gray-100 px-1 rounded">folder_id</code> and optionally <code className="bg-gray-100 px-1 rounded">folder_name</code></p>
-        </div>
-      )}
+            <p className="text-sm">No folders discovered yet.</p>
+            <p className="text-xs mt-1">Upload images to <code className="bg-gray-100 px-1 rounded">input/{'<folder_id>'}/</code> in the GCS bucket, then run the pipeline.</p>
+          </div>
+        )}
 
         {unassignedCount > 0 && (
           <p className="mt-3 text-xs text-amber-600">

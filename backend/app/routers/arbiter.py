@@ -38,8 +38,9 @@ from app.models.option import Option
 router = APIRouter(prefix="/admin/arbiter", tags=["Arbiter Classifier"])
 
 # ─── Directories ──────────────────────────────────────────────
+from app.utils import get_pipeline_workspace as _gp_ws
 ARBITER_DIR = Path(__file__).parent.parent.parent / "arbiter_classifier"
-PIPELINE_WORKSPACE = Path(__file__).parent.parent.parent / "master_pipeline" / "pipeline_workspace"
+PIPELINE_WORKSPACE = _gp_ws()
 FINAL_OUTPUT_DIR = PIPELINE_WORKSPACE / "deliverable"  # legacy fallback
 RESULTS_DIR = ARBITER_DIR / "results"
 RESULTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -49,14 +50,19 @@ ERRORS_FILE = RESULTS_DIR / "failed_images.json"
 
 def _get_all_final_images() -> list:
     """
-    Collect all final output images across per-folder workspaces and legacy workspace.
+    Collect all final output images across per-folder workspaces, legacy workspace,
+    and GCS bucket.
+
+    For GCS images that are not locally available, downloads them to a local
+    temp cache so they can be read by the arbiter vision models.
+
     Returns a sorted list of Path objects.
     """
     supported_exts = {".jpg", ".jpeg", ".png"}
     images = []
     seen_names = set()
     
-    # Per-folder workspaces
+    # Per-folder workspaces (local)
     folders_dir = PIPELINE_WORKSPACE / "folders"
     if folders_dir.exists():
         for fd in sorted(folders_dir.iterdir()):
@@ -75,6 +81,42 @@ def _get_all_final_images() -> list:
             if p.is_file() and p.suffix.lower() in supported_exts and p.name not in seen_names:
                 images.append(p)
                 seen_names.add(p.name)
+
+    # GCS: fetch images from annotated/ and input/ prefixes that are not already local
+    try:
+        from app.utils.gcs import list_blobs, download_blob_to_file, list_prefixes
+        import os
+
+        gcs_cache_dir = PIPELINE_WORKSPACE / "_gcs_arbiter_cache"
+        gcs_cache_dir.mkdir(parents=True, exist_ok=True)
+
+        # List images from annotated/ (modified) and input/ (clean originals)
+        for gcs_stage in ("annotated", "input"):
+            stage_prefixes = list_prefixes(f"{gcs_stage}/")
+            for pfx in stage_prefixes:
+                blobs = list_blobs(pfx)
+                for blob_name in blobs:
+                    fname = os.path.basename(blob_name)
+                    if not fname:
+                        continue
+                    ext = os.path.splitext(fname)[1].lower()
+                    if ext not in supported_exts or fname in seen_names:
+                        continue
+                    # Download to local cache
+                    local_path = gcs_cache_dir / fname
+                    if not local_path.exists() or local_path.stat().st_size == 0:
+                        try:
+                            download_blob_to_file(blob_name, str(local_path))
+                        except Exception as dl_err:
+                            print(f"[Arbiter] GCS download failed for {blob_name}: {dl_err}")
+                            continue
+                    images.append(local_path)
+                    seen_names.add(fname)
+
+    except ImportError:
+        pass  # GCS not available — use local only
+    except Exception as gcs_err:
+        print(f"[Arbiter] GCS image listing error: {gcs_err}")
     
     return sorted(images, key=lambda x: x.name)
 

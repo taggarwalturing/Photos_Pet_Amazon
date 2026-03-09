@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import api from '../api/client';
 import SignedImage from './SignedImage';
 
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5001';
+
 const FILTERS = [
   { key: 'all', label: 'All', icon: '📋' },
   { key: 'unique', label: 'Unique', icon: '✅' },
@@ -53,6 +55,7 @@ export default function PhotoRegistryTab() {
   const [searchInput, setSearchInput] = useState('');
   const [filter, setFilter] = useState('all');
   const [perPage] = useState(50);
+  const [exporting, setExporting] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -82,6 +85,40 @@ export default function PhotoRegistryTab() {
     setPage(1);
   };
 
+  const handleExportExcel = async () => {
+    setExporting(true);
+    try {
+      const token = localStorage.getItem('token');
+      const params = new URLSearchParams({
+        search: search || '',
+        status_filter: filter || 'all',
+      });
+      const res = await fetch(
+        `${API_BASE}/api/admin/photo-registry/export?${params}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+      if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      // Extract filename from Content-Disposition header or use default
+      const disposition = res.headers.get('Content-Disposition');
+      const match = disposition && disposition.match(/filename=(.+)/);
+      a.download = match ? match[1] : `photo_registry_${filter}.xlsx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Export failed:', err);
+      alert('Failed to export Excel file. Please try again.');
+    }
+    setExporting(false);
+  };
+
   const summary = data?.summary || {};
 
   const driveTotal = summary.total_in_drive || 0;
@@ -97,12 +134,12 @@ export default function PhotoRegistryTab() {
     const parts = [];
     if (driveDupFilenames > 0) parts.push(`${driveDupFilenames} within-folder dup filenames skipped`);
     if (crossFolderOverlap > 0) parts.push(`${crossFolderOverlap} filenames shared across folders`);
-    return parts.length > 0 ? `${driveTotal} in Drive → ${totalDownloaded} downloaded: ${parts.join(', ')}` : '';
+    return parts.length > 0 ? `${driveTotal} in GCS → ${totalDownloaded} downloaded: ${parts.join(', ')}` : '';
   })();
 
   const statCards = [
-    { key: null, icon: '☁️', label: 'In Google Drive', value: driveTotal, color: { bg: 'bg-gradient-to-br from-sky-500 to-blue-600', ring: 'ring-sky-400' },
-      tooltip: `Total image files found across all Google Drive folders.${driveDupFilenames > 0 ? ` Includes ${driveDupFilenames} duplicate filename(s) within folders.` : ''}` },
+    { key: null, icon: '☁️', label: 'In GCS', value: driveTotal, color: { bg: 'bg-gradient-to-br from-sky-500 to-blue-600', ring: 'ring-sky-400' },
+      tooltip: `Total image files found across all GCS folders.${driveDupFilenames > 0 ? ` Includes ${driveDupFilenames} duplicate filename(s) within folders.` : ''}` },
     { key: 'all', icon: '📋', label: 'Downloaded', value: totalDownloaded, color: { bg: 'bg-gradient-to-br from-indigo-500 to-purple-500', ring: 'ring-indigo-400' },
       tooltip: `Images downloaded to disk (unique filenames per folder). ${downloadedTooltip || 'Duplicate filenames within a folder are skipped.'}` },
     { key: 'unique', icon: '✅', label: 'Unique (After Dedup)', value: summary.total_unique || 0, color: { bg: 'bg-gradient-to-br from-emerald-500 to-teal-500', ring: 'ring-emerald-400' },
@@ -116,7 +153,7 @@ export default function PhotoRegistryTab() {
     { key: 'clean', icon: '🟢', label: 'Clean', value: summary.total_clean || 0, color: { bg: 'bg-gradient-to-br from-cyan-500 to-blue-500', ring: 'ring-cyan-400' },
       tooltip: 'Images with no blur applied — no human faces detected by the pipeline and no manual blur added. Ready for annotation as-is.' },
     { key: null, icon: '📦', label: 'Delivered', value: summary.total_delivered || 0, color: { bg: 'bg-gradient-to-br from-teal-500 to-emerald-600', ring: 'ring-teal-400' },
-      tooltip: 'Images that have been reviewed and approved by a reviewer, then copied to the deliverable_images folder.' },
+      tooltip: 'Images reviewed and approved by a reviewer. The deliverable path is tracked in the DB for external scripts.' },
   ];
 
   return (
@@ -134,16 +171,34 @@ export default function PhotoRegistryTab() {
             Complete status of all downloaded photos — duplicates, paths, blur status
           </p>
         </div>
-        <button
-          onClick={fetchData}
-          disabled={loading}
-          className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition cursor-pointer disabled:opacity-50"
-        >
-          <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-          Refresh
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleExportExcel}
+            disabled={exporting || loading}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition cursor-pointer disabled:opacity-50 shadow-sm"
+          >
+            {exporting ? (
+              <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            ) : (
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+            )}
+            {exporting ? 'Exporting…' : 'Export Excel'}
+          </button>
+          <button
+            onClick={fetchData}
+            disabled={loading}
+            className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium bg-white border border-gray-200 rounded-lg hover:bg-gray-50 transition cursor-pointer disabled:opacity-50"
+          >
+            <svg className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+            Refresh
+          </button>
+        </div>
       </div>
 
       {/* Stats Grid */}
@@ -185,15 +240,9 @@ export default function PhotoRegistryTab() {
                       <tr key={i} className="text-sky-600">
                         <td className="py-0.5 pr-4 font-mono">{d.filename}</td>
                         <td className="py-0.5 pr-4">
-                          <a
-                            href={`https://drive.google.com/drive/folders/${d.folder_id}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="font-mono text-blue-600 hover:underline"
-                            title={d.folder_id}
-                          >
+                          <span className="font-mono text-gray-600" title={d.folder_id}>
                             {d.folder_id.slice(0, 16)}…
-                          </a>
+                          </span>
                         </td>
                         <td className="py-0.5">{d.count}×</td>
                       </tr>
@@ -225,16 +274,13 @@ export default function PhotoRegistryTab() {
                         <td className="py-1">
                           <div className="flex flex-wrap gap-1">
                             {d.folders.map((fid, j) => (
-                              <a
+                              <span
                                 key={j}
-                                href={`https://drive.google.com/drive/folders/${fid}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-mono hover:bg-amber-200 hover:underline transition"
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 font-mono"
                                 title={fid}
                               >
                                 📂 {fid.slice(0, 12)}…
-                              </a>
+                              </span>
                             ))}
                           </div>
                         </td>
@@ -287,9 +333,9 @@ export default function PhotoRegistryTab() {
           <table className="w-full text-sm">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider" title="Google Drive hex ID — unique identifier for each image">Image ID</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider" title="Unique identifier for each image">Image ID</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Filename</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider" title="Source Google Drive Folder ID">Folder ID</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider" title="Source GCS Folder ID">Folder ID</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Format</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Parent Image</th>
@@ -297,6 +343,7 @@ export default function PhotoRegistryTab() {
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Processed Path</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Blur</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Manual Blur Path</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider" title="GCS path to the current deliverable version of this image">GCS Path</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider" title="Deliverable status — image is copied here after reviewer approves all annotations">Deliverable</th>
               </tr>
             </thead>
@@ -304,7 +351,7 @@ export default function PhotoRegistryTab() {
               {loading ? (
                 Array.from({ length: 10 }).map((_, i) => (
                   <tr key={i}>
-                    {Array.from({ length: 11 }).map((_, j) => (
+                    {Array.from({ length: 12 }).map((_, j) => (
                       <td key={j} className="px-4 py-3">
                         <div className="h-4 bg-gray-100 rounded animate-pulse" style={{ width: `${60 + Math.random() * 40}%` }} />
                       </td>
@@ -313,7 +360,7 @@ export default function PhotoRegistryTab() {
                 ))
               ) : data?.data?.length === 0 ? (
                 <tr>
-                  <td colSpan={11} className="px-4 py-12 text-center text-gray-400">
+                  <td colSpan={12} className="px-4 py-12 text-center text-gray-400">
                     No images found matching your criteria
                   </td>
                 </tr>
@@ -323,15 +370,12 @@ export default function PhotoRegistryTab() {
                     {/* Image ID (Drive hex ID) */}
                     <td className="px-4 py-2.5">
                       {row.image_drive_id ? (
-                        <a
-                          href={`https://drive.google.com/file/d/${row.image_drive_id}/view`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[10px] font-mono text-blue-600 hover:text-blue-800 hover:underline truncate max-w-[140px] inline-block"
+                        <span
+                          className="text-[10px] font-mono text-gray-600 truncate max-w-[140px] inline-block"
                           title={row.image_drive_id}
                         >
                           {row.image_drive_id}
-                        </a>
+                        </span>
                       ) : (
                         <span className="text-gray-300 text-[10px]">—</span>
                       )}
@@ -364,15 +408,12 @@ export default function PhotoRegistryTab() {
                     {/* Folder ID */}
                     <td className="px-4 py-2.5">
                       {row.source_drive_folder_id ? (
-                        <a
-                          href={`https://drive.google.com/drive/folders/${row.source_drive_folder_id}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-[10px] font-mono text-purple-600 hover:text-purple-800 hover:underline truncate max-w-[120px] inline-block"
+                        <span
+                          className="text-[10px] font-mono text-purple-600 truncate max-w-[120px] inline-block"
                           title={row.source_drive_folder_id}
                         >
                           {row.source_drive_folder_id.slice(0, 12)}…
-                        </a>
+                        </span>
                       ) : (
                         <span className="text-gray-300 text-xs">—</span>
                       )}
@@ -461,17 +502,31 @@ export default function PhotoRegistryTab() {
                       <TruncatedPath path={row.annotated_blur_path} />
                     </td>
 
+                    {/* GCS Path */}
+                    <td className="px-4 py-2.5">
+                      {row.source_drive_folder_id && row.filename ? (
+                        <span
+                          className="text-[10px] font-mono text-gray-600 break-all"
+                          title={`gs://…/${row.gcs_folder || 'input'}/${row.source_drive_folder_id}/${row.filename}`}
+                        >
+                          {row.gcs_folder || 'input'}/{row.source_drive_folder_id?.slice(0, 8)}…/{row.filename?.length > 20 ? row.filename.slice(0, 20) + '…' : row.filename}
+                        </span>
+                      ) : (
+                        <span className="text-gray-300 text-[10px]">—</span>
+                      )}
+                    </td>
+
                     {/* Deliverable */}
                     <td className="px-4 py-2.5">
                       {row.deliverable_image_path ? (
                         <div className="flex flex-col gap-0.5">
                           <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                            row.deliverable_image_path.includes('/blurred/') 
+                            (row.pipeline_blurred || row.manually_blurred)
                               ? 'bg-amber-50 text-amber-700' 
                               : 'bg-teal-50 text-teal-700'
                           }`}>
-                            {row.deliverable_image_path.includes('/blurred/') ? '🔒 Blurred' : '✅ Clean'}
-                            {row.is_manually_modified && ' (Modified)'}
+                            {(row.pipeline_blurred || row.manually_blurred) ? '🔒 Blurred' : '✅ Clean'}
+                            {row.is_manually_modified && ' (Edited)'}
                           </span>
                           <TruncatedPath path={row.deliverable_image_path} />
                         </div>

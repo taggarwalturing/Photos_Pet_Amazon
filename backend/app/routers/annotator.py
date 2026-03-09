@@ -78,7 +78,8 @@ def _check_original_exists(image: Image) -> bool:
             return True
 
     # Check pipeline workspace folders for the filename
-    workspace = os.path.join(backend_dir, "master_pipeline", "pipeline_workspace")
+    from app.utils import get_pipeline_workspace
+    workspace = str(get_pipeline_workspace())
     for sub in ["deliverable", "01_downloaded_from_drive"]:
         fpath = os.path.join(workspace, sub, image.filename)
         if os.path.exists(fpath) and os.path.getsize(fpath) > 0:

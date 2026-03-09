@@ -70,7 +70,7 @@ class Image(Base):
     # Deliverable image tracking (populated after reviewer approves all annotations)
     deliverable_image_path = Column(Text, nullable=True)
 
-    # GCS storage stage: input | annotated | final
+    # GCS storage stage: input | annotated
     gcs_folder = Column(String(20), nullable=True, default="input")
 
     # Arbiter classifier AI-predicted labels (pre-filled for annotators)

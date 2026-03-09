@@ -140,9 +140,96 @@ class MasterPipeline:
         )
         return build('drive', 'v3', credentials=creds)
         
+    def step1_sync_from_gcs(self, folder_id: str) -> int:
+        """
+        Step 1: Sync images from GCS ``input/{folder_id}/`` to local workspace.
+
+        Images are manually uploaded to the GCS bucket by operators.
+        This step pulls them down so local processing (dedup, biometric) can run.
+
+        A ``drive_metadata.json`` is generated with the same structure as the
+        Drive-based download so that downstream steps remain compatible.
+
+        Args:
+            folder_id: GCS sub-folder prefix under ``input/``.
+
+        Returns: Number of images in the download folder after sync.
+        """
+        print("\n" + "=" * 70)
+        print("☁️  STEP 1: Sync Images from Google Cloud Storage")
+        print(f"   Bucket folder: input/{folder_id}/")
+        print("=" * 70)
+
+        # Import GCS helpers (installed alongside google-cloud-storage)
+        try:
+            sys.path.insert(0, str(SCRIPT_DIR.parent))
+            from app.utils.gcs import list_blobs, download_blob_to_file
+        except ImportError as exc:
+            raise RuntimeError(f"google-cloud-storage is required for GCS sync: {exc}")
+
+        prefix = f"input/{folder_id}/"
+        print(f"🔍 Listing blobs under gs://…/{prefix}")
+        image_exts = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif', '.avif', '.bmp', '.tiff', '.tif'}
+        all_blobs = [
+            b for b in list_blobs(prefix)
+            if os.path.splitext(b)[1].lower() in image_exts
+        ]
+        print(f"✅ Found {len(all_blobs)} images in GCS")
+
+        if not all_blobs:
+            print("⚠️  No images found in GCS bucket")
+            return 0
+
+        download_folder = self.folders['downloaded']
+        print(f"\n📥 Syncing to: {download_folder}")
+
+        downloaded = 0
+        skipped = 0
+        all_images_meta = []  # For metadata JSON
+
+        for blob_name in tqdm(all_blobs, desc="Syncing from GCS"):
+            try:
+                filename = os.path.basename(blob_name)
+                local_path = download_folder / filename
+
+                # Build metadata entry (mimic Drive metadata format)
+                stem = Path(filename).stem
+                all_images_meta.append({
+                    'id': stem,  # Use stem as pseudo drive_id
+                    'name': filename,
+                    'gcs_blob': blob_name,
+                })
+
+                # Skip if already downloaded
+                if local_path.exists() and local_path.stat().st_size > 0:
+                    skipped += 1
+                    continue
+
+                download_blob_to_file(blob_name, str(local_path))
+                downloaded += 1
+
+            except Exception as e:
+                print(f"❌ Failed to sync {blob_name}: {e}")
+
+        print(f"\n✅ Synced {downloaded} new images ({skipped} already local)")
+        total_on_disk = len([f for f in download_folder.iterdir()
+                            if f.is_file() and not f.name.startswith(('_', '.'))])
+        print(f"📊 Total in folder: {total_on_disk} images")
+
+        # Save metadata in the same format as Drive downloads
+        self._save_gcs_metadata(all_images_meta, folder_id)
+
+        # Auto-convert HEIC/HEIF/AVIF to JPG
+        converted = self._convert_unsupported_formats(download_folder)
+        if converted > 0:
+            print(f"🔄 Converted {converted} HEIC/HEIF/AVIF images to JPG")
+            self._update_metadata_for_conversions(download_folder)
+
+        return total_on_disk
+
     def step1_download_from_drive(self, folder_id: str) -> int:
         """
-        Step 1: Download all images from a single Google Drive folder.
+        Step 1 (legacy): Download all images from a single Google Drive folder.
         
         Files are saved using their Google Drive file ID as the filename
         (e.g. ``1a2B3c4D5e.jpg``) to avoid collisions.  A mapping from
@@ -255,6 +342,61 @@ class MasterPipeline:
         
         return len(list(download_folder.glob('*')))
     
+    def _save_gcs_metadata(self, images: List[Dict], folder_id: str):
+        """Save metadata about images synced from GCS.
+
+        Creates a ``drive_metadata.json`` in the same format that the Drive
+        download step produces, so downstream pipeline stages and the
+        import script remain fully compatible.
+        """
+        from collections import Counter
+        all_names = [img['name'] for img in images]
+        name_counts = Counter(all_names)
+        unique_names = set(all_names)
+        dup_names = {n: c for n, c in name_counts.items() if c > 1}
+
+        # Build mappings (filename-keyed — GCS files keep original names)
+        disk_filename_to_drive_id = {}
+        disk_filename_to_original = {}
+        drive_id_to_original_name = {}
+        drive_id_to_disk_filename = {}
+        filename_folder_map = {}
+        filename_to_drive_id = {}
+
+        for img in images:
+            name = img['name']
+            pseudo_id = img.get('id', Path(name).stem)
+            disk_filename_to_drive_id[name] = pseudo_id
+            disk_filename_to_original[name] = name
+            drive_id_to_original_name[pseudo_id] = name
+            drive_id_to_disk_filename[pseudo_id] = name
+            filename_folder_map[name] = folder_id
+            filename_to_drive_id[name] = pseudo_id
+
+        metadata = {
+            "folder_id": folder_id,
+            "source": "gcs",
+            "total_in_gcs": len(images),
+            "total_in_drive": len(images),  # compat alias
+            "unique_filenames": len(unique_names),
+            "duplicate_filename_count": sum(c - 1 for c in name_counts.values() if c > 1),
+            "duplicate_filenames": dict(sorted(dup_names.items())),
+            "scanned_at": datetime.now().isoformat(),
+            "drive_id_to_original_name": drive_id_to_original_name,
+            "drive_id_to_disk_filename": drive_id_to_disk_filename,
+            "disk_filename_to_drive_id": disk_filename_to_drive_id,
+            "disk_filename_to_original": disk_filename_to_original,
+            "filename_folder_map": filename_folder_map,
+            "filename_to_drive_id": filename_to_drive_id,
+        }
+
+        metadata_path = self.workspace / "drive_metadata.json"
+        with open(metadata_path, 'w') as f:
+            json.dump(metadata, f, indent=2)
+
+        print(f"📊 GCS: {metadata['total_in_drive']} total, "
+              f"{metadata['unique_filenames']} unique filenames")
+
     def _save_drive_metadata(self, images: List[Dict], folder_id: str):
         """Save metadata about what was found in this Google Drive folder.
         
@@ -940,6 +1082,105 @@ class MasterPipeline:
         
         return processed_stats
     
+    def step4_upload_to_gcs(self, folder_id: str) -> dict:
+        """
+        Step 4: Upload **only modified** images to GCS ``annotated/{folder_id}/``.
+
+        Clean images (no faces detected, unmodified) stay in ``input/`` — the
+        original in GCS IS the deliverable.  Only pipeline-blurred or QA images
+        are uploaded to ``annotated/``.
+
+        The DB ``gcs_folder`` column tracks where the current version lives:
+          • ``input``    — clean / unmodified (default)
+          • ``modified`` — modified by pipeline (faces blurred)
+
+        Returns: dict with counts {uploaded, skipped_clean, total}.
+        """
+        print("\n" + "=" * 70)
+        print("☁️  STEP 4: Upload Modified Images to GCS")
+        print(f"   Destination: annotated/{folder_id}/  (modified only)")
+        print("=" * 70)
+
+        try:
+            sys.path.insert(0, str(SCRIPT_DIR.parent))
+            from app.utils.gcs import upload_file, gcs_path as build_gcs_path, blob_exists
+        except ImportError as exc:
+            print(f"⚠️  GCS upload skipped (google-cloud-storage not available): {exc}")
+            return {"uploaded": 0, "skipped_clean": 0, "total": 0}
+
+        deliverable_dir = self.folders['final_output']
+        downloaded_dir = self.folders['downloaded']
+        image_exts = {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff', '.tif'}
+
+        deliverable_files = [
+            f for f in deliverable_dir.iterdir()
+            if f.is_file() and f.suffix.lower() in image_exts and not f.name.startswith(('_', '.'))
+        ]
+
+        if not deliverable_files:
+            print("⚠️  No deliverable images found")
+            return {"uploaded": 0, "skipped_clean": 0, "total": 0}
+
+        # Load pipeline results to know which images were actually modified
+        modified_filenames = set()
+        pipeline_results_path = self.workspace / 'obfuscation_results.json'
+        if pipeline_results_path.exists():
+            try:
+                with open(pipeline_results_path) as f:
+                    results = json.load(f)
+                for r in results.get('results', []):
+                    action = r.get('action', '')
+                    fname = r.get('output_name') or r.get('image', '')
+                    if action in ('obfuscated', 'qa_review'):
+                        modified_filenames.add(fname)
+            except Exception as e:
+                print(f"   ⚠️  Could not read obfuscation results: {e}")
+
+        # Also compare: if deliverable file differs from downloaded file, it's modified
+        for f in deliverable_files:
+            if f.name in modified_filenames:
+                continue
+            downloaded_file = downloaded_dir / f.name
+            if downloaded_file.exists():
+                # Quick size comparison — if sizes differ, it was modified
+                if f.stat().st_size != downloaded_file.stat().st_size:
+                    modified_filenames.add(f.name)
+            else:
+                # No original to compare — treat as modified (safer)
+                modified_filenames.add(f.name)
+
+        uploaded = 0
+        skipped_clean = 0
+        gcs_folder_map = {}  # filename → gcs_folder stage
+
+        for img_path in tqdm(deliverable_files, desc="Uploading to GCS"):
+            if img_path.name in modified_filenames:
+                # Modified image → upload to annotated/
+                try:
+                    gcs_dest = build_gcs_path(folder_id, img_path.name, "annotated")
+                    upload_file(str(img_path), gcs_dest)
+                    uploaded += 1
+                    gcs_folder_map[img_path.name] = "annotated"
+                except Exception as e:
+                    print(f"❌ Failed to upload {img_path.name}: {e}")
+            else:
+                # Clean image → stays in input/ (already there from sync)
+                skipped_clean += 1
+                gcs_folder_map[img_path.name] = "input"
+
+        print(f"\n✅ GCS upload summary:")
+        print(f"   📤 Uploaded to annotated/: {uploaded} (modified by pipeline)")
+        print(f"   ⏭️  Kept in input/:       {skipped_clean} (clean, unmodified)")
+        print(f"   📊 Total deliverable:     {len(deliverable_files)}")
+
+        # Save the gcs_folder mapping for the import script
+        gcs_map_path = self.workspace / 'gcs_folder_map.json'
+        with open(gcs_map_path, 'w') as f:
+            json.dump(gcs_folder_map, f, indent=2)
+        print(f"   💾 Saved GCS folder map → {gcs_map_path.name}")
+
+        return {"uploaded": uploaded, "skipped_clean": skipped_clean, "total": len(deliverable_files)}
+
     def run_complete_pipeline(
         self,
         download: bool = True,
@@ -947,18 +1188,20 @@ class MasterPipeline:
         pipeline: bool = True,
         use_llm: bool = None,
         dedup_threshold: float = None,
-        folder_id: str = None
+        folder_id: str = None,
+        source: str = "gcs",
     ):
         """
         Run the complete pipeline for a single folder.
         
         Args:
-            download: Run download step
+            download: Run download/sync step
             deduplicate: Run deduplication step
             pipeline: Run biometric pipeline step
             use_llm: Use LLM validation
             dedup_threshold: Deduplication threshold
-            folder_id: Google Drive folder ID to process
+            folder_id: Folder ID to process (GCS prefix or Drive folder ID)
+            source: Image source — "gcs" (default) or "drive"
         """
         use_llm = use_llm if use_llm is not None else self.config.use_llm_validation
         dedup_threshold = dedup_threshold if dedup_threshold is not None else self.config.dedup_threshold
@@ -967,7 +1210,8 @@ class MasterPipeline:
         print("🚀 PIPELINE START")
         if folder_id:
             print(f"   Folder: {folder_id}")
-        print(f"   Download: {download}")
+        print(f"   Source: {source.upper()}")
+        print(f"   Sync/Download: {download}")
         print(f"   Deduplicate: {deduplicate} (LLM: {use_llm})")
         print(f"   Biometric: {pipeline}")
         print(f"   Threshold: {dedup_threshold}")
@@ -979,14 +1223,19 @@ class MasterPipeline:
         
         start_time = datetime.now()
         
-        # Step 1: Download
+        # Step 1: Download / Sync
         if download:
             if not folder_id:
                 folder_id = self.config.google_drive_folder_id
             if not folder_id:
                 print("❌ No folder ID provided and none configured in .env")
                 return
-            downloaded_count = self.step1_download_from_drive(folder_id=folder_id)
+
+            if source == "gcs":
+                downloaded_count = self.step1_sync_from_gcs(folder_id=folder_id)
+            else:
+                downloaded_count = self.step1_download_from_drive(folder_id=folder_id)
+
             if downloaded_count == 0:
                 print("❌ No images to process")
                 return
@@ -1034,6 +1283,10 @@ class MasterPipeline:
                         copied += 1
             print(f"   Copied {copied} unique images to deliverable/")
         
+        # Step 4: Upload deliverables to GCS (when source is GCS)
+        if source == "gcs" and folder_id:
+            self.step4_upload_to_gcs(folder_id)
+        
         # Final summary
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
@@ -1052,7 +1305,8 @@ def run_for_folders(
     pipeline: bool = True,
     use_llm: bool = False,
     dedup_threshold: float = 0.85,
-    config=None
+    config=None,
+    source: str = "gcs",
 ):
     """
     Run the complete pipeline for each folder_id in isolation.
@@ -1067,6 +1321,7 @@ def run_for_folders(
     
     print("\n" + "=" * 70)
     print(f"🚀 MASTER PIPELINE — Processing {len(folder_ids)} folder(s)")
+    print(f"   Source: {source.upper()}")
     print("=" * 70)
     for i, fid in enumerate(folder_ids, 1):
         print(f"   {i}. {fid}")
@@ -1093,7 +1348,8 @@ def run_for_folders(
                 pipeline=pipeline,
                 use_llm=use_llm,
                 dedup_threshold=dedup_threshold,
-                folder_id=folder_id
+                folder_id=folder_id,
+                source=source,
             )
             results[folder_id] = "completed"
         except Exception as e:
@@ -1141,6 +1397,8 @@ def main():
     parser.add_argument('--config', action='store_true', help='Show configuration and exit')
     parser.add_argument('--dry-run', action='store_true', help='Dry run mode (no processing)')
     parser.add_argument('--folder-ids', type=str, help='Comma-separated Google Drive folder IDs')
+    parser.add_argument('--source', type=str, default='gcs', choices=['gcs', 'drive'],
+                        help='Image source: "gcs" (default) or "drive"')
     
     args = parser.parse_args()
     
@@ -1200,18 +1458,20 @@ def main():
             pipeline=args.pipeline,
             use_llm=args.use_llm,
             dedup_threshold=threshold,
-            config=config
+            config=config,
+            source=args.source,
         )
     else:
         # Legacy: single folder from config (or no download)
-        pipeline = MasterPipeline(workspace_dir=args.workspace, config=config)
-        pipeline.run_complete_pipeline(
+        p = MasterPipeline(workspace_dir=args.workspace, config=config)
+        p.run_complete_pipeline(
             download=args.download,
             deduplicate=args.deduplicate,
             pipeline=args.pipeline,
             use_llm=args.use_llm,
             dedup_threshold=threshold,
-            folder_id=config.google_drive_folder_id
+            folder_id=config.google_drive_folder_id,
+            source=args.source,
         )
     
     return 0

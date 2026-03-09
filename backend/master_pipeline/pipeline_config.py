@@ -91,6 +91,10 @@ class PipelineConfig:
         self.google_drive_folder_id = _get('GOOGLE_DRIVE_FOLDER_ID')
         self.google_service_account_file = _get('GOOGLE_SERVICE_ACCOUNT_FILE')
         
+        # ==================== GOOGLE CLOUD STORAGE ====================
+        self.gcs_bucket_name = _get('GCS_BUCKET_NAME', '')
+        self.gcs_project_id = _get('GCS_PROJECT_ID', '')
+        
         # ==================== OPENAI API ====================
         self.openai_api_key = _get('OPENAI_API_KEY')
         self.openai_model = _get('OPENAI_MODEL', 'gpt-4-vision-preview')

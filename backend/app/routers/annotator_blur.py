@@ -12,7 +12,7 @@ from app.models.user import User
 from app.models.image import Image
 from app.dependencies import get_current_user
 from app.utils.blur import blur_image_regions
-from app.utils.deliverable import update_biometric_if_delivered, move_image_to_deliverable
+from app.utils.deliverable import update_biometric_if_delivered
 from app.utils.gcs import upload_bytes as gcs_upload_bytes, gcs_path as build_gcs_path, download_to_bytes as gcs_download, parse_gs_uri, delete_blob as gcs_delete
 
 router = APIRouter(prefix="/annotator/blur", tags=["Annotator Blur"])
@@ -21,10 +21,12 @@ router = APIRouter(prefix="/annotator/blur", tags=["Annotator Blur"])
 CACHE_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "image_cache")
 
 # Output folder for manually blurred images
-BLUR_OUTPUT_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "..",
-    "master_pipeline", "pipeline_workspace", "annotated_blur"
-)
+from app.utils import get_pipeline_workspace as _get_pw
+
+def _blur_output_dir():
+    return os.path.join(str(_get_pw()), "annotated_blur")
+
+BLUR_OUTPUT_DIR = _blur_output_dir()
 
 
 class BlurRegion(BaseModel):
@@ -59,10 +61,7 @@ def _get_image_bytes(image: Image) -> bytes:
             return f.read()
 
     # 3. Try pipeline workspace (original or processed) — per-folder + legacy
-    workspace = os.path.join(
-        os.path.dirname(__file__), "..", "..",
-        "master_pipeline", "pipeline_workspace"
-    )
+    workspace = str(_get_pw())
     search_roots = []
     folders_dir = os.path.join(workspace, "folders")
     if os.path.isdir(folders_dir):
@@ -178,10 +177,8 @@ def apply_manual_blur(
         db.commit()
         db.refresh(image)
 
-        if current_user.role == "admin":
-            move_image_to_deliverable(image, db)
-        else:
-            update_biometric_if_delivered(image.id, db)
+        # If image was already delivered, re-copy with latest version
+        update_biometric_if_delivered(image.id, db)
 
         return {
             "success": True,
@@ -279,10 +276,7 @@ def _find_original_image_bytes(image: Image) -> bytes | None:
         except Exception as e:
             print(f"[Restore] GCS input/ download failed: {e}")
 
-    workspace = os.path.join(
-        os.path.dirname(__file__), "..", "..",
-        "master_pipeline", "pipeline_workspace"
-    )
+    workspace = str(_get_pw())
 
     if image.original_url:
         orig_path = image.original_url.replace("file://", "").replace("gs://", "")
@@ -350,23 +344,18 @@ def remove_blur(
             "had_original": False,
         }
 
-    # 2. Delete blurred copies from GCS annotated/ and final/ (if they exist)
+    # 2. Delete blurred copy from GCS annotated/ (if it exists)
     if image.source_drive_folder_id and image.filename:
-        for stage in ("annotated", "final"):
-            try:
-                gcs_blob = build_gcs_path(image.source_drive_folder_id, image.filename, stage)
-                gcs_delete(gcs_blob)
-            except Exception as e:
-                print(f"Warning: Could not delete GCS {stage}/ blob: {e}")
+        try:
+            gcs_blob = build_gcs_path(image.source_drive_folder_id, image.filename, "annotated")
+            gcs_delete(gcs_blob)
+        except Exception as e:
+            print(f"Warning: Could not delete GCS annotated/ blob: {e}")
 
     # Also delete local blur file if it exists
     if image.annotated_blur_url and not image.annotated_blur_url.startswith("gs://"):
         try:
-            blur_path = os.path.join(
-                os.path.dirname(__file__), "..", "..",
-                "master_pipeline", "pipeline_workspace",
-                image.annotated_blur_url,
-            )
+            blur_path = os.path.join(str(_get_pw()), image.annotated_blur_url)
             if os.path.exists(blur_path):
                 os.remove(blur_path)
         except Exception as e:
@@ -403,12 +392,8 @@ def remove_blur(
 
     db.commit()
 
-    # Admin/reviewer modifications go directly to deliverable/
-    if current_user.role == "admin":
-        move_image_to_deliverable(image, db)
-    else:
-        # Annotator: only re-copy if image was already delivered
-        update_biometric_if_delivered(image.id, db)
+    # If image was already delivered, re-copy with latest version
+    update_biometric_if_delivered(image.id, db)
 
     return {
         "success": True,
@@ -440,7 +425,7 @@ def restore_image(
     restored_bytes = None
     source = None
     backend_dir = os.path.join(os.path.dirname(__file__), "..", "..")
-    workspace = os.path.join(backend_dir, "master_pipeline", "pipeline_workspace")
+    workspace = str(_get_pw())
 
     # 1. Try processed_url field
     if image.processed_url:
@@ -516,12 +501,8 @@ def restore_image(
     image.is_manually_modified = True
     db.commit()
 
-    # Admin/reviewer modifications go directly to deliverable/
-    if current_user.role == "admin":
-        move_image_to_deliverable(image, db)
-    else:
-        # Annotator: only re-copy if image was already delivered
-        update_biometric_if_delivered(image.id, db)
+    # If image was already delivered, re-copy with latest version
+    update_biometric_if_delivered(image.id, db)
 
     return {
         "success": True,

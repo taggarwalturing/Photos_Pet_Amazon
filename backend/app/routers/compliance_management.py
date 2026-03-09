@@ -17,7 +17,7 @@ from app.dependencies import require_admin
 from app.models.user import User
 from app.models.image import Image
 from app.models.annotation import Annotation
-from app.utils.deliverable import update_biometric_if_delivered, move_image_to_deliverable
+from app.utils.deliverable import update_biometric_if_delivered
 
 
 def _read_backend_env() -> dict:
@@ -78,8 +78,8 @@ def revert_to_original(
     image.is_manually_modified = True
     db.commit()
 
-    # Admin/reviewer modifications go directly to deliverable/
-    move_image_to_deliverable(image, db)
+    # If image was already delivered, re-copy with latest version
+    update_biometric_if_delivered(image.id, db)
     
     return {
         "success": True,
@@ -122,8 +122,8 @@ async def reprocess_with_openai(
         image.is_manually_modified = True
         db.commit()
 
-        # Admin/reviewer modifications go directly to deliverable/
-        move_image_to_deliverable(image, db)
+        # If image was already delivered, re-copy with latest version
+        update_biometric_if_delivered(image.id, db)
         
         return {
             "success": True,

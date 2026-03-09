@@ -3,6 +3,7 @@ import os
 from datetime import datetime, timezone, date, timedelta
 from pathlib import Path
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import or_, and_, func, cast, Date
 from sqlalchemy.orm import Session, joinedload
 from typing import Optional
@@ -1498,264 +1499,6 @@ def update_settings(
     }
 
 
-# ── Annotation Log (Time Tracking Table) ─────────────────────────
-
-@router.get("/annotation-log")
-def get_annotation_log(
-    page: int = Query(1, ge=1),
-    page_size: int = Query(50, ge=1, le=200),
-    annotator_id: Optional[int] = Query(None),
-    status_filter: Optional[str] = Query(None),  # all, initial, rework, approved, pending
-    db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
-):
-    """
-    Get a comprehensive lifecycle log of annotations.
-    Each lifecycle event (initial annotation, rework) is shown as a separate row.
-    Returns: image_name, annotator_name, categories, event_type (Initial/Rework), time_taken, reviewer_name, status
-    """
-    from sqlalchemy import func
-    
-    # Get distinct (image_id, annotator_id) pairs with completed annotations
-    base_query = (
-        db.query(
-            Annotation.image_id,
-            Annotation.annotator_id,
-        )
-        .filter(Annotation.status == "completed")
-        .group_by(Annotation.image_id, Annotation.annotator_id)
-    )
-    
-    if annotator_id:
-        base_query = base_query.filter(Annotation.annotator_id == annotator_id)
-    
-    pairs = base_query.all()
-    
-    # Build lifecycle entries for each image+annotator pair
-    all_entries = []
-    
-    for img_id, ann_id in pairs:
-        # Get all annotations for this image+annotator pair
-        annotations = (
-            db.query(Annotation)
-            .filter(
-                Annotation.image_id == img_id,
-                Annotation.annotator_id == ann_id,
-                Annotation.status == "completed",
-            )
-            .options(
-                joinedload(Annotation.image),
-                joinedload(Annotation.annotator),
-                joinedload(Annotation.category),
-                joinedload(Annotation.reviewer),
-            )
-            .all()
-        )
-        
-        if not annotations:
-            continue
-        
-        first_ann = annotations[0]
-        categories = [a.category.name for a in annotations]
-        
-        # Get time values
-        initial_time = max(a.time_spent_seconds or 0 for a in annotations)
-        rework_time = max(a.rework_time_seconds or 0 for a in annotations)
-        has_rework = any(a.is_rework for a in annotations) or rework_time > 0
-        
-        # Determine current status
-        all_approved = all(a.review_status == "approved" for a in annotations)
-        any_rework_requested = any(a.review_status == "rework_requested" for a in annotations)
-        any_rework_completed = any(a.review_status == "rework_completed" for a in annotations)
-        
-        # Get reviewer info
-        reviewer = next((a.reviewer for a in annotations if a.reviewer), None)
-        reviewed_at = next((a.reviewed_at for a in annotations if a.reviewed_at), None)
-        
-        # Build base entry data
-        base_entry = {
-            "image_id": img_id,
-            "image_name": first_ann.image.filename,
-            "image_url": first_ann.image.url,
-            "annotator_id": ann_id,
-            "annotator_name": first_ann.annotator.username,
-            "categories": categories,
-            "category_count": len(categories),
-        }
-        
-        # Helper to check filter
-        def should_include(event_type, status_val):
-            if status_filter is None or status_filter == "all":
-                return True
-            if status_filter == "initial" and event_type == "Annotation":
-                return True
-            if status_filter == "rework" and event_type == "Rework":
-                return True
-            if status_filter == "approved" and event_type == "Approval":
-                return True
-            if status_filter == "pending" and status_val == "Pending Review":
-                return True
-            return False
-        
-        # ── Event 1: Initial Annotation (always exists) ──
-        initial_entry = {
-            **base_entry,
-            "event_type": "Annotation",
-            "time_taken_seconds": initial_time,
-            "actor_name": first_ann.annotator.username,
-            "actor_role": "annotator",
-            "status": "Submitted",
-            "created_at": min(a.created_at for a in annotations),
-            "sort_key": min(a.created_at for a in annotations),
-        }
-        if should_include("Annotation", "Submitted"):
-            all_entries.append(initial_entry)
-        
-        # ── Event 2: First Review (if reviewed - either sent for rework or approved directly) ──
-        if has_rework and reviewer:
-            # Reviewer sent it for rework
-            review_sent_rework_entry = {
-                **base_entry,
-                "event_type": "Review",
-                "time_taken_seconds": 0,  # Review doesn't have time
-                "actor_name": reviewer.username,
-                "actor_role": "reviewer",
-                "status": "Sent for Rework",
-                "created_at": reviewed_at or min(a.created_at for a in annotations),
-                "sort_key": reviewed_at or min(a.created_at for a in annotations),
-            }
-            if should_include("Review", "Sent for Rework"):
-                all_entries.append(review_sent_rework_entry)
-        
-        # ── Event 3: Rework Submission (only if rework was done) ──
-        if has_rework and (rework_time > 0 or any_rework_completed or all_approved):
-            rework_status = "Submitted"
-            if any_rework_requested:
-                rework_status = "Sent for Rework Again"
-            
-            rework_entry = {
-                **base_entry,
-                "event_type": "Rework",
-                "time_taken_seconds": rework_time,
-                "actor_name": first_ann.annotator.username,
-                "actor_role": "annotator",
-                "status": rework_status,
-                "created_at": max(a.updated_at for a in annotations),
-                "sort_key": max(a.updated_at for a in annotations),
-            }
-            if should_include("Rework", rework_status):
-                all_entries.append(rework_entry)
-        
-        # ── Event 4: Approval (if approved by reviewer) ──
-        if all_approved and reviewer:
-            approval_entry = {
-                **base_entry,
-                "event_type": "Approval",
-                "time_taken_seconds": 0,  # Approval doesn't have time
-                "actor_name": reviewer.username,
-                "actor_role": "reviewer",
-                "status": "Approved",
-                "created_at": reviewed_at or max(a.updated_at for a in annotations),
-                "sort_key": reviewed_at or max(a.updated_at for a in annotations),
-            }
-            if should_include("Approval", "Approved"):
-                all_entries.append(approval_entry)
-        
-        # ── Pending Review (if not yet reviewed) ──
-        if not all_approved and not has_rework and not any_rework_requested:
-            # Still pending initial review
-            pending_entry = {
-                **base_entry,
-                "event_type": "Pending",
-                "time_taken_seconds": 0,
-                "actor_name": "-",
-                "actor_role": "reviewer",
-                "status": "Pending Review",
-                "created_at": max(a.updated_at for a in annotations),
-                "sort_key": max(a.updated_at for a in annotations),
-            }
-            if should_include("Pending", "Pending Review"):
-                all_entries.append(pending_entry)
-    
-    # Sort by sort_key descending (most recent first)
-    all_entries.sort(key=lambda x: x["sort_key"], reverse=True)
-    
-    # Paginate
-    total = len(all_entries)
-    start = (page - 1) * page_size
-    paginated = all_entries[start : start + page_size]
-    
-    # Remove sort_key from response
-    for entry in paginated:
-        del entry["sort_key"]
-    
-    return {
-        "annotations": paginated,
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-    }
-
-
-@router.get("/annotation-log/summary")
-def get_annotation_log_summary(
-    db: Session = Depends(get_db),
-    _admin: User = Depends(require_admin),
-):
-    """Get summary statistics for the annotation log (grouped by image+annotator)."""
-    from sqlalchemy import func, distinct
-    
-    # Total unique image+annotator pairs with completed annotations
-    total_image_annotator_pairs = (
-        db.query(func.count(distinct(func.concat(Annotation.image_id, '-', Annotation.annotator_id))))
-        .filter(Annotation.status == "completed")
-        .scalar() or 0
-    )
-    
-    # Get all completed annotations for detailed stats
-    completed_annotations = (
-        db.query(Annotation)
-        .filter(Annotation.status == "completed")
-        .all()
-    )
-    
-    # Group by image+annotator to calculate stats
-    pairs_data = {}
-    for a in completed_annotations:
-        key = (a.image_id, a.annotator_id)
-        if key not in pairs_data:
-            pairs_data[key] = {
-                'has_rework': False,
-                'all_approved': True,
-                'time_spent': 0,
-                'rework_time': 0,
-            }
-        if a.is_rework:
-            pairs_data[key]['has_rework'] = True
-        if a.review_status != "approved":
-            pairs_data[key]['all_approved'] = False
-        pairs_data[key]['time_spent'] = max(pairs_data[key]['time_spent'], a.time_spent_seconds or 0)
-        pairs_data[key]['rework_time'] = max(pairs_data[key]['rework_time'], a.rework_time_seconds or 0)
-    
-    total_reworks = sum(1 for p in pairs_data.values() if p['has_rework'])
-    total_approved = sum(1 for p in pairs_data.values() if p['all_approved'])
-    total_pending = sum(1 for p in pairs_data.values() if not p['all_approved'] and not p['has_rework'])
-    
-    # Calculate average times
-    times_spent = [p['time_spent'] for p in pairs_data.values() if p['time_spent'] > 0]
-    rework_times = [p['rework_time'] for p in pairs_data.values() if p['rework_time'] > 0]
-    
-    avg_annotation_time = sum(times_spent) / len(times_spent) if times_spent else 0
-    avg_rework_time = sum(rework_times) / len(rework_times) if rework_times else 0
-    
-    return {
-        "total_annotations": total_image_annotator_pairs,
-        "total_reworks": total_reworks,
-        "total_approved": total_approved,
-        "total_pending": total_pending,
-        "avg_annotation_time_seconds": round(avg_annotation_time),
-        "avg_rework_time_seconds": round(avg_rework_time),
-    }
 
 
 # ── Send for Rework ──────────────────────────────────────────────
@@ -1951,8 +1694,8 @@ def get_photo_registry(
     import os
     from pathlib import Path
 
-    backend_dir = Path(__file__).parent.parent.parent
-    workspace = backend_dir / "master_pipeline" / "pipeline_workspace"
+    from app.utils import get_pipeline_workspace
+    workspace = get_pipeline_workspace()
 
     # ── Discover all workspace roots (per-folder + legacy) ──
     workspace_roots = []
@@ -2249,6 +1992,8 @@ def get_photo_registry(
             # Deliverable image tracking
             "deliverable_image_path": db_img.deliverable_image_path if db_img else None,
             "is_manually_modified": db_img.is_manually_modified if db_img else None,
+            # GCS stage info
+            "gcs_folder": (db_img.gcs_folder or "input") if db_img else "input",
         }
         registry.append(entry)
 
@@ -2309,6 +2054,178 @@ def get_photo_registry(
         "total_pages": (total + per_page - 1) // per_page,
         "data": page_data,
     }
+
+
+# ── Photo Registry Excel Export ──────────────────────────────────
+
+@router.get("/photo-registry/export")
+def export_photo_registry_excel(
+    search: str = Query("", description="Search by filename"),
+    status_filter: str = Query("all", description="all|unique|duplicate|blurred|clean|manually_blurred"),
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """
+    Export the Photo Registry as an Excel (.xlsx) file.
+    Applies the same search/filter as the UI but returns ALL matching rows (no pagination).
+    Includes GCS paths so external programs can process the images.
+    """
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+    # Reuse the same registry-building logic from get_photo_registry
+    # but without pagination
+    registry_response = get_photo_registry(
+        page=1,
+        per_page=100_000,  # effectively no limit
+        search=search,
+        status_filter=status_filter,
+        db=db,
+        _admin=_admin,
+    )
+    rows = registry_response["data"]
+    summary = registry_response["summary"]
+
+    # Resolve GCS bucket name for path construction
+    bucket_name = os.getenv("GCS_BUCKET_NAME", "amazon-photo-pets")
+
+    # Build GCS deliverable path for each row
+    for row in rows:
+        folder_id = row.get("source_drive_folder_id", "")
+        filename = row.get("filename", "")
+        gcs_folder = "input"  # default
+
+        # Check DB for actual gcs_folder
+        db_img = db.query(Image).filter(Image.filename == filename).first() if filename else None
+        if db_img and db_img.gcs_folder:
+            gcs_folder = db_img.gcs_folder
+
+        if folder_id and filename:
+            row["gcs_deliverable_path"] = f"gs://{bucket_name}/{gcs_folder}/{folder_id}/{filename}"
+        else:
+            row["gcs_deliverable_path"] = ""
+
+    # Create Excel workbook
+    wb = Workbook()
+
+    # ── Sheet 1: Summary ──
+    ws_summary = wb.active
+    ws_summary.title = "Summary"
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    thin_border = Border(
+        left=Side(style="thin"), right=Side(style="thin"),
+        top=Side(style="thin"), bottom=Side(style="thin"),
+    )
+
+    summary_data = [
+        ("Metric", "Value"),
+        ("Total in GCS", summary.get("total_in_drive", 0)),
+        ("Downloaded", summary.get("total_downloaded", 0)),
+        ("Unique (After Dedup)", summary.get("total_unique", 0)),
+        ("Content Duplicates", summary.get("total_duplicate", 0)),
+        ("Pipeline Blurred", summary.get("total_pipeline_blurred", 0)),
+        ("Manual Blur", summary.get("total_manually_blurred", 0)),
+        ("Clean", summary.get("total_clean", 0)),
+        ("Delivered", summary.get("total_delivered", 0)),
+        ("In Database", summary.get("total_in_database", 0)),
+    ]
+    for r_idx, (metric, value) in enumerate(summary_data, 1):
+        cell_a = ws_summary.cell(row=r_idx, column=1, value=metric)
+        cell_b = ws_summary.cell(row=r_idx, column=2, value=value)
+        cell_a.border = thin_border
+        cell_b.border = thin_border
+        if r_idx == 1:
+            cell_a.font = header_font
+            cell_a.fill = header_fill
+            cell_b.font = header_font
+            cell_b.fill = header_fill
+    ws_summary.column_dimensions["A"].width = 25
+    ws_summary.column_dimensions["B"].width = 15
+
+    # ── Sheet 2: Images ──
+    ws_images = wb.create_sheet("Images")
+    columns = [
+        ("Filename", 30),
+        ("Original Filename", 30),
+        ("Image ID (Drive/GCS)", 35),
+        ("Folder ID", 35),
+        ("Status", 12),
+        ("Compliance", 14),
+        ("Pipeline Blurred", 14),
+        ("Manually Blurred", 14),
+        ("Is Duplicate", 12),
+        ("Parent Image", 25),
+        ("GCS Deliverable Path", 55),
+        ("Deliverable Status", 18),
+        ("Original Format", 14),
+        ("In Database", 12),
+    ]
+
+    for c_idx, (col_name, width) in enumerate(columns, 1):
+        cell = ws_images.cell(row=1, column=c_idx, value=col_name)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(horizontal="center", wrap_text=True)
+        cell.border = thin_border
+        ws_images.column_dimensions[chr(64 + c_idx) if c_idx <= 26 else f"A{chr(64 + c_idx - 26)}"].width = width
+
+    # Set column widths for columns > 26 (AA, AB, ...)
+    from openpyxl.utils import get_column_letter
+    for c_idx, (_, width) in enumerate(columns, 1):
+        ws_images.column_dimensions[get_column_letter(c_idx)].width = width
+
+    green_fill = PatternFill(start_color="E2EFDA", end_color="E2EFDA", fill_type="solid")
+    amber_fill = PatternFill(start_color="FFF2CC", end_color="FFF2CC", fill_type="solid")
+    red_fill = PatternFill(start_color="FCE4EC", end_color="FCE4EC", fill_type="solid")
+
+    for r_idx, row in enumerate(rows, 2):
+        is_dup = row.get("is_duplicate", False)
+        is_blurred = row.get("pipeline_blurred", False)
+
+        vals = [
+            row.get("filename", ""),
+            row.get("original_filename", ""),
+            row.get("image_drive_id", ""),
+            row.get("source_drive_folder_id", ""),
+            "Duplicate" if is_dup else "Unique",
+            row.get("compliance_status", ""),
+            "Yes" if is_blurred else "No",
+            "Yes" if row.get("manually_blurred") else "No",
+            "Yes" if is_dup else "No",
+            row.get("parent_image", ""),
+            row.get("gcs_deliverable_path", ""),
+            "Delivered" if row.get("deliverable_image_path") else "Pending",
+            row.get("original_format", ""),
+            "Yes" if row.get("in_database") else "No",
+        ]
+
+        row_fill = amber_fill if is_dup else (red_fill if is_blurred else green_fill)
+        for c_idx, val in enumerate(vals, 1):
+            cell = ws_images.cell(row=r_idx, column=c_idx, value=val)
+            cell.border = thin_border
+            cell.fill = row_fill
+            cell.alignment = Alignment(vertical="center")
+
+    # Freeze the header row
+    ws_images.freeze_panes = "A2"
+
+    # Auto-filter
+    ws_images.auto_filter.ref = f"A1:{get_column_letter(len(columns))}{len(rows) + 1}"
+
+    # Write to bytes
+    buffer = io.BytesIO()
+    wb.save(buffer)
+    buffer.seek(0)
+
+    filename_out = f"photo_registry_{status_filter}_{len(rows)}_images.xlsx"
+
+    return StreamingResponse(
+        buffer,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename_out}"},
+    )
 
 
 # ── Final Labels ────────────────────────────────────────────────
@@ -2433,4 +2350,6 @@ def rebuild_final_labels(
         "final_labels_count": populated,
         "images_backfilled": backfilled,
     }
+
+
 

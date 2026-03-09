@@ -2,9 +2,8 @@
 Google Cloud Storage utility for uploading, copying, signing, and deleting
 images in the three-folder bucket layout:
 
-  gs://{bucket}/input/{folder_id}/{filename}       — originals from Drive
-  gs://{bucket}/annotated/{folder_id}/{filename}    — after annotator blur
-  gs://{bucket}/final/{folder_id}/{filename}        — after admin approval
+  gs://{bucket}/input/{folder_id}/{filename}       — originals (clean, unmodified)
+  gs://{bucket}/annotated/{folder_id}/{filename}    — any modified version (human blur, pipeline blur, or admin-approved)
 
 Authentication uses Application Default Credentials (ADC).
 Run `gcloud auth application-default login` on the server to authenticate.
@@ -20,7 +19,24 @@ import google.auth
 from google.auth.transport.requests import Request
 
 
-VALID_STAGES = ("input", "annotated", "final")
+# ── Load backend/.env so GCS_BUCKET_NAME / GCS_PROJECT_ID are available ──
+def _load_env():
+    """Read backend/.env into os.environ (only missing keys)."""
+    env_path = Path(__file__).resolve().parent.parent.parent / ".env"
+    if env_path.exists():
+        with open(env_path) as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, value = line.split("=", 1)
+                    key, value = key.strip(), value.strip()
+                    if key not in os.environ:
+                        os.environ[key] = value
+
+_load_env()
+
+
+VALID_STAGES = ("input", "annotated")
 
 
 def _service_account_path() -> str | None:
@@ -174,6 +190,46 @@ def generate_signed_url(blob_gcs_path: str, expiration_seconds: int = 3600) -> s
 def blob_exists(blob_gcs_path: str) -> bool:
     bucket = _bucket()
     return bucket.blob(blob_gcs_path).exists()
+
+
+def list_blobs(prefix: str, delimiter: str = None) -> list[str]:
+    """
+    List blob names under a given prefix.
+
+    Args:
+        prefix: GCS prefix to list (e.g. "input/folder123/")
+        delimiter: If set (typically "/"), returns only "files" at this level,
+                   not recursively.
+
+    Returns:
+        List of full blob names (e.g. ["input/folder123/img1.jpg", ...])
+    """
+    bucket = _bucket()
+    blobs = bucket.list_blobs(prefix=prefix, delimiter=delimiter)
+    return [b.name for b in blobs]
+
+
+def list_prefixes(prefix: str) -> list[str]:
+    """
+    List "sub-folder" prefixes under a given prefix.
+
+    For example, list_prefixes("input/") returns
+    ["input/folder_A/", "input/folder_B/", ...].
+    """
+    bucket = _bucket()
+    blobs_iter = bucket.list_blobs(prefix=prefix, delimiter="/")
+    # We must consume the page iterator to populate prefixes
+    _ = list(blobs_iter)
+    return list(blobs_iter.prefixes)
+
+
+def download_blob_to_file(blob_gcs_path: str, local_path: str) -> str:
+    """Download a blob to a local file. Returns the local path."""
+    bucket = _bucket()
+    blob = bucket.blob(blob_gcs_path)
+    Path(local_path).parent.mkdir(parents=True, exist_ok=True)
+    blob.download_to_filename(local_path)
+    return local_path
 
 
 def parse_gs_uri(gs_uri: str) -> tuple[str, str]:

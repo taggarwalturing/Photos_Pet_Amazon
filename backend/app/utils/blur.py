@@ -4,16 +4,19 @@ import numpy as np
 from roi_blur import blur_boxes
 
 
-def blur_image_regions(image_bytes: bytes, regions: list[dict], ksize: int = 51, sigma: float = 40.0) -> bytes:
+def blur_image_regions(image_bytes: bytes, regions: list[dict], ksize: int = 151, sigma: float = 80.0) -> bytes:
     """
-    Apply Gaussian blur to specified rectangular regions of an image using roi-blur.
+    Apply strong Gaussian blur to specified rectangular regions of an image using roi-blur.
+
+    The default ksize=151 and sigma=80 produce a heavy blur that makes
+    the underlying content unrecognisable (suitable for privacy masking).
 
     Args:
         image_bytes: Raw bytes of the source image.
         regions: List of dicts with normalized (0.0-1.0) coordinates:
                  {"x": float, "y": float, "width": float, "height": float}
-        ksize: Blur kernel size (positive odd integer).
-        sigma: Blur strength/sigma parameter.
+        ksize: Blur kernel size (positive odd integer). Higher = stronger.
+        sigma: Blur strength/sigma parameter. Higher = stronger.
 
     Returns:
         JPEG bytes of the image with blurred regions.

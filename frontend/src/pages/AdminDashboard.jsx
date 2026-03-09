@@ -912,7 +912,7 @@ function ImagesTab() {
     if (img.deliverable_image_path) {
       const isBlurredDelivery = img.deliverable_image_path.includes('/blurred/');
       const delivLabel = isBlurredDelivery ? '🔒 Blurred' : '✅ Clean';
-      badges.push({ label: img.is_manually_modified ? `${delivLabel} (Modified)` : delivLabel, className: isBlurredDelivery ? 'bg-amber-600' : 'bg-teal-500' });
+      badges.push({ label: img.is_manually_modified ? `${delivLabel} (Edited)` : delivLabel, className: isBlurredDelivery ? 'bg-amber-600' : 'bg-teal-500' });
     }
     if (img.is_blurred_annotator) {
       badges.push({ label: '🖌 Annotator Blurred', className: 'bg-purple-500' });
@@ -3112,286 +3112,6 @@ function EditRequestsTab() {
   );
 }
 
-// ─── Annotation Log Tab (Time Tracking) ─────────────────────
-
-function AnnotationLogTab() {
-  const [data, setData] = useState(null);
-  const [summary, setSummary] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [annotatorFilter, setAnnotatorFilter] = useState('');
-  const [users, setUsers] = useState([]);
-  const pageSize = 20;
-
-  const load = async () => {
-    setLoading(true);
-    try {
-      const params = new URLSearchParams();
-      params.set('page', page);
-      params.set('page_size', pageSize);
-      if (statusFilter !== 'all') params.set('status_filter', statusFilter);
-      if (annotatorFilter) params.set('annotator_id', annotatorFilter);
-
-      const [logRes, summaryRes, usersRes] = await Promise.all([
-        api.get(`/admin/annotation-log?${params.toString()}`),
-        api.get('/admin/annotation-log/summary'),
-        api.get('/admin/users'),
-      ]);
-      setData(logRes.data);
-      setSummary(summaryRes.data);
-      setUsers(usersRes.data.filter(u => u.role === 'annotator'));
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => { load(); }, [page, statusFilter, annotatorFilter]);
-
-  const formatTime = (seconds) => {
-    if (!seconds || seconds <= 0) return '-';
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    if (mins > 0) return `${mins}m ${secs}s`;
-    return `${secs}s`;
-  };
-
-  const totalPages = data ? Math.ceil(data.total / pageSize) : 1;
-
-  return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-xl font-bold text-gray-900">Annotation Time Log</h2>
-          <p className="text-sm text-gray-500 mt-1">Track time spent on each annotation by annotators</p>
-        </div>
-      </div>
-
-      {/* Summary Cards */}
-      {summary && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-            <p className="text-2xl font-bold text-gray-900">{summary.total_annotations}</p>
-            <p className="text-xs text-gray-500 font-medium">Total Annotations</p>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-            <p className="text-2xl font-bold text-emerald-600">{summary.total_approved}</p>
-            <p className="text-xs text-gray-500 font-medium">Approved</p>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-            <p className="text-2xl font-bold text-amber-600">{summary.total_pending}</p>
-            <p className="text-xs text-gray-500 font-medium">Pending Review</p>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-            <p className="text-2xl font-bold text-purple-600">{summary.total_reworks}</p>
-            <p className="text-xs text-gray-500 font-medium">Reworks</p>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-            <p className="text-2xl font-bold text-indigo-600">{formatTime(summary.avg_annotation_time_seconds)}</p>
-            <p className="text-xs text-gray-500 font-medium">Avg Annotation Time</p>
-          </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-            <p className="text-2xl font-bold text-orange-600">{formatTime(summary.avg_rework_time_seconds)}</p>
-            <p className="text-xs text-gray-500 font-medium">Avg Rework Time</p>
-          </div>
-        </div>
-      )}
-
-      {/* Filters */}
-      <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm flex flex-wrap items-center gap-4">
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium text-gray-700">Event Type:</label>
-          <select
-            value={statusFilter}
-            onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          >
-            <option value="all">All Events</option>
-            <option value="initial">Annotations</option>
-            <option value="rework">Reworks</option>
-            <option value="approved">Approvals</option>
-            <option value="pending">Pending Review</option>
-          </select>
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium text-gray-700">Annotator:</label>
-          <select
-            value={annotatorFilter}
-            onChange={(e) => { setAnnotatorFilter(e.target.value); setPage(1); }}
-            className="px-3 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          >
-            <option value="">All Annotators</option>
-            {users.map(u => (
-              <option key={u.id} value={u.id}>{u.username}</option>
-            ))}
-          </select>
-        </div>
-        <button
-          onClick={load}
-          className="ml-auto px-3 py-1.5 text-sm text-indigo-600 hover:bg-indigo-50 rounded-lg transition cursor-pointer"
-        >
-          Refresh
-        </button>
-      </div>
-
-      {/* Table */}
-      {loading ? (
-        <div className="flex items-center justify-center py-20">
-          <div className="w-8 h-8 border-2 border-indigo-200 border-t-indigo-600 rounded-full animate-spin" />
-        </div>
-      ) : !data || data.annotations.length === 0 ? (
-        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center">
-          <div className="w-16 h-16 mx-auto mb-4 bg-gray-100 rounded-2xl flex items-center justify-center">
-            <svg className="w-8 h-8 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </div>
-          <h3 className="text-lg font-semibold text-gray-700">No annotations found</h3>
-          <p className="text-gray-500 mt-1">Annotations will appear here once annotators submit their work.</p>
-        </div>
-      ) : (
-        <>
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-50 border-b border-gray-200">
-                    <th className="text-left px-4 py-3 font-semibold text-gray-700">Image</th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-700">Turing ID</th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-700">Categories</th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-700">Event</th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-700">Time</th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-700">Action By</th>
-                    <th className="text-left px-4 py-3 font-semibold text-gray-700">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {data.annotations.map((a, idx) => (
-                    <tr key={`${a.image_id}-${a.annotator_id}-${a.event_type}-${idx}`} className="hover:bg-gray-50 transition">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <img
-                            src={getImageUrl(a.image_id)}
-                            alt={a.image_name}
-                            className="w-10 h-10 rounded-lg object-cover shrink-0"
-                          />
-                          <span className="font-medium text-gray-900 truncate max-w-[150px]">{a.image_name}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <div className="w-6 h-6 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white text-[10px] font-bold">
-                            {a.annotator_name[0].toUpperCase()}
-                          </div>
-                          <span className="text-gray-700">{a.annotator_name}</span>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-wrap gap-1 max-w-[200px]">
-                          {a.categories && a.categories.length <= 2 ? (
-                            a.categories.map((cat, i) => (
-                              <span key={i} className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-xs font-medium rounded-full">
-                                {cat}
-                              </span>
-                            ))
-                          ) : (
-                            <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-xs font-medium rounded-full cursor-help" title={a.categories?.join(', ')}>
-                              {a.category_count || a.categories?.length} categories
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                          a.event_type === 'Annotation'
-                            ? 'bg-blue-100 text-blue-700'
-                            : a.event_type === 'Rework'
-                              ? 'bg-orange-100 text-orange-700'
-                              : a.event_type === 'Review'
-                                ? 'bg-amber-100 text-amber-700'
-                                : a.event_type === 'Approval'
-                                  ? 'bg-emerald-100 text-emerald-700'
-                                  : 'bg-gray-100 text-gray-600'
-                        }`}>
-                          {a.event_type === 'Annotation' && '📝 '}
-                          {a.event_type === 'Rework' && '🔄 '}
-                          {a.event_type === 'Review' && '👁️ '}
-                          {a.event_type === 'Approval' && '✅ '}
-                          {a.event_type === 'Pending' && '⏳ '}
-                          {a.event_type}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        {a.time_taken_seconds > 0 ? (
-                          <div className="flex items-center gap-2">
-                            <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            <span className="font-medium text-gray-900">{formatTime(a.time_taken_seconds)}</span>
-                          </div>
-                        ) : (
-                          <span className="text-gray-400">-</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        {a.actor_name && a.actor_name !== '-' ? (
-                          <div className="flex items-center gap-2">
-                            <div className={`w-5 h-5 rounded-full flex items-center justify-center text-white text-[9px] font-bold ${
-                              a.actor_role === 'reviewer'
-                                ? 'bg-gradient-to-br from-emerald-500 to-teal-500'
-                                : 'bg-gradient-to-br from-indigo-500 to-purple-500'
-                            }`}>
-                              {a.actor_name[0].toUpperCase()}
-                            </div>
-                            <div>
-                              <span className="text-gray-700 text-xs">{a.actor_name}</span>
-                              <span className="text-[10px] text-gray-400 ml-1">({a.actor_role})</span>
-                            </div>
-                          </div>
-                        ) : (
-                          <span className="text-gray-400 text-xs">-</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className={`px-2 py-1 text-xs font-medium rounded-full ${
-                          a.status === 'Approved'
-                            ? 'bg-emerald-100 text-emerald-700'
-                            : a.status === 'Submitted'
-                              ? 'bg-blue-100 text-blue-700'
-                              : a.status === 'Sent for Rework'
-                                ? 'bg-amber-100 text-amber-700'
-                                : a.status === 'Sent for Rework Again'
-                                  ? 'bg-red-100 text-red-700'
-                                  : a.status === 'Pending Review'
-                                    ? 'bg-gray-100 text-gray-600'
-                                    : 'bg-gray-100 text-gray-600'
-                        }`}>
-                          {a.status}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between text-sm text-gray-500">
-              <span>Showing {((page - 1) * pageSize) + 1}–{Math.min(page * pageSize, data.total)} of {data.total}</span>
-              <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
-            </div>
-          )}
-        </>
-      )}
-    </div>
-  );
-}
-
 // ─── Settings Tab ────────────────────────────────────────────
 
 // ─── Compliance Tab (Biometric Compliance) ──────────────────────
@@ -3863,7 +3583,7 @@ export default function AdminDashboard() {
   const { user, logout } = useAuth();
 
   // Derive active tab from URL path: /admin/review -> 'review', /admin -> 'users'
-  const VALID_TABS = ['users', 'progress', 'review', 'completion', 'images', 'improper', 'edit-requests', 'annotation-log', 'annotator-stats', 'settings', 'pipeline', 'arbiter', 'compliance', 'photo-registry'];
+  const VALID_TABS = ['users', 'progress', 'review', 'completion', 'images', 'improper', 'edit-requests', 'annotator-stats', 'settings', 'pipeline', 'arbiter', 'compliance', 'photo-registry'];
   const pathSegment = location.pathname.replace(/^\/admin\/?/, '').split('/')[0] || 'users';
   const activeTab = VALID_TABS.includes(pathSegment) ? pathSegment : 'users';
 
@@ -3892,9 +3612,6 @@ export default function AdminDashboard() {
     )},
     { key: 'edit-requests', label: 'Edit Requests', icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-    )},
-    { key: 'annotation-log', label: 'Time Log', icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
     )},
     { key: 'annotator-stats', label: 'Annotator Stats', icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 8v8m-4-5v5m-4-2v2m-2 4h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
@@ -3980,7 +3697,6 @@ export default function AdminDashboard() {
             {activeTab === 'images' && <ImagesTab />}
           {activeTab === 'improper' && <ImproperImagesTab />}
           {activeTab === 'edit-requests' && <EditRequestsTab />}
-          {activeTab === 'annotation-log' && <AnnotationLogTab />}
           {activeTab === 'annotator-stats' && <AnnotatorStatsTab />}
           {activeTab === 'settings' && <SettingsTab />}
           {activeTab === 'pipeline' && <MasterPipelineTab />}

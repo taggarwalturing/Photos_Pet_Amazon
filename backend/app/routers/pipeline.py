@@ -6,6 +6,7 @@ Admin endpoints for controlling and monitoring the master pipeline.
 
 import asyncio
 import json
+import os
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, List
@@ -19,6 +20,12 @@ from app.dependencies import require_admin
 from app.models.user import User
 from app.models.image import Image
 from app.models.drive_folder import DriveFolder
+
+
+def _get_pipeline_workspace() -> Path:
+    """Return the pipeline workspace path from env, falling back to the legacy local path."""
+    from app.utils import get_pipeline_workspace
+    return get_pipeline_workspace()
 
 router = APIRouter(prefix="/admin/pipeline", tags=["Master Pipeline"])
 
@@ -50,6 +57,7 @@ class PipelineRunRequest(BaseModel):
     use_llm: bool = False
     threshold: float = 0.85
     folder_ids: Optional[List[str]] = None  # Specific folder IDs to process (uses DB folders if None)
+    source: str = "gcs"  # Image source: "gcs" (default) or "drive"
 
 
 class ReprocessRequest(BaseModel):
@@ -80,14 +88,18 @@ async def start_pipeline(
     # Determine folder IDs: explicit request > DB folders > env config
     folder_ids = request.folder_ids
     if not folder_ids and request.download:
-        # Pull folder IDs from database
-        db_folders = db.query(DriveFolder).filter(DriveFolder.status != "disabled").all()
-        if db_folders:
-            folder_ids = [f.folder_id for f in db_folders]
+        if request.source == "gcs":
+            # For GCS: discover folders from bucket prefixes
+            folder_ids = _resolve_gcs_folders(db)
+        else:
+            # Pull folder IDs from database
+            db_folders = db.query(DriveFolder).filter(DriveFolder.status != "disabled").all()
+            if db_folders:
+                folder_ids = [f.folder_id for f in db_folders]
 
     # Resolve parent folders into child subfolders BEFORE launching the pipeline
     # so the initial status response already shows the correct leaf folders.
-    if folder_ids and request.download:
+    if folder_ids and request.download and request.source == "drive":
         folder_ids = _resolve_parent_folders(folder_ids, db)
 
     # Reset status
@@ -133,7 +145,8 @@ async def start_pipeline(
         request.use_llm,
         request.threshold,
         db,
-        folder_ids
+        folder_ids,
+        request.source,
     )
     
     return {"message": "Pipeline started successfully", "status": pipeline_status}
@@ -268,8 +281,7 @@ def _load_all_drive_metadata():
     Load and aggregate drive_metadata.json from all per-folder workspaces.
     Falls back to legacy root workspace metadata if no per-folder workspaces exist.
     """
-    backend_dir = Path(__file__).parent.parent.parent
-    workspace = backend_dir / "master_pipeline" / "pipeline_workspace"
+    workspace = _get_pipeline_workspace()
     folders_dir = workspace / "folders"
     
     aggregated = {
@@ -287,24 +299,29 @@ def _load_all_drive_metadata():
         for folder_dir in sorted(folders_dir.iterdir()):
             if not folder_dir.is_dir():
                 continue
-            meta_path = folder_dir / "drive_metadata.json"
+            # Prefer GCS metadata, fall back to Drive metadata
+            meta_path = folder_dir / "gcs_metadata.json"
+            if not meta_path.exists():
+                meta_path = folder_dir / "drive_metadata.json"
             if meta_path.exists():
                 try:
                     with open(meta_path, 'r') as f:
                         meta = json.load(f)
                     fid = meta.get("folder_id", folder_dir.name)
-                    aggregated["total_in_drive"] += meta.get("total_in_drive", 0)
-                    aggregated["unique_filenames"] += meta.get("unique_filenames", 0)
-                    aggregated["duplicate_filename_count"] += meta.get("duplicate_filename_count", 0)
+                    total = meta.get("total_in_gcs") or meta.get("total_in_drive", 0)
+                    unique = meta.get("unique_filenames", 0)
+                    dup_count = meta.get("duplicate_filename_count", 0)
+                    aggregated["total_in_drive"] += total
+                    aggregated["unique_filenames"] += unique
+                    aggregated["duplicate_filename_count"] += dup_count
                     for dn, dc in meta.get("duplicate_filenames", {}).items():
                         aggregated["duplicate_filenames"][dn] = aggregated["duplicate_filenames"].get(dn, 0) + dc
                     if meta.get("scanned_at", "") > aggregated["scanned_at"]:
                         aggregated["scanned_at"] = meta["scanned_at"]
-                    # Per-folder entry
                     aggregated["per_folder"][fid] = {
-                        "total": meta.get("total_in_drive", 0),
-                        "unique": meta.get("unique_filenames", 0),
-                        "duplicates": meta.get("duplicate_filename_count", 0),
+                        "total": total,
+                        "unique": unique,
+                        "duplicates": dup_count,
                     }
                     per_folder_found = True
                 except Exception:
@@ -331,8 +348,7 @@ def _load_all_drive_metadata():
 
 def _get_workspace_dedup_stats():
     """Get dedup stats by scanning per-folder workspaces (or legacy workspace)."""
-    backend_dir = Path(__file__).parent.parent.parent
-    workspace = backend_dir / "master_pipeline" / "pipeline_workspace"
+    workspace = _get_pipeline_workspace()
     folders_dir = workspace / "folders"
     extensions = {'.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif', '.avif'}
     
@@ -439,7 +455,7 @@ def _update_drive_folder_stats(folder_ids: List[str] = None):
 
     db = SessionLocal()
     try:
-        pipeline_workspace = Path(__file__).parent.parent.parent / "master_pipeline" / "pipeline_workspace"
+        pipeline_workspace = _get_pipeline_workspace()
 
         for fid in folder_ids:
             folder_record = db.query(DriveFolder).filter(DriveFolder.folder_id == fid).first()
@@ -448,13 +464,15 @@ def _update_drive_folder_stats(folder_ids: List[str] = None):
 
             ws = pipeline_workspace / "folders" / fid
 
-            # Drive metadata
-            drive_meta_path = ws / "drive_metadata.json"
-            if drive_meta_path.exists():
+            # Drive or GCS metadata
+            meta_path = ws / "gcs_metadata.json"
+            if not meta_path.exists():
+                meta_path = ws / "drive_metadata.json"
+            if meta_path.exists():
                 try:
-                    with open(drive_meta_path) as f:
+                    with open(meta_path) as f:
                         dm = json.load(f)
-                    folder_record.total_in_drive = dm.get("total_in_drive", 0)
+                    folder_record.total_in_drive = dm.get("total_in_gcs") or dm.get("total_in_drive", 0)
                 except Exception:
                     pass
 
@@ -521,6 +539,62 @@ def _init_folder_progress():
             "biometric":   {"status": "pending", "current": 0, "total": 0, "message": ""},
         }
     }
+
+
+def _resolve_gcs_folders(db: Session) -> List[str]:
+    """
+    Discover folder IDs by listing GCS bucket prefixes under ``input/``.
+
+    Each sub-prefix (e.g. ``input/folder_A/``) is treated as a folder.
+    New folders are registered in the ``drive_folders`` DB table automatically.
+
+    Returns:
+        List of folder IDs found in the GCS bucket.
+    """
+    try:
+        from app.utils.gcs import list_prefixes
+    except ImportError:
+        print("[GCS_RESOLVE] google-cloud-storage not available — skipping GCS folder discovery")
+        # Fallback to DB folders
+        db_folders = db.query(DriveFolder).filter(DriveFolder.status != "disabled").all()
+        return [f.folder_id for f in db_folders]
+
+    try:
+        prefixes = list_prefixes("input/")
+        folder_ids = []
+        for p in sorted(prefixes):
+            # p looks like "input/folder_A/"  →  extract "folder_A"
+            parts = p.strip("/").split("/")
+            if len(parts) >= 2:
+                fid = parts[1]
+                folder_ids.append(fid)
+
+                # Register in DB if not already present
+                existing = db.query(DriveFolder).filter(DriveFolder.folder_id == fid).first()
+                if not existing:
+                    db.add(DriveFolder(
+                        folder_id=fid,
+                        folder_name=fid,
+                        notes="Auto-discovered from GCS bucket",
+                        status="pending",
+                    ))
+
+        if folder_ids:
+            db.commit()
+            print(f"[GCS_RESOLVE] Found {len(folder_ids)} folder(s) in GCS bucket: {folder_ids}")
+        else:
+            print("[GCS_RESOLVE] No folders found under input/ in GCS bucket")
+            # Fallback to DB folders
+            db_folders = db.query(DriveFolder).filter(DriveFolder.status != "disabled").all()
+            folder_ids = [f.folder_id for f in db_folders]
+
+        return folder_ids
+
+    except Exception as e:
+        print(f"[GCS_RESOLVE] Error listing GCS prefixes: {e}")
+        # Fallback to DB folders
+        db_folders = db.query(DriveFolder).filter(DriveFolder.status != "disabled").all()
+        return [f.folder_id for f in db_folders]
 
 
 def _resolve_parent_folders(folder_ids: List[str], db: Session) -> List[str]:
@@ -660,7 +734,8 @@ def run_pipeline_background(
     use_llm: bool,
     threshold: float,
     db: Session,
-    folder_ids: List[str] = None
+    folder_ids: List[str] = None,
+    source: str = "gcs",
 ):
     """Run the master pipeline in the background."""
     import subprocess, sys, re
@@ -668,10 +743,10 @@ def run_pipeline_background(
     global pipeline_status
 
     try:
-        print(f"[PIPELINE] Starting pipeline: download={download}, deduplicate={deduplicate}, biometric={biometric}")
+        print(f"[PIPELINE] Starting pipeline: download={download}, deduplicate={deduplicate}, biometric={biometric}, source={source}")
 
-        # ── Resolve parent folders into child subfolders ──
-        if folder_ids and download:
+        # ── Resolve parent folders into child subfolders (Drive only) ──
+        if folder_ids and download and source == "drive":
             original_count = len(folder_ids)
             folder_ids = _resolve_parent_folders(folder_ids, db)
             if len(folder_ids) != original_count:
@@ -703,6 +778,7 @@ def run_pipeline_background(
             cmd.append("--pipeline")
         if folder_ids:
             cmd.extend(["--folder-ids", ",".join(folder_ids)])
+        cmd.extend(["--source", source])
 
         print(f"[PIPELINE] Running command: {' '.join(cmd)}")
         pipeline_status["current_step"] = "initializing"
@@ -756,7 +832,7 @@ def run_pipeline_background(
                 return
 
             # ── detect step change ──
-            if "STEP 1:" in line or ("step 1" in line.lower() and "download" in line.lower()):
+            if "STEP 1:" in line or ("step 1" in line.lower() and ("download" in line.lower() or "sync" in line.lower())):
                 state["current_step_name"] = "download"
                 pipeline_status["current_step"] = "download"
                 _fp()["download"]["status"] = "running"
@@ -781,7 +857,7 @@ def run_pipeline_background(
                 _fp()["biometric"]["message"] = line
                 pipeline_status["progress"]["biometric"]["status"] = "running"
                 pipeline_status["progress"]["biometric"]["message"] = line
-            elif "STEP 4:" in line or "Consolidate" in line:
+            elif "STEP 4:" in line or "Consolidate" in line or "Upload Deliverables" in line:
                 if _fp()["biometric"]["status"] == "running":
                     _fp()["biometric"]["status"] = "completed"
                 state["current_step_name"] = "consolidating"
@@ -804,7 +880,7 @@ def run_pipeline_background(
                 ll = line.lower()
 
                 step = cur_step
-                if "download" in ll:
+                if "download" in ll or "syncing" in ll or "sync" in ll:
                     step = "download"
                 elif any(kw in ll for kw in ["compar", "analyz", "duplicat", "dedup", "copying unique", "segregat", "copying"]):
                     step = "deduplicate"
@@ -979,7 +1055,7 @@ def sync_pipeline_status(
             results = json.load(f)
         
         # Check workspace for actual counts (aggregate across per-folder workspaces)
-        workspace = backend_dir / "master_pipeline" / "pipeline_workspace"
+        workspace = _get_pipeline_workspace()
         folders_dir = workspace / "folders"
         downloaded_count = 0
         unique_count = 0
@@ -1094,8 +1170,7 @@ def check_for_new_images(
     - Already in database
     """
     try:
-        backend_dir = Path(__file__).parent.parent.parent
-        workspace = backend_dir / "master_pipeline" / "pipeline_workspace"
+        workspace = _get_pipeline_workspace()
         
         # Load state tracking
         state_file = workspace / "pipeline_state.json"

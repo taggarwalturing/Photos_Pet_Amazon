@@ -326,7 +326,7 @@ export default function ArbiterClassifierTab() {
           <ConfigCard label="Model 1" value={config.gemini_model} sub={config.gemini_provider} icon="🔵" />
           <ConfigCard label="Model 2" value={config.openai_model} sub={config.openai_provider} icon="🟢" />
           <ConfigCard label="Arbiter" value={config.arbiter_model} sub={config.arbiter_provider} icon="⚖️" />
-          <ConfigCard label="Images Available" value={config.available_images} sub="in deliverable/" icon="🖼️" />
+          <ConfigCard label="Images Available" value={config.available_images} sub="in GCS" icon="🖼️" />
         </div>
       )}
 
