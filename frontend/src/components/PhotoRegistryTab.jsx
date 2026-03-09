@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import api from '../api/client';
+import SignedImage from './SignedImage';
 
 const FILTERS = [
   { key: 'all', label: 'All', icon: '📋' },
@@ -340,8 +341,8 @@ export default function PhotoRegistryTab() {
                     <td className="px-4 py-2.5">
                       <div className="flex items-center gap-2">
                         {row.db_id && (
-                          <img
-                            src={`${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/images/proxy/${row.db_id}?t=1`}
+                          <SignedImage
+                            imageId={row.db_id}
                             alt=""
                             className="w-8 h-8 rounded object-cover border border-gray-200 shrink-0"
                             onError={(e) => { e.target.style.display = 'none'; }}

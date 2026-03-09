@@ -4,12 +4,12 @@ import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
 import BoundingBoxCanvas from '../components/BoundingBoxCanvas';
 import CategoryGuideModal from '../components/CategoryGuideModal';
+import { fetchSignedUrl, getProxyUrl, invalidateSignedUrl } from '../hooks/useSignedUrl';
+import SignedImage from '../components/SignedImage';
 
-// Helper to get proxied image URL for Google Drive images
 const getImageUrl = (imageId) => {
   if (!imageId) return '';
-  // Add timestamp to prevent caching of processed images
-  return `${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/images/proxy/${imageId}?t=${Date.now()}`;
+  return getProxyUrl(imageId);
 };
 
 function CategoryDropdown({ category, annotation, completedByOther, onChange, disabled, aiSuggestion }) {
@@ -735,9 +735,9 @@ export default function ImageAnnotationPage() {
             </div>
 
             <div ref={imageContainerRef} className="relative max-w-full max-h-full overflow-hidden flex items-center justify-center">
-              <img
-                key={`img-${imageId}`}
-                src={imageId ? `${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/images/proxy/${imageId}?t=${imageVersion}` : ''}
+              <SignedImage
+                imageId={imageId}
+                refreshKey={imageVersion}
                 alt={data?.filename || ''}
                 className={`max-w-full max-h-full object-contain rounded-lg block ${isImproper ? 'opacity-50' : ''}`}
                 onLoad={() => window.dispatchEvent(new Event('resize'))}

@@ -3,11 +3,12 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
 import BlurTool from '../components/BlurTool';
+import SignedImage from '../components/SignedImage';
+import { getProxyUrl } from '../hooks/useSignedUrl';
 
-// Helper to get proxied image URL for Google Drive images
 const getImageUrl = (imageId) => {
   if (!imageId) return '';
-  return `${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/images/proxy/${imageId}`;
+  return getProxyUrl(imageId);
 };
 
 export default function AnnotationPage() {

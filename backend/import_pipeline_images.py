@@ -17,11 +17,14 @@ Folder structure (simplified):
     └── obfuscation_results.json
 """
 import sys
+import os
 import json
+import shutil
 from pathlib import Path
 from sqlalchemy import text
 from app.database import SessionLocal
 from app.config import settings
+from app.utils.gcs import upload_file, gcs_path as build_gcs_path
 
 
 def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_filenames: set = None):
@@ -158,14 +161,8 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
     
     counts = {'new': 0, 'updated': 0, 'blurred': 0, 'clean': 0}
     
-    # Determine relative path prefix for URLs
-    # For per-folder workspaces: master_pipeline/pipeline_workspace/folders/{folder_id}/deliverable/
-    # For legacy:                master_pipeline/pipeline_workspace/deliverable/
-    pipeline_ws = Path(__file__).parent / "master_pipeline" / "pipeline_workspace"
-    try:
-        rel_workspace = workspace.relative_to(pipeline_ws.parent.parent)  # relative to backend/
-    except ValueError:
-        rel_workspace = workspace
+    bucket_name = os.getenv("GCS_BUCKET_NAME", "amazon-photo-pets")
+    use_gcs = bool(bucket_name)
     
     for img_file in image_files:
         filename = img_file.name
@@ -174,7 +171,6 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
         action = metadata.get('action', 'unknown')
         face_count = metadata.get('face_count', 0)
         
-        # Determine compliance status from biometric metadata
         if action == 'obfuscated':
             compliance_status = 'blurred'
             counts['blurred'] += 1
@@ -184,39 +180,42 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
         else:
             compliance_status = 'processed'
         
-        # Resolve source folder ID for this image
-        source_fid = folder_id  # default to the workspace's folder_id
+        source_fid = folder_id
         if not source_fid:
             lookup_name = heic_conversion_map.get(filename, filename)
             source_fid = filename_folder_map.get(lookup_name) or filename_folder_map.get(filename)
         
-        # ── Resolve Google Drive file ID and original filename ──
-        # New-style: disk filename IS the drive file ID (e.g. "abc123.jpg")
         drive_file_id = disk_filename_to_drive_id.get(filename)
         original_drive_name = disk_filename_to_original.get(filename)
         
-        # For HEIC-converted files: the HEIC disk name was drive_id.heic → now drive_id.jpg
-        # Check heic_conversion_map for the pre-conversion disk name
         if not drive_file_id:
-            pre_convert_name = heic_conversion_map.get(filename)  # e.g. "abc123.heic"
+            pre_convert_name = heic_conversion_map.get(filename)
             if pre_convert_name:
                 drive_file_id = disk_filename_to_drive_id.get(pre_convert_name)
                 original_drive_name = disk_filename_to_original.get(pre_convert_name)
         
-        # Legacy fallback (old-style downloads where disk name = original name)
         if not drive_file_id:
             lookup_name_for_drive = heic_conversion_map.get(filename, filename)
             drive_file_id = filename_to_drive_id.get(lookup_name_for_drive) or filename_to_drive_id.get(filename)
-            # In legacy mode, original_filename is from HEIC conversion only
             if not original_drive_name:
                 original_drive_name = heic_conversion_map.get(filename)
         
-        # URL path relative to backend directory
-        relative_path = f"{rel_workspace}/deliverable/{filename}"
-        url = f"file://{relative_path}"
-        image_path = str(img_file)
+        # Upload to GCS input/ folder and build gs:// URL
+        if use_gcs and source_fid:
+            gcs_obj_path = build_gcs_path(source_fid, filename, "input")
+            try:
+                gs_uri = upload_file(str(img_file), gcs_obj_path)
+                url = gs_uri
+                image_path = gs_uri
+                print(f"      ☁️  Uploaded {filename} → {gcs_obj_path}")
+            except Exception as e:
+                print(f"      ⚠️  GCS upload failed for {filename}: {e}, falling back to file://")
+                url = f"file://{img_file}"
+                image_path = str(img_file)
+        else:
+            url = f"file://{img_file}"
+            image_path = str(img_file)
         
-        # Determine if pipeline blurred this image
         is_prog_blurred = compliance_status in ("blurred", "processed", "obfuscated")
         
         if filename in existing_filenames:
@@ -232,10 +231,11 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                     image_drive_id = COALESCE(image_drive_id, :image_drive_id),
                     original_filename = COALESCE(:original_filename, original_filename),
                     url = :url,
-                    original_url = :original_url,
-                    processed_url = :processed_url,
+                    original_url = :url,
+                    processed_url = :url,
                     is_programmatically_blurred = :is_programmatically_blurred,
-                    image_path = :image_path
+                    image_path = :image_path,
+                    gcs_folder = 'input'
                 WHERE filename = :filename
             '''), {
                 'filename': filename,
@@ -246,8 +246,6 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                 'image_drive_id': drive_file_id,
                 'original_filename': original_drive_name,
                 'url': url,
-                'original_url': relative_path,
-                'processed_url': relative_path,
                 'is_programmatically_blurred': is_prog_blurred,
                 'image_path': image_path,
             })
@@ -255,7 +253,6 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
         else:
             heic_original = heic_conversion_map.get(filename)
             orig_format = "HEIC" if heic_original else None
-            # original_filename: prefer Drive original name, fall back to HEIC original
             orig_name_for_db = original_drive_name or heic_original
 
             db.execute(text('''
@@ -267,17 +264,19 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                     processing_log, source_drive_folder_id,
                     image_drive_id, manually_blurred,
                     is_programmatically_blurred, is_manually_modified,
-                    is_duplicate, parent_image, image_path
+                    is_duplicate, parent_image, image_path,
+                    gcs_folder
                 )
                 VALUES (
                     :filename, :original_filename, :original_format,
                     :url, TRUE, :compliance_status,
-                    :original_url, :processed_url, FALSE,
+                    :url, :url, FALSE,
                     :face_count, TRUE,
                     :processing_log, :source_drive_folder_id,
                     :image_drive_id, FALSE,
                     :is_programmatically_blurred, FALSE,
-                    FALSE, NULL, :image_path
+                    FALSE, NULL, :image_path,
+                    'input'
                 )
             '''), {
                 'filename': filename,
@@ -286,8 +285,6 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                 'url': url,
                 'compliance_status': compliance_status,
                 'face_count': face_count,
-                'original_url': relative_path,
-                'processed_url': relative_path,
                 'processing_log': f"Action: {action}, Faces: {face_count}",
                 'source_drive_folder_id': source_fid,
                 'image_drive_id': drive_file_id,
@@ -295,20 +292,17 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                 'image_path': image_path,
             })
             counts['new'] += 1
-            existing_filenames.add(filename)  # prevent duplicates across folders
+            existing_filenames.add(filename)
     
-    # Now mark duplicates in DB from dedup stats (images not in deliverable but in raw downloads)
+    # Mark duplicates from dedup stats
     if duplicate_map:
         dup_count = 0
         for dup_filename, parent_filename in duplicate_map.items():
-            # These files are NOT in deliverable (they were excluded), so record them separately
             if dup_filename not in existing_filenames:
-                # Check if raw file exists on disk
                 raw_path = download_dir / dup_filename
                 if not raw_path.exists():
                     continue
                     
-                # Resolve drive metadata (new-style first, then legacy)
                 dup_drive_id = disk_filename_to_drive_id.get(dup_filename)
                 dup_original_name = disk_filename_to_original.get(dup_filename)
                 
@@ -326,8 +320,19 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                 orig_format = "HEIC" if heic_original else None
                 orig_name_for_dup = dup_original_name or heic_original
                 
-                relative_dup_path = f"{rel_workspace}/01_downloaded_from_drive/{dup_filename}"
-                dup_url = f"file://{relative_dup_path}"
+                # Upload duplicate to GCS input/ as well
+                if use_gcs and source_fid:
+                    dup_gcs_path = build_gcs_path(source_fid, dup_filename, "input")
+                    try:
+                        gs_uri = upload_file(str(raw_path), dup_gcs_path)
+                        dup_url = gs_uri
+                        dup_image_path = gs_uri
+                    except Exception:
+                        dup_url = f"file://{raw_path}"
+                        dup_image_path = str(raw_path)
+                else:
+                    dup_url = f"file://{raw_path}"
+                    dup_image_path = str(raw_path)
 
                 db.execute(text('''
                     INSERT INTO images (
@@ -338,28 +343,29 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                         processing_log, source_drive_folder_id,
                         image_drive_id, manually_blurred,
                         is_programmatically_blurred, is_manually_modified,
-                        is_duplicate, parent_image, image_path
+                        is_duplicate, parent_image, image_path,
+                        gcs_folder
                     )
                     VALUES (
                         :filename, :original_filename, :original_format,
                         :url, FALSE, 'duplicate',
-                        :original_url, NULL, FALSE,
+                        :url, NULL, FALSE,
                         0, FALSE,
                         'Marked as duplicate', :source_drive_folder_id,
                         :image_drive_id, FALSE,
                         FALSE, FALSE,
-                        TRUE, :parent_image, :image_path
+                        TRUE, :parent_image, :image_path,
+                        'input'
                     )
                 '''), {
                     'filename': dup_filename,
                     'original_filename': orig_name_for_dup,
                     'original_format': orig_format,
                     'url': dup_url,
-                    'original_url': relative_dup_path,
                     'source_drive_folder_id': source_fid,
                     'image_drive_id': dup_drive_id,
                     'parent_image': parent_filename,
-                    'image_path': str(raw_path),
+                    'image_path': dup_image_path,
                 })
                 dup_count += 1
                 existing_filenames.add(dup_filename)
@@ -441,6 +447,17 @@ def import_images_from_pipeline():
         print(f"   • Images with blurred faces: {total_blurred}")
         print(f"   • Clean images (no faces): {total_clean}")
         print(f"   • Total in database: {len(existing_filenames)}")
+        
+        # Cleanup local files after successful GCS upload
+        bucket_name = os.getenv("GCS_BUCKET_NAME")
+        if bucket_name and (total_new > 0 or total_updated > 0):
+            try:
+                if folders_dir.exists():
+                    for folder_dir in sorted([d for d in folders_dir.iterdir() if d.is_dir()]):
+                        shutil.rmtree(str(folder_dir), ignore_errors=True)
+                    print(f"🧹 Cleaned up local pipeline workspace (files now in GCS)")
+            except Exception as cleanup_err:
+                print(f"⚠️  Cleanup warning: {cleanup_err}")
         
         return total_new
         

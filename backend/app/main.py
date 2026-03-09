@@ -6,6 +6,7 @@ import httpx
 import re
 import os
 import io
+import datetime
 from contextlib import asynccontextmanager
 from app.config import settings
 from app.database import engine, Base, SessionLocal, get_db
@@ -160,6 +161,8 @@ def _migrate():
                 conn.execute(text("ALTER TABLE images ADD COLUMN parent_image VARCHAR(255)"))
             if "image_path" not in existing_img:
                 conn.execute(text("ALTER TABLE images ADD COLUMN image_path TEXT"))
+            if "gcs_folder" not in existing_img:
+                conn.execute(text("ALTER TABLE images ADD COLUMN gcs_folder VARCHAR(20) DEFAULT 'input'"))
             # Drop legacy is_modified column (replaced by is_manually_modified)
             if "is_modified" in existing_img:
                 conn.execute(text("ALTER TABLE images DROP COLUMN is_modified"))
@@ -311,6 +314,24 @@ def proxy_image(image_id: int):
             raise HTTPException(status_code=404, detail="Image not found")
         
         url = img.url
+        
+        # Handle GCS gs:// URLs
+        if url.startswith('gs://'):
+            try:
+                from app.utils.gcs import download_to_bytes, parse_gs_uri
+                _, blob_path = parse_gs_uri(url)
+                content = download_to_bytes(blob_path)
+                ext = os.path.splitext(img.filename)[1].lower()
+                mime_type = {'.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+                             '.gif': 'image/gif', '.webp': 'image/webp'}.get(ext, 'image/jpeg')
+                cache_image(image_id, content, mime_type)
+                return Response(
+                    content=content, media_type=mime_type,
+                    headers={"Cache-Control": "public, max-age=604800", "X-Cache": "MISS", "X-Source": "gcs"}
+                )
+            except Exception as e:
+                print(f"[Proxy] GCS fetch failed for {img.filename}: {e}")
+                raise HTTPException(status_code=502, detail=f"GCS fetch failed: {str(e)}")
         
         # Handle local file:// URLs
         if url.startswith('file://'):
@@ -505,5 +526,56 @@ def proxy_image(image_id: int):
         except Exception as e:
             print(f"Error fetching image {file_id}: {e}")
             raise HTTPException(status_code=502, detail=f"Failed to fetch image: {str(e)}")
+    finally:
+        db.close()
+
+
+@app.get("/api/images/signed-url/{image_id}")
+def get_signed_url(image_id: int, folder: str = None):
+    """
+    Return a GCS signed URL for direct browser access.
+    
+    For images stored in GCS (url starts with gs://), generates a signed URL.
+    For legacy file:// images, redirects to the proxy endpoint.
+    
+    Optional `folder` query param overrides gcs_folder (input/annotated/final),
+    useful for showing the original via ?folder=input in the blur tool.
+    """
+    db = SessionLocal()
+    try:
+        img = db.query(Image).filter(Image.id == image_id).first()
+        if not img:
+            raise HTTPException(status_code=404, detail="Image not found")
+        
+        url = img.url or ""
+        
+        if url.startswith("gs://"):
+            from app.utils.gcs import generate_signed_url as sign, parse_gs_uri, gcs_path as build_gcs_path
+            
+            _, original_blob_path = parse_gs_uri(url)
+            
+            if folder and folder in ("input", "annotated", "final") and img.source_drive_folder_id:
+                blob_path = build_gcs_path(img.source_drive_folder_id, img.filename, folder)
+            else:
+                stage = img.gcs_folder or "input"
+                blob_path = build_gcs_path(img.source_drive_folder_id or "", img.filename, stage)
+            
+            try:
+                signed = sign(blob_path, expiration_seconds=3600)
+                return {
+                    "signed_url": signed,
+                    "expires_in": 3600,
+                    "stage": folder or img.gcs_folder or "input",
+                    "image_id": image_id,
+                }
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Failed to generate signed URL: {str(e)}")
+        else:
+            return {
+                "signed_url": f"/api/images/proxy/{image_id}?t={int(datetime.datetime.now().timestamp())}",
+                "expires_in": 86400,
+                "stage": "legacy",
+                "image_id": image_id,
+            }
     finally:
         db.close()

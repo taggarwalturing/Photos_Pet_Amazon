@@ -13,6 +13,7 @@ from app.models.image import Image
 from app.dependencies import get_current_user
 from app.utils.blur import blur_image_regions
 from app.utils.deliverable import update_biometric_if_delivered, move_image_to_deliverable
+from app.utils.gcs import upload_bytes as gcs_upload_bytes, gcs_path as build_gcs_path, download_to_bytes as gcs_download, parse_gs_uri, delete_blob as gcs_delete
 
 router = APIRouter(prefix="/annotator/blur", tags=["Annotator Blur"])
 
@@ -39,16 +40,25 @@ class ApplyBlurRequest(BaseModel):
 
 def _get_image_bytes(image: Image) -> bytes:
     """
-    Get raw image bytes — try local cache first, then pipeline workspace,
+    Get raw image bytes — try GCS first, then local cache, then pipeline workspace,
     then download from Google Drive URL.
     """
-    # 1. Try image cache (fastest)
+    # 1. Try GCS (primary storage for new images)
+    url = image.url or ""
+    if url.startswith("gs://"):
+        try:
+            _, blob_path = parse_gs_uri(url)
+            return gcs_download(blob_path)
+        except Exception as e:
+            print(f"[Blur] GCS download failed for {image.filename}: {e}")
+
+    # 2. Try image cache
     cache_path = os.path.join(CACHE_DIR, f"{image.id}.jpg")
     if os.path.exists(cache_path) and os.path.getsize(cache_path) > 0:
         with open(cache_path, "rb") as f:
             return f.read()
 
-    # 2. Try pipeline workspace (original or processed) — per-folder + legacy
+    # 3. Try pipeline workspace (original or processed) — per-folder + legacy
     workspace = os.path.join(
         os.path.dirname(__file__), "..", "..",
         "master_pipeline", "pipeline_workspace"
@@ -60,7 +70,7 @@ def _get_image_bytes(image: Image) -> bytes:
             fd_path = os.path.join(folders_dir, fd)
             if os.path.isdir(fd_path):
                 search_roots.append(fd_path)
-    search_roots.append(workspace)  # legacy flat workspace as fallback
+    search_roots.append(workspace)
     
     for search_root in search_roots:
         for sub in ["deliverable", "01_downloaded_from_drive"]:
@@ -73,27 +83,26 @@ def _get_image_bytes(image: Image) -> bytes:
                             with open(fpath, "rb") as f:
                                 return f.read()
 
-    # 3. Download from URL
+    # 4. Download from URL
     import httpx
-    url = image.original_url or image.url
-    if not url:
+    dl_url = image.original_url or image.url
+    if not dl_url:
         raise ValueError("No URL available for image")
 
-    # Handle Google Drive URLs
-    if "drive.google.com" in url:
+    if "drive.google.com" in dl_url:
         import re
         file_id = None
-        match = re.search(r'/d/([a-zA-Z0-9_-]+)', url)
+        match = re.search(r'/d/([a-zA-Z0-9_-]+)', dl_url)
         if match:
             file_id = match.group(1)
         if not file_id:
-            match = re.search(r'id=([a-zA-Z0-9_-]+)', url)
+            match = re.search(r'id=([a-zA-Z0-9_-]+)', dl_url)
             if match:
                 file_id = match.group(1)
         if file_id:
-            url = f"https://drive.google.com/uc?export=download&id={file_id}"
+            dl_url = f"https://drive.google.com/uc?export=download&id={file_id}"
 
-    resp = httpx.get(url, follow_redirects=True, timeout=30)
+    resp = httpx.get(dl_url, follow_redirects=True, timeout=30)
     resp.raise_for_status()
     return resp.content
 
@@ -124,7 +133,7 @@ def apply_manual_blur(
     os.makedirs(BLUR_OUTPUT_DIR, exist_ok=True)
 
     try:
-        # 1. Get original image bytes
+        # 1. Get original image bytes (from GCS input/ or local)
         image_bytes = _get_image_bytes(image)
 
         # 2. Convert regions to dict list
@@ -133,17 +142,24 @@ def apply_manual_blur(
         # 3. Apply blur (server-side, using OpenCV + roi_blur)
         blurred_bytes = blur_image_regions(image_bytes, regions_list)
 
-        # 4. Save blurred image
+        # 4. Upload blurred image to GCS annotated/ folder (or save locally as fallback)
         blurred_filename = f"blur_{image.id}_{image.filename}"
-        # Ensure .jpg extension
         if not blurred_filename.lower().endswith(('.jpg', '.jpeg')):
             blurred_filename = os.path.splitext(blurred_filename)[0] + '.jpg'
 
-        blurred_path = os.path.join(BLUR_OUTPUT_DIR, blurred_filename)
-        with open(blurred_path, "wb") as f:
-            f.write(blurred_bytes)
+        if (image.url or "").startswith("gs://") and image.source_drive_folder_id:
+            annotated_gcs_path = build_gcs_path(image.source_drive_folder_id, image.filename, "annotated")
+            gcs_upload_bytes(blurred_bytes, annotated_gcs_path, content_type="image/jpeg")
+            image.gcs_folder = "annotated"
+            image.annotated_blur_url = f"gs://annotated/{image.source_drive_folder_id}/{image.filename}"
+        else:
+            os.makedirs(BLUR_OUTPUT_DIR, exist_ok=True)
+            blurred_path = os.path.join(BLUR_OUTPUT_DIR, blurred_filename)
+            with open(blurred_path, "wb") as f:
+                f.write(blurred_bytes)
+            image.annotated_blur_url = f"annotated_blur/{blurred_filename}"
 
-        # 5. Also update the image cache so the proxy serves the blurred version
+        # 5. Update the image cache so the proxy serves the blurred version
         cache_path = os.path.join(CACHE_DIR, f"{image.id}.jpg")
         os.makedirs(CACHE_DIR, exist_ok=True)
         with open(cache_path, "wb") as f:
@@ -154,9 +170,7 @@ def apply_manual_blur(
         image.blur_regions = regions_list
         image.manually_blurred_by = current_user.id
         image.manually_blurred_at = datetime.utcnow()
-        image.annotated_blur_url = f"annotated_blur/{blurred_filename}"
 
-        # Track annotator blur action
         if current_user.role == "annotator":
             image.is_blurred_annotator = True
         image.is_manually_modified = True
@@ -164,11 +178,9 @@ def apply_manual_blur(
         db.commit()
         db.refresh(image)
 
-        # Admin/reviewer modifications go directly to deliverable/
         if current_user.role == "admin":
             move_image_to_deliverable(image, db)
         else:
-            # Annotator: only re-copy if image was already delivered
             update_biometric_if_delivered(image.id, db)
 
         return {
@@ -256,29 +268,32 @@ def _download_from_google_drive(filename: str) -> bytes | None:
 def _find_original_image_bytes(image: Image) -> bytes | None:
     """
     Find the original (unblurred) image bytes.
-    Searches pipeline workspace folders in order: downloaded > deduplicated > clean subfolder.
-    Skips deliverable/ because it may contain pipeline-blurred images, not originals.
+    For GCS images, always fetches from the input/ folder.
+    For local images, searches pipeline workspace.
     """
+    # 1. Try GCS input/ folder (always has the original)
+    if image.source_drive_folder_id and image.filename:
+        try:
+            input_gcs_path = build_gcs_path(image.source_drive_folder_id, image.filename, "input")
+            return gcs_download(input_gcs_path)
+        except Exception as e:
+            print(f"[Restore] GCS input/ download failed: {e}")
+
     workspace = os.path.join(
         os.path.dirname(__file__), "..", "..",
         "master_pipeline", "pipeline_workspace"
     )
 
-    # Check original_url field — but ONLY if it points to a pre-blur location.
-    # If original_url points to deliverable/,
-    # it's a post-blur folder and NOT the actual original.
     if image.original_url:
-        orig_path = image.original_url.replace("file://", "")
-        is_post_blur_path = "deliverable" in orig_path
-        if not is_post_blur_path:
+        orig_path = image.original_url.replace("file://", "").replace("gs://", "")
+        is_post_blur_path = "deliverable" in orig_path or "annotated" in orig_path
+        if not is_post_blur_path and not orig_path.startswith("gs://"):
             backend_dir = os.path.join(os.path.dirname(__file__), "..", "..")
             full_path = os.path.join(backend_dir, orig_path)
             if os.path.exists(full_path) and os.path.getsize(full_path) > 0:
                 with open(full_path, "rb") as f:
                     return f.read()
 
-    # Search pipeline folders (earlier stages have the original unblurred version)
-    # Check per-folder workspaces + legacy workspace
     search_roots = []
     folders_dir = os.path.join(workspace, "folders")
     if os.path.isdir(folders_dir):
@@ -286,7 +301,7 @@ def _find_original_image_bytes(image: Image) -> bytes | None:
             fd_path = os.path.join(folders_dir, fd)
             if os.path.isdir(fd_path):
                 search_roots.append(fd_path)
-    search_roots.append(workspace)  # legacy flat workspace as fallback
+    search_roots.append(workspace)
     
     for search_root in search_roots:
         search_folders = [
@@ -299,15 +314,8 @@ def _find_original_image_bytes(image: Image) -> bytes | None:
                     with open(fpath, "rb") as f:
                         return f.read()
 
-    # Last resort: re-download from Google Drive
     gdrive_bytes = _download_from_google_drive(image.filename)
     if gdrive_bytes:
-        # Save to download folder so it's available next time
-        dl_folder = os.path.join(workspace, "01_downloaded_from_drive")
-        os.makedirs(dl_folder, exist_ok=True)
-        dl_path = os.path.join(dl_folder, image.filename)
-        with open(dl_path, "wb") as f:
-            f.write(gdrive_bytes)
         return gdrive_bytes
 
     return None
@@ -342,8 +350,17 @@ def remove_blur(
             "had_original": False,
         }
 
-    # 2. Delete manual blur file if it exists
-    if image.annotated_blur_url:
+    # 2. Delete blurred copies from GCS annotated/ and final/ (if they exist)
+    if image.source_drive_folder_id and image.filename:
+        for stage in ("annotated", "final"):
+            try:
+                gcs_blob = build_gcs_path(image.source_drive_folder_id, image.filename, stage)
+                gcs_delete(gcs_blob)
+            except Exception as e:
+                print(f"Warning: Could not delete GCS {stage}/ blob: {e}")
+
+    # Also delete local blur file if it exists
+    if image.annotated_blur_url and not image.annotated_blur_url.startswith("gs://"):
         try:
             blur_path = os.path.join(
                 os.path.dirname(__file__), "..", "..",
@@ -367,19 +384,17 @@ def remove_blur(
         with open(cache_path, "wb") as f:
             f.write(buf.tobytes())
     else:
-        # Fallback — write raw bytes
         os.makedirs(CACHE_DIR, exist_ok=True)
         with open(cache_path, "wb") as f:
             f.write(original_bytes)
 
-    # 4. Update database — clear operational blur fields but KEEP manually_blurred_by/at for stats
+    # 4. Update database — reset to input/ stage
     image.manually_blurred = False
     image.blur_regions = None
-    # NOTE: Do NOT clear manually_blurred_by / manually_blurred_at — needed for per-day blur stats
     image.annotated_blur_url = None
-    image.is_using_processed = False  # Switch to showing original
+    image.is_using_processed = False
+    image.gcs_folder = "input"
 
-    # Track annotator restore action
     if current_user.role == "annotator":
         image.is_restore_annotator = True
     image.restored_by_annotator_id = current_user.id

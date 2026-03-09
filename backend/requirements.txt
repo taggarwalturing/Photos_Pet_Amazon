@@ -15,4 +15,5 @@ google-api-python-client
 pillow
 pillow-heif
 roi-blur
-openpyxlopenpyxl
+openpyxl
+google-cloud-storage

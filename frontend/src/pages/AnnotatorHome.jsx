@@ -3,14 +3,14 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
 import CategoryGuideModal from '../components/CategoryGuideModal';
+import SignedImage from '../components/SignedImage';
+import { getProxyUrl } from '../hooks/useSignedUrl';
 
 const PAGE_SIZE = 20;
 
-// Helper to get proxied image URL for Google Drive images
 const getImageUrl = (image) => {
   if (!image) return '';
-  // Use proxy endpoint for all images to bypass CORS, add timestamp to prevent caching
-  return `${import.meta.env.VITE_API_URL || 'http://localhost:5001'}/api/images/proxy/${image.id}?t=${Date.now()}`;
+  return getProxyUrl(image.id);
 };
 
 function Pagination({ currentPage, totalPages, onPageChange }) {
@@ -423,9 +423,8 @@ export default function AnnotatorHome() {
                     >
                       {/* Large Image */}
                       <div className="relative aspect-[4/3]">
-                        <img
-                          key={`thumb-${img.id}`}
-                          src={getImageUrl(img)}
+                        <SignedImage
+                          imageId={img.id}
                           alt={img.filename}
                           className="w-full h-full object-cover"
                           loading="lazy"

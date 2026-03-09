@@ -1,11 +1,12 @@
 """
-Utility functions for managing image delivery to deliverable/ folder
+Utility functions for managing image delivery to GCS final/ folder (or local deliverable/)
 and populating the final_labels table when all annotations are approved.
 
-Simplified folder structure:
-  pipeline_workspace/folders/{folder_id}/
-    ├── 01_downloaded_from_drive/   ← raw downloads
-    └── deliverable/                ← final images served to UI
+GCS bucket structure:
+  gs://amazon-photo-pets/
+    input/{folder_id}/{filename}       — originals
+    annotated/{folder_id}/{filename}   — after blur
+    final/{folder_id}/{filename}       — approved deliverable
 """
 import shutil
 from pathlib import Path
@@ -17,6 +18,7 @@ from app.models.final_label import FinalLabel
 from app.models.option import Option
 from app.models.category import Category
 from app.models.user import User
+from app.utils.gcs import copy_blob, gcs_path as build_gcs_path, blob_exists
 
 BACKEND_DIR = Path(__file__).resolve().parent.parent.parent  # backend/
 PIPELINE_WORKSPACE = BACKEND_DIR / "master_pipeline" / "pipeline_workspace"
@@ -70,17 +72,42 @@ def _get_image_source_path(image: Image) -> Path | None:
 
 def move_image_to_deliverable(image: Image, db: Session):
     """
-    Copy the current image version to deliverable/.
+    Copy the current image version to GCS final/ (or local deliverable/).
+    
+    For GCS images: copies from the current stage (input or annotated) to final/.
+    For legacy images: copies from local disk to deliverable/.
     
     Called when:
       1. Reviewer approves all annotations for the image.
       2. Reviewer/Admin modifies (blur/restore) the image from the dashboard.
     """
     folder_id = image.source_drive_folder_id or "unknown"
+    is_modified = bool(image.is_blurred_annotator or image.is_restore_annotator or image.manually_blurred)
+
+    # GCS path: copy from current stage (annotated if blurred, input if not) to final/
+    if (image.url or "").startswith("gs://") and folder_id != "unknown":
+        src_stage = image.gcs_folder or "input"
+        src_gcs = build_gcs_path(folder_id, image.filename, src_stage)
+        dst_gcs = build_gcs_path(folder_id, image.filename, "final")
+        try:
+            if blob_exists(src_gcs):
+                copy_blob(src_gcs, dst_gcs)
+            else:
+                input_gcs = build_gcs_path(folder_id, image.filename, "input")
+                copy_blob(input_gcs, dst_gcs)
+            image.gcs_folder = "final"
+            image.deliverable_image_path = f"final/{folder_id}/{image.filename}"
+            image.is_manually_modified = is_modified
+            db.commit()
+            print(f"[Deliverable] ✅ Image {image.id} ({image.filename}) → GCS final/ (modified={is_modified})")
+            return
+        except Exception as e:
+            print(f"[Deliverable] GCS copy to final/ failed: {e}, falling back to local")
+
+    # Local fallback
     final_dir = PIPELINE_WORKSPACE / "folders" / folder_id / "deliverable"
     final_dir.mkdir(parents=True, exist_ok=True)
 
-    # Find the current image bytes
     source_path = _get_image_source_path(image)
     if not source_path:
         print(f"[Deliverable] WARNING: Could not find source image for image_id={image.id} ({image.filename})")
@@ -89,19 +116,12 @@ def move_image_to_deliverable(image: Image, db: Session):
     dest_path = final_dir / image.filename
 
     try:
-        # Copy current version to deliverable/
         shutil.copy2(str(source_path), str(dest_path))
     except Exception as e:
         print(f"[Deliverable] ERROR moving image {image.id}: {e}")
         return
 
-    # Determine if the image was modified by the annotator/admin
-    is_modified = bool(image.is_blurred_annotator or image.is_restore_annotator or image.manually_blurred)
-
-    # Store relative path from pipeline_workspace root
     relative_path = str(dest_path.relative_to(PIPELINE_WORKSPACE))
-
-    # Update image record
     image.deliverable_image_path = relative_path
     image.is_manually_modified = is_modified
     db.commit()

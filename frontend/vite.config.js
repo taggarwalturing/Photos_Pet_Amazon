@@ -15,6 +15,8 @@ export default defineConfig({
     },
   },
   preview: {
-    allowedHosts: ['deep-research-dashboard.turing.com'],
+    host: '0.0.0.0',
+    port: 2000,
+    allowedHosts: true,
   },
 })
