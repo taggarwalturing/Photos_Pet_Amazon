@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict wgQ5bEeFw8hgkZ5OBjnWtXAXUAWuLq8D4VVIn3TZgZPpwS1W4gIY0Sxfcywt4xK
+\restrict c6ftYXN42QgABnpGeq1ZfDCzlSrnskeJVtlSmbOAL1Vv9ccWwQ2RYtthQDeeIGQ
 
 -- Dumped from database version 14.19 (Homebrew)
 -- Dumped by pg_dump version 14.19 (Homebrew)
@@ -637,12 +637,12 @@ ALTER TABLE ONLY public.users ALTER COLUMN id SET DEFAULT nextval('public.users_
 --
 
 COPY public.annotation_selections (id, annotation_id, option_id) FROM stdin;
-19	19	4
-20	20	6
-21	21	13
-22	22	20
-23	23	29
-24	24	33
+25	25	40
+26	26	42
+27	27	49
+28	28	56
+29	29	66
+30	30	69
 \.
 
 
@@ -651,12 +651,12 @@ COPY public.annotation_selections (id, annotation_id, option_id) FROM stdin;
 --
 
 COPY public.annotations (id, image_id, annotator_id, category_id, is_duplicate, status, time_spent_seconds, human_validated, is_rework, rework_time_seconds, review_status, review_note, reviewed_by, reviewed_at, created_at, updated_at) FROM stdin;
-19	2813	4	1	\N	completed	0	t	f	0	approved	\N	1	2026-03-09 13:52:54.040149+05:30	2026-03-09 13:52:18.396858+05:30	2026-03-09 13:52:54.030017+05:30
-23	2813	4	5	\N	completed	0	t	f	0	approved	\N	1	2026-03-09 13:52:54.041354+05:30	2026-03-09 13:52:18.396858+05:30	2026-03-09 13:52:54.032026+05:30
-20	2813	4	2	\N	completed	0	t	f	0	approved	\N	1	2026-03-09 13:52:54.041773+05:30	2026-03-09 13:52:18.396858+05:30	2026-03-09 13:52:54.030525+05:30
-21	2813	4	3	\N	completed	0	t	f	0	approved	\N	1	2026-03-09 13:52:54.042591+05:30	2026-03-09 13:52:18.396858+05:30	2026-03-09 13:52:54.031221+05:30
-22	2813	4	4	\N	completed	0	t	f	0	approved	\N	1	2026-03-09 13:52:54.044407+05:30	2026-03-09 13:52:18.396858+05:30	2026-03-09 13:52:54.031759+05:30
-24	2813	4	6	\N	completed	0	t	f	0	approved	\N	1	2026-03-09 13:52:54.072689+05:30	2026-03-09 13:52:18.396858+05:30	2026-03-09 13:52:54.062524+05:30
+27	2836	8	9	\N	completed	0	t	f	0	approved	\N	7	2026-03-09 18:49:11.645441+05:30	2026-03-09 18:48:51.728855+05:30	2026-03-09 18:49:11.637571+05:30
+28	2836	8	10	\N	completed	0	t	f	0	approved	\N	7	2026-03-09 18:49:11.647192+05:30	2026-03-09 18:48:51.728855+05:30	2026-03-09 18:49:11.638018+05:30
+26	2836	8	8	\N	completed	0	t	f	0	approved	\N	7	2026-03-09 18:49:11.644208+05:30	2026-03-09 18:48:51.728855+05:30	2026-03-09 18:49:11.637218+05:30
+25	2836	8	7	\N	completed	0	t	f	0	approved	\N	7	2026-03-09 18:49:11.646349+05:30	2026-03-09 18:48:51.728855+05:30	2026-03-09 18:49:11.636893+05:30
+29	2836	8	11	\N	completed	0	t	f	0	approved	\N	7	2026-03-09 18:49:11.649275+05:30	2026-03-09 18:48:51.728855+05:30	2026-03-09 18:49:11.639479+05:30
+30	2836	8	12	\N	completed	0	t	f	0	approved	\N	7	2026-03-09 18:49:11.669965+05:30	2026-03-09 18:48:51.728855+05:30	2026-03-09 18:49:11.661788+05:30
 \.
 
 
@@ -665,24 +665,12 @@ COPY public.annotations (id, image_id, annotator_id, category_id, is_duplicate, 
 --
 
 COPY public.annotator_categories (id, user_id, category_id) FROM stdin;
-1	2	1
-2	2	2
-3	2	3
-4	2	4
-5	2	5
-6	2	6
-7	3	1
-8	3	2
-9	3	3
-10	3	4
-11	3	5
-12	3	6
-13	4	1
-14	4	2
-15	4	3
-16	4	4
-17	4	5
-18	4	6
+25	8	7
+26	8	8
+27	8	9
+28	8	10
+29	8	11
+30	8	12
 \.
 
 
@@ -691,12 +679,12 @@ COPY public.annotator_categories (id, user_id, category_id) FROM stdin;
 --
 
 COPY public.categories (id, name, display_order) FROM stdin;
-1	Lighting Variation	1
-2	Angle & Perspective Variation	2
-3	Environmental Context Variation	3
-4	Occlusion & Partial Visibility	4
-5	Activity & Motion	5
-6	Multi-Pet Disambiguation	6
+7	Lighting Variation	1
+8	Angle & Perspective Variation	2
+9	Environmental Context Variation	3
+10	Occlusion & Partial Visibility	4
+11	Activity & Motion	5
+12	Multi-Pet Disambiguation	6
 \.
 
 
@@ -705,7 +693,7 @@ COPY public.categories (id, name, display_order) FROM stdin;
 --
 
 COPY public.drive_folders (id, folder_id, folder_name, added_at, status, last_run_at, total_in_drive, downloaded_count, unique_count, duplicate_count, blurred_count, clean_count, failed_count, notes, error_log) FROM stdin;
-45	1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ	1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ	2026-03-09 12:38:37.763573+05:30	completed	2026-03-09 12:39:39.709033+05:30	11	0	11	0	0	0	0	Auto-discovered from GCS bucket	\N
+47	1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ	1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ	2026-03-09 18:40:32.815299+05:30	completed	2026-03-09 18:41:39.910517+05:30	0	11	0	0	0	11	0	Auto-discovered from GCS bucket	\N
 \.
 
 
@@ -722,7 +710,7 @@ COPY public.edit_requests (id, user_id, image_id, reason, status, created_at, re
 --
 
 COPY public.final_labels (id, image_id, lighting_variation, angle_perspective_variation, environmental_context_variation, occlusion_partial_visibility, activity_motion, multi_pet_disambiguation, reviewer_name, annotator_name, approved_at, created_at, updated_at) FROM stdin;
-4	2813	Well-lit conditions (typical)	Front-facing at eye level (typical)	Indoor setting (typical)	Full-body, unobstructed (typical)	Sitting still-posed (typical)	Single pet (typical)	admin@turing.com	test@turing.com	2026-03-09 13:52:54.072689+05:30	2026-03-09 13:52:54.083909+05:30	2026-03-09 13:52:54.083909+05:30
+5	2836	Well-lit conditions (typical)	Front-facing at eye level (typical)	Indoor setting (typical)	Full-body, unobstructed (typical)	Sleeping-curled up	Single pet (typical)	admin@turing.com	test@turing.com	2026-03-09 18:49:11.669965+05:30	2026-03-09 18:49:11.679174+05:30	2026-03-09 18:49:11.679174+05:30
 \.
 
 
@@ -731,17 +719,17 @@ COPY public.final_labels (id, image_id, lighting_variation, angle_perspective_va
 --
 
 COPY public.images (id, filename, original_filename, original_format, url, created_at, is_improper, improper_reason, marked_improper_by, marked_improper_at, compliance_processed, compliance_status, human_faces_detected, processing_log, is_ai_generated, ai_detection_confidence, marked_ai_by, marked_ai_at, human_visible, human_visible_marked_by, human_visible_marked_at, original_url, processed_url, is_using_processed, processing_method, manually_blurred, blur_regions, manually_blurred_by, manually_blurred_at, annotated_blur_url, source_drive_folder_id, arbiter_labels, arbiter_classified_at, image_drive_id, is_blurred_annotator, is_restore_annotator, deliverable_image_path, restored_by_annotator_id, restored_at_annotator, is_manually_modified, is_programmatically_blurred, is_duplicate, parent_image, image_path, gcs_folder) FROM stdin;
-2816	1yXPPkNGNHEyPeu6YbRr-PxOGuQ-aNvYl.jpg	1yXPPkNGNHEyPeu6YbRr-PxOGuQ-aNvYl.jpg	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1yXPPkNGNHEyPeu6YbRr-PxOGuQ-aNvYl.jpg	2026-03-09 12:41:39.215585+05:30	f	\N	\N	\N	t	clean	0	Action: no_face, Faces: 0	\N	\N	\N	\N	\N	\N	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1yXPPkNGNHEyPeu6YbRr-PxOGuQ-aNvYl.jpg	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1yXPPkNGNHEyPeu6YbRr-PxOGuQ-aNvYl.jpg	t	\N	f	\N	\N	\N	\N	1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ	{"lighting": "well_lit", "viewpoint": "front_eye_level", "environment": "indoor", "occlusion": "full_body", "activity": "sitting_posed", "multipet": "single_pet"}	2026-03-09 13:51:49.699288+05:30	1yXPPkNGNHEyPeu6YbRr-PxOGuQ-aNvYl	f	f	\N	\N	\N	f	f	f	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1yXPPkNGNHEyPeu6YbRr-PxOGuQ-aNvYl.jpg	input
-2817	1kEgNhaZcJpbpg-2pl8wp7b6BEIbE9B2h.jpg	1kEgNhaZcJpbpg-2pl8wp7b6BEIbE9B2h.jpg	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1kEgNhaZcJpbpg-2pl8wp7b6BEIbE9B2h.jpg	2026-03-09 12:41:39.215585+05:30	f	\N	\N	\N	t	clean	0	Action: no_face, Faces: 0	\N	\N	\N	\N	\N	\N	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1kEgNhaZcJpbpg-2pl8wp7b6BEIbE9B2h.jpg	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1kEgNhaZcJpbpg-2pl8wp7b6BEIbE9B2h.jpg	t	\N	f	\N	\N	\N	\N	1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ	{"lighting": "well_lit", "viewpoint": "top_down", "environment": "indoor", "occlusion": "full_body", "activity": "sitting_posed", "multipet": "single_pet"}	2026-03-09 13:51:49.699288+05:30	1kEgNhaZcJpbpg-2pl8wp7b6BEIbE9B2h	f	f	\N	\N	\N	f	f	f	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1kEgNhaZcJpbpg-2pl8wp7b6BEIbE9B2h.jpg	input
-2813	1IVHePKDTlLNM5b7TRREdQrFYOSSSfAS2.jpg	1IVHePKDTlLNM5b7TRREdQrFYOSSSfAS2.jpg	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1IVHePKDTlLNM5b7TRREdQrFYOSSSfAS2.jpg	2026-03-09 12:41:39.215585+05:30	f	\N	\N	\N	t	clean	0	Action: no_face, Faces: 0	\N	\N	\N	\N	\N	\N	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1IVHePKDTlLNM5b7TRREdQrFYOSSSfAS2.jpg	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1IVHePKDTlLNM5b7TRREdQrFYOSSSfAS2.jpg	f	\N	t	[{"x": 0.4063152674594924, "y": 0.11055578379012852, "width": 0.38476782665916437, "height": 0.39423909853864664}]	1	2026-03-09 08:00:56.045128+05:30	gs://annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1IVHePKDTlLNM5b7TRREdQrFYOSSSfAS2.jpg	1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ	{"lighting": "well_lit", "viewpoint": "front_eye_level", "environment": "indoor", "occlusion": "full_body", "activity": "sitting_posed", "multipet": "single_pet"}	2026-03-09 13:51:49.699288+05:30	1IVHePKDTlLNM5b7TRREdQrFYOSSSfAS2	f	t	annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1IVHePKDTlLNM5b7TRREdQrFYOSSSfAS2.jpg	\N	2026-03-09 07:25:54.654611+05:30	t	f	f	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1IVHePKDTlLNM5b7TRREdQrFYOSSSfAS2.jpg	annotated
-2814	1nvnXc25mqKh9UbT9QpwFq6J1jY2qA94X.jpg	1nvnXc25mqKh9UbT9QpwFq6J1jY2qA94X.jpg	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1nvnXc25mqKh9UbT9QpwFq6J1jY2qA94X.jpg	2026-03-09 12:41:39.215585+05:30	f	\N	\N	\N	t	clean	0	Action: no_face, Faces: 0	\N	\N	\N	\N	\N	\N	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1nvnXc25mqKh9UbT9QpwFq6J1jY2qA94X.jpg	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1nvnXc25mqKh9UbT9QpwFq6J1jY2qA94X.jpg	f	\N	f	null	\N	2026-03-09 07:26:38.331377+05:30	\N	1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ	{"lighting": "well_lit", "viewpoint": "front_eye_level", "environment": "indoor", "occlusion": "None", "activity": "sleeping", "multipet": "single_pet"}	2026-03-09 13:51:49.699288+05:30	1nvnXc25mqKh9UbT9QpwFq6J1jY2qA94X	f	f	\N	\N	2026-03-09 07:26:43.464908+05:30	t	f	f	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1nvnXc25mqKh9UbT9QpwFq6J1jY2qA94X.jpg	input
-2815	1xdEA4pPGgnIThrHVZ3DTvl8sWl47Ngze.jpg	1xdEA4pPGgnIThrHVZ3DTvl8sWl47Ngze.jpg	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1xdEA4pPGgnIThrHVZ3DTvl8sWl47Ngze.jpg	2026-03-09 12:41:39.215585+05:30	f	\N	\N	\N	t	clean	0	Action: no_face, Faces: 0	\N	\N	\N	\N	\N	\N	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1xdEA4pPGgnIThrHVZ3DTvl8sWl47Ngze.jpg	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1xdEA4pPGgnIThrHVZ3DTvl8sWl47Ngze.jpg	f	\N	f	null	\N	2026-03-09 07:38:53.052124+05:30	\N	1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ	{"lighting": "well_lit", "viewpoint": "top_down", "environment": "indoor", "occlusion": "full_body", "activity": "sitting_posed", "multipet": "two_similar"}	2026-03-09 13:51:49.699288+05:30	1xdEA4pPGgnIThrHVZ3DTvl8sWl47Ngze	f	f	\N	\N	2026-03-09 07:39:00.692702+05:30	t	f	f	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1xdEA4pPGgnIThrHVZ3DTvl8sWl47Ngze.jpg	input
-2818	1jBBXFSwpzBfRNWNtRbZR5UE6TpJ0jeeb.jpg	1jBBXFSwpzBfRNWNtRbZR5UE6TpJ0jeeb.jpg	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1jBBXFSwpzBfRNWNtRbZR5UE6TpJ0jeeb.jpg	2026-03-09 12:41:39.215585+05:30	f	\N	\N	\N	t	clean	0	Action: no_face, Faces: 0	\N	\N	\N	\N	\N	\N	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1jBBXFSwpzBfRNWNtRbZR5UE6TpJ0jeeb.jpg	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1jBBXFSwpzBfRNWNtRbZR5UE6TpJ0jeeb.jpg	t	\N	f	\N	\N	\N	\N	1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ	{"lighting": "well_lit", "viewpoint": "front_eye_level", "environment": "indoor", "occlusion": "full_body", "activity": "sitting_posed", "multipet": "single_pet"}	2026-03-09 13:51:49.699288+05:30	1jBBXFSwpzBfRNWNtRbZR5UE6TpJ0jeeb	f	f	\N	\N	\N	f	f	f	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1jBBXFSwpzBfRNWNtRbZR5UE6TpJ0jeeb.jpg	input
-2819	1Xc02tjjtOAHniSFKjgV50IDFTWOx_vBV.jpg	1Xc02tjjtOAHniSFKjgV50IDFTWOx_vBV.jpg	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1Xc02tjjtOAHniSFKjgV50IDFTWOx_vBV.jpg	2026-03-09 12:41:39.215585+05:30	f	\N	\N	\N	t	clean	0	Action: no_face, Faces: 0	\N	\N	\N	\N	\N	\N	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1Xc02tjjtOAHniSFKjgV50IDFTWOx_vBV.jpg	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1Xc02tjjtOAHniSFKjgV50IDFTWOx_vBV.jpg	t	\N	f	\N	\N	\N	\N	1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ	{"lighting": "well_lit", "viewpoint": "front_eye_level", "environment": "indoor", "occlusion": "full_body", "activity": "sitting_posed", "multipet": "two_similar"}	2026-03-09 13:51:49.699288+05:30	1Xc02tjjtOAHniSFKjgV50IDFTWOx_vBV	f	f	\N	\N	\N	f	f	f	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1Xc02tjjtOAHniSFKjgV50IDFTWOx_vBV.jpg	input
-2820	1Aiok9pFVEC0qdr3oN-AGYCFBf4u7St-7.jpg	1Aiok9pFVEC0qdr3oN-AGYCFBf4u7St-7.jpg	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1Aiok9pFVEC0qdr3oN-AGYCFBf4u7St-7.jpg	2026-03-09 12:41:39.215585+05:30	f	\N	\N	\N	t	clean	0	Action: no_face, Faces: 0	\N	\N	\N	\N	\N	\N	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1Aiok9pFVEC0qdr3oN-AGYCFBf4u7St-7.jpg	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1Aiok9pFVEC0qdr3oN-AGYCFBf4u7St-7.jpg	t	\N	f	\N	\N	\N	\N	1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ	{"lighting": "harsh_sunlight", "viewpoint": "top_down", "environment": "indoor", "occlusion": "full_body", "activity": "sitting_posed", "multipet": "two_similar"}	2026-03-09 13:51:49.699288+05:30	1Aiok9pFVEC0qdr3oN-AGYCFBf4u7St-7	f	f	\N	\N	\N	f	f	f	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1Aiok9pFVEC0qdr3oN-AGYCFBf4u7St-7.jpg	input
-2821	1XPuJxShUZfwVnZIhfgCgL6AdU2GKdsXC.jpg	1XPuJxShUZfwVnZIhfgCgL6AdU2GKdsXC.jpg	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1XPuJxShUZfwVnZIhfgCgL6AdU2GKdsXC.jpg	2026-03-09 12:41:39.215585+05:30	f	\N	\N	\N	t	clean	0	Action: no_face, Faces: 0	\N	\N	\N	\N	\N	\N	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1XPuJxShUZfwVnZIhfgCgL6AdU2GKdsXC.jpg	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1XPuJxShUZfwVnZIhfgCgL6AdU2GKdsXC.jpg	t	\N	f	\N	\N	\N	\N	1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ	{"lighting": "well_lit", "viewpoint": "front_eye_level", "environment": "indoor", "occlusion": "None", "activity": "sitting_posed", "multipet": "single_pet"}	2026-03-09 13:51:49.699288+05:30	1XPuJxShUZfwVnZIhfgCgL6AdU2GKdsXC	f	f	\N	\N	\N	f	f	f	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1XPuJxShUZfwVnZIhfgCgL6AdU2GKdsXC.jpg	input
-2822	1rzOYkFqNTtU4to3K-BO5j-lDSieQOLdF.jpg	1rzOYkFqNTtU4to3K-BO5j-lDSieQOLdF.jpg	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1rzOYkFqNTtU4to3K-BO5j-lDSieQOLdF.jpg	2026-03-09 12:41:39.215585+05:30	f	\N	\N	\N	t	clean	0	Action: no_face, Faces: 0	\N	\N	\N	\N	\N	\N	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1rzOYkFqNTtU4to3K-BO5j-lDSieQOLdF.jpg	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1rzOYkFqNTtU4to3K-BO5j-lDSieQOLdF.jpg	t	\N	f	\N	\N	\N	\N	1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ	{"lighting": "well_lit", "viewpoint": "front_eye_level", "environment": "indoor", "occlusion": "full_body", "activity": "sitting_posed", "multipet": "pet_with_lookalike"}	2026-03-09 13:51:49.699288+05:30	1rzOYkFqNTtU4to3K-BO5j-lDSieQOLdF	f	f	\N	\N	\N	f	f	f	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/1rzOYkFqNTtU4to3K-BO5j-lDSieQOLdF.jpg	input
-2823	16DI-XApmK6B_O97T50ke0vo2i85CYkJj.jpg	16DI-XApmK6B_O97T50ke0vo2i85CYkJj.jpg	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/16DI-XApmK6B_O97T50ke0vo2i85CYkJj.jpg	2026-03-09 12:41:39.215585+05:30	f	\N	\N	\N	t	clean	0	Action: no_face, Faces: 0	\N	\N	\N	\N	\N	\N	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/16DI-XApmK6B_O97T50ke0vo2i85CYkJj.jpg	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/16DI-XApmK6B_O97T50ke0vo2i85CYkJj.jpg	t	\N	f	\N	\N	\N	\N	1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ	{"lighting": "well_lit", "viewpoint": "front_eye_level", "environment": "indoor", "occlusion": "full_body", "activity": "sitting_posed", "multipet": "single_pet"}	2026-03-09 13:51:49.699288+05:30	16DI-XApmK6B_O97T50ke0vo2i85CYkJj	f	f	\N	\N	\N	f	f	f	\N	gs://amazon-photo-pets-test/input/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/16DI-XApmK6B_O97T50ke0vo2i85CYkJj.jpg	input
+2835	1IVHePKDTlLNM5b7TRREdQrFYOSSSfAS2.jpg	1IVHePKDTlLNM5b7TRREdQrFYOSSSfAS2.jpg	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1IVHePKDTlLNM5b7TRREdQrFYOSSSfAS2.jpg	2026-03-09 18:41:39.645507+05:30	f	\N	\N	\N	t	clean	0	Action: no_face, Faces: 0	\N	\N	\N	\N	\N	\N	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1IVHePKDTlLNM5b7TRREdQrFYOSSSfAS2.jpg	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1IVHePKDTlLNM5b7TRREdQrFYOSSSfAS2.jpg	t	\N	f	\N	\N	\N	\N	1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ	{"lighting": "well_lit", "viewpoint": "front_eye_level", "environment": "indoor", "occlusion": "full_body", "activity": "sitting_posed", "multipet": "single_pet"}	2026-03-09 18:43:42.071994+05:30	1IVHePKDTlLNM5b7TRREdQrFYOSSSfAS2	f	f	\N	\N	\N	f	f	f	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1IVHePKDTlLNM5b7TRREdQrFYOSSSfAS2.jpg	clean
+2837	1xdEA4pPGgnIThrHVZ3DTvl8sWl47Ngze.jpg	1xdEA4pPGgnIThrHVZ3DTvl8sWl47Ngze.jpg	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1xdEA4pPGgnIThrHVZ3DTvl8sWl47Ngze.jpg	2026-03-09 18:41:39.645507+05:30	f	\N	\N	\N	t	clean	0	Action: no_face, Faces: 0	\N	\N	\N	\N	\N	\N	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1xdEA4pPGgnIThrHVZ3DTvl8sWl47Ngze.jpg	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1xdEA4pPGgnIThrHVZ3DTvl8sWl47Ngze.jpg	t	\N	f	\N	\N	\N	\N	1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ	{"lighting": "well_lit", "viewpoint": "front_eye_level", "environment": "indoor", "occlusion": "full_body", "activity": "sitting_posed", "multipet": "two_similar"}	2026-03-09 18:43:42.071994+05:30	1xdEA4pPGgnIThrHVZ3DTvl8sWl47Ngze	f	f	\N	\N	\N	f	f	f	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1xdEA4pPGgnIThrHVZ3DTvl8sWl47Ngze.jpg	clean
+2838	1yXPPkNGNHEyPeu6YbRr-PxOGuQ-aNvYl.jpg	1yXPPkNGNHEyPeu6YbRr-PxOGuQ-aNvYl.jpg	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1yXPPkNGNHEyPeu6YbRr-PxOGuQ-aNvYl.jpg	2026-03-09 18:41:39.645507+05:30	f	\N	\N	\N	t	clean	0	Action: no_face, Faces: 0	\N	\N	\N	\N	\N	\N	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1yXPPkNGNHEyPeu6YbRr-PxOGuQ-aNvYl.jpg	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1yXPPkNGNHEyPeu6YbRr-PxOGuQ-aNvYl.jpg	t	\N	f	\N	\N	\N	\N	1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ	{"lighting": "well_lit", "viewpoint": "front_eye_level", "environment": "indoor", "occlusion": "None", "activity": "None", "multipet": "single_pet"}	2026-03-09 18:43:42.071994+05:30	1yXPPkNGNHEyPeu6YbRr-PxOGuQ-aNvYl	f	f	\N	\N	\N	f	f	f	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1yXPPkNGNHEyPeu6YbRr-PxOGuQ-aNvYl.jpg	clean
+2839	1kEgNhaZcJpbpg-2pl8wp7b6BEIbE9B2h.jpg	1kEgNhaZcJpbpg-2pl8wp7b6BEIbE9B2h.jpg	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1kEgNhaZcJpbpg-2pl8wp7b6BEIbE9B2h.jpg	2026-03-09 18:41:39.645507+05:30	f	\N	\N	\N	t	clean	0	Action: no_face, Faces: 0	\N	\N	\N	\N	\N	\N	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1kEgNhaZcJpbpg-2pl8wp7b6BEIbE9B2h.jpg	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1kEgNhaZcJpbpg-2pl8wp7b6BEIbE9B2h.jpg	t	\N	f	\N	\N	\N	\N	1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ	{"lighting": "well_lit", "viewpoint": "top_down", "environment": "indoor", "occlusion": "None", "activity": "sitting_posed", "multipet": "single_pet"}	2026-03-09 18:43:42.071994+05:30	1kEgNhaZcJpbpg-2pl8wp7b6BEIbE9B2h	f	f	\N	\N	\N	f	f	f	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1kEgNhaZcJpbpg-2pl8wp7b6BEIbE9B2h.jpg	clean
+2840	1jBBXFSwpzBfRNWNtRbZR5UE6TpJ0jeeb.jpg	1jBBXFSwpzBfRNWNtRbZR5UE6TpJ0jeeb.jpg	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1jBBXFSwpzBfRNWNtRbZR5UE6TpJ0jeeb.jpg	2026-03-09 18:41:39.645507+05:30	f	\N	\N	\N	t	clean	0	Action: no_face, Faces: 0	\N	\N	\N	\N	\N	\N	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1jBBXFSwpzBfRNWNtRbZR5UE6TpJ0jeeb.jpg	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1jBBXFSwpzBfRNWNtRbZR5UE6TpJ0jeeb.jpg	t	\N	f	\N	\N	\N	\N	1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ	{"lighting": "well_lit", "viewpoint": "front_eye_level", "environment": "indoor", "occlusion": "None", "activity": "sitting_posed", "multipet": "single_pet"}	2026-03-09 18:43:42.071994+05:30	1jBBXFSwpzBfRNWNtRbZR5UE6TpJ0jeeb	f	f	\N	\N	\N	f	f	f	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1jBBXFSwpzBfRNWNtRbZR5UE6TpJ0jeeb.jpg	clean
+2841	1Xc02tjjtOAHniSFKjgV50IDFTWOx_vBV.jpg	1Xc02tjjtOAHniSFKjgV50IDFTWOx_vBV.jpg	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1Xc02tjjtOAHniSFKjgV50IDFTWOx_vBV.jpg	2026-03-09 18:41:39.645507+05:30	f	\N	\N	\N	t	clean	0	Action: no_face, Faces: 0	\N	\N	\N	\N	\N	\N	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1Xc02tjjtOAHniSFKjgV50IDFTWOx_vBV.jpg	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1Xc02tjjtOAHniSFKjgV50IDFTWOx_vBV.jpg	t	\N	f	\N	\N	\N	\N	1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ	{"lighting": "well_lit", "viewpoint": "front_eye_level", "environment": "indoor", "occlusion": "full_body", "activity": "sitting_posed", "multipet": "two_similar"}	2026-03-09 18:43:42.071994+05:30	1Xc02tjjtOAHniSFKjgV50IDFTWOx_vBV	f	f	\N	\N	\N	f	f	f	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1Xc02tjjtOAHniSFKjgV50IDFTWOx_vBV.jpg	clean
+2842	1Aiok9pFVEC0qdr3oN-AGYCFBf4u7St-7.jpg	1Aiok9pFVEC0qdr3oN-AGYCFBf4u7St-7.jpg	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1Aiok9pFVEC0qdr3oN-AGYCFBf4u7St-7.jpg	2026-03-09 18:41:39.645507+05:30	f	\N	\N	\N	t	clean	0	Action: no_face, Faces: 0	\N	\N	\N	\N	\N	\N	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1Aiok9pFVEC0qdr3oN-AGYCFBf4u7St-7.jpg	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1Aiok9pFVEC0qdr3oN-AGYCFBf4u7St-7.jpg	t	\N	f	\N	\N	\N	\N	1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ	{"lighting": "harsh_sunlight", "viewpoint": "top_down", "environment": "indoor", "occlusion": "full_body", "activity": "sitting_posed", "multipet": "two_similar"}	2026-03-09 18:43:42.071994+05:30	1Aiok9pFVEC0qdr3oN-AGYCFBf4u7St-7	f	f	\N	\N	\N	f	f	f	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1Aiok9pFVEC0qdr3oN-AGYCFBf4u7St-7.jpg	clean
+2845	16DI-XApmK6B_O97T50ke0vo2i85CYkJj.jpg	16DI-XApmK6B_O97T50ke0vo2i85CYkJj.jpg	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/16DI-XApmK6B_O97T50ke0vo2i85CYkJj.jpg	2026-03-09 18:41:39.645507+05:30	f	\N	\N	\N	t	clean	0	Action: no_face, Faces: 0	\N	\N	\N	\N	\N	\N	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/16DI-XApmK6B_O97T50ke0vo2i85CYkJj.jpg	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/16DI-XApmK6B_O97T50ke0vo2i85CYkJj.jpg	t	\N	f	\N	\N	\N	\N	1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ	{"lighting": "well_lit", "viewpoint": "front_eye_level", "environment": "indoor", "occlusion": "full_body", "activity": "sitting_posed", "multipet": "single_pet"}	2026-03-09 18:43:42.071994+05:30	16DI-XApmK6B_O97T50ke0vo2i85CYkJj	f	f	\N	\N	\N	f	f	f	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/16DI-XApmK6B_O97T50ke0vo2i85CYkJj.jpg	clean
+2843	1XPuJxShUZfwVnZIhfgCgL6AdU2GKdsXC.jpg	1XPuJxShUZfwVnZIhfgCgL6AdU2GKdsXC.jpg	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1XPuJxShUZfwVnZIhfgCgL6AdU2GKdsXC.jpg	2026-03-09 18:41:39.645507+05:30	f	\N	\N	\N	t	clean	0	Action: no_face, Faces: 0	\N	\N	\N	\N	\N	\N	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1XPuJxShUZfwVnZIhfgCgL6AdU2GKdsXC.jpg	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1XPuJxShUZfwVnZIhfgCgL6AdU2GKdsXC.jpg	t	\N	f	\N	\N	\N	\N	1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ	{"lighting": "well_lit", "viewpoint": "front_eye_level", "environment": "indoor", "occlusion": "None", "activity": "sitting_posed", "multipet": "single_pet"}	2026-03-09 18:43:42.071994+05:30	1XPuJxShUZfwVnZIhfgCgL6AdU2GKdsXC	f	f	\N	\N	\N	f	f	f	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1XPuJxShUZfwVnZIhfgCgL6AdU2GKdsXC.jpg	clean
+2844	1rzOYkFqNTtU4to3K-BO5j-lDSieQOLdF.jpg	1rzOYkFqNTtU4to3K-BO5j-lDSieQOLdF.jpg	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1rzOYkFqNTtU4to3K-BO5j-lDSieQOLdF.jpg	2026-03-09 18:41:39.645507+05:30	f	\N	\N	\N	t	clean	0	Action: no_face, Faces: 0	\N	\N	\N	\N	\N	\N	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1rzOYkFqNTtU4to3K-BO5j-lDSieQOLdF.jpg	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1rzOYkFqNTtU4to3K-BO5j-lDSieQOLdF.jpg	t	\N	f	\N	\N	\N	\N	1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ	{"lighting": "well_lit", "viewpoint": "front_eye_level", "environment": "indoor", "occlusion": "full_body", "activity": "sitting_posed", "multipet": "single_pet"}	2026-03-09 18:44:13.440003+05:30	1rzOYkFqNTtU4to3K-BO5j-lDSieQOLdF	f	f	\N	\N	\N	f	f	f	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1rzOYkFqNTtU4to3K-BO5j-lDSieQOLdF.jpg	clean
+2836	1nvnXc25mqKh9UbT9QpwFq6J1jY2qA94X.jpg	1nvnXc25mqKh9UbT9QpwFq6J1jY2qA94X.jpg	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1nvnXc25mqKh9UbT9QpwFq6J1jY2qA94X.jpg	2026-03-09 18:41:39.645507+05:30	f	\N	\N	\N	t	clean	0	Action: no_face, Faces: 0	\N	\N	\N	\N	\N	\N	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1nvnXc25mqKh9UbT9QpwFq6J1jY2qA94X.jpg	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1nvnXc25mqKh9UbT9QpwFq6J1jY2qA94X.jpg	t	\N	t	[{"x": 0.07623525372650372, "y": 0.7018056509244424, "width": 0.8007858321332862, "height": 0.2916711172147199}]	7	2026-03-09 13:17:07.288029+05:30	gs://annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/blur/1nvnXc25mqKh9UbT9QpwFq6J1jY2qA94X.jpg	1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ	{"lighting": "well_lit", "viewpoint": "front_eye_level", "environment": "indoor", "occlusion": "full_body", "activity": "sleeping", "multipet": "single_pet"}	2026-03-09 18:43:42.071994+05:30	1nvnXc25mqKh9UbT9QpwFq6J1jY2qA94X	f	f	annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/blur/1nvnXc25mqKh9UbT9QpwFq6J1jY2qA94X.jpg	\N	\N	t	f	f	\N	gs://amazon-photo-pets-test/annotated/1iy8BUGGaLS-XzFzIzY5zH6MyqzDl04lQ/clean/1nvnXc25mqKh9UbT9QpwFq6J1jY2qA94X.jpg	blur
 \.
 
 
@@ -758,42 +746,42 @@ COPY public.notifications (id, user_id, type, title, message, image_id, is_read,
 --
 
 COPY public.options (id, category_id, label, is_typical, display_order) FROM stdin;
-1	1	Dusk-dawn lighting	f	1
-2	1	Harsh outdoor sunlight with shadows	f	2
-3	1	Low light conditions	f	3
-4	1	Well-lit conditions (typical)	t	4
-5	1	None of the Above	f	5
-6	2	Front-facing at eye level (typical)	t	1
-7	2	Ground-level view	f	2
-8	2	No head showing	f	3
-9	2	Partial view (head only)	f	4
-10	2	Top-down view	f	5
-11	2	None of the Above	f	6
-12	3	In car-carrier	f	1
-13	3	Indoor setting (typical)	t	2
-14	3	Outdoor dirt road	f	3
-15	3	Snow environment	f	4
-16	3	Vet clinic	f	5
-17	3	Yard with a complex background	f	6
-18	3	None of the Above	f	7
-19	4	Behind furniture (face only)	f	1
-20	4	Full-body, unobstructed (typical)	t	2
-21	4	Partially hidden under a blanket	f	3
-22	4	Peeking out of box-carrier	f	4
-23	4	Toy obscuring part of body	f	5
-24	4	None of the Above	f	6
-25	5	Eating-drinking	f	1
-26	5	Jumping to catch toy	f	2
-27	5	Playing with another pet	f	3
-28	5	Running with motion blur	f	4
-29	5	Sitting still-posed (typical)	t	5
-30	5	Sleeping-curled up	f	6
-31	5	None of the Above	f	7
-32	6	Pet with breed lookalike	f	1
-33	6	Single pet (typical)	t	2
-34	6	Three pets of same breed	f	3
-35	6	Two similar-looking pets together	f	4
-36	6	None of the Above	f	5
+37	7	Dusk-dawn lighting	f	1
+38	7	Harsh outdoor sunlight with shadows	f	2
+39	7	Low light conditions	f	3
+40	7	Well-lit conditions (typical)	t	4
+41	7	None of the Above	f	5
+42	8	Front-facing at eye level (typical)	t	1
+43	8	Ground-level view	f	2
+44	8	No head showing	f	3
+45	8	Partial view (head only)	f	4
+46	8	Top-down view	f	5
+47	8	None of the Above	f	6
+48	9	In car-carrier	f	1
+49	9	Indoor setting (typical)	t	2
+50	9	Outdoor dirt road	f	3
+51	9	Snow environment	f	4
+52	9	Vet clinic	f	5
+53	9	Yard with a complex background	f	6
+54	9	None of the Above	f	7
+55	10	Behind furniture (face only)	f	1
+56	10	Full-body, unobstructed (typical)	t	2
+57	10	Partially hidden under a blanket	f	3
+58	10	Peeking out of box-carrier	f	4
+59	10	Toy obscuring part of body	f	5
+60	10	None of the Above	f	6
+61	11	Eating-drinking	f	1
+62	11	Jumping to catch toy	f	2
+63	11	Playing with another pet	f	3
+64	11	Running with motion blur	f	4
+65	11	Sitting still-posed (typical)	t	5
+66	11	Sleeping-curled up	f	6
+67	11	None of the Above	f	7
+68	12	Pet with breed lookalike	f	1
+69	12	Single pet (typical)	t	2
+70	12	Three pets of same breed	f	3
+71	12	Two similar-looking pets together	f	4
+72	12	None of the Above	f	5
 \.
 
 
@@ -818,11 +806,8 @@ COPY public.system_settings (id, key, value, updated_at) FROM stdin;
 --
 
 COPY public.users (id, username, password_hash, full_name, role, is_active, created_at) FROM stdin;
-2	tushar	$2b$12$VYav6u4t6JlZYdu0xWSgN.kwxsAc.1n./jT8dHEPRc03.cZ9AMGiy		annotator	t	2026-03-06 22:22:13.432116+05:30
-3	test	$2b$12$o3sztut.SFKQfCNdHrpxdetGIb2aMiQmxAG5d/2ZHqq0gVv7uC4q6		annotator	t	2026-03-08 17:00:13.753122+05:30
-1	admin@turing.com	$2b$12$av6cXOWSJZGvUWnBBhj4xOuYt.lJO35QIoqKsLEg06.z9jt8foBb6	Administrator	admin	t	2026-03-06 19:06:18.112445+05:30
-4	test@turing.com	$2b$12$25MIBAUB5vMvLLtcYRT0LOpE9sW5ppqMqmZS1orFi3CTgOj/0Qx76		annotator	t	2026-03-09 06:53:14.56451+05:30
-5	admin	$2b$12$.2eBtP38Qjx.cjeqa/Xl.OyV8drKTlGe1Aony3VR/3KB0EbGk3gSy	Administrator	admin	t	2026-03-09 11:55:33.764959+05:30
+7	admin@turing.com	$2b$12$QJcMWS5.lOGzYqdwHg2VdOOWMq3YMjpFET.ZxkWr9fSr8SYZMIPT6	Administrator	admin	t	2026-03-09 18:38:00.985679+05:30
+8	test@turing.com	$2b$12$hhDcAImINfpoWvUynMLYQOG.ZnP9x2vTlQmUNIEelbuw7HzawSBom	test	annotator	t	2026-03-09 18:48:16.588632+05:30
 \.
 
 
@@ -830,35 +815,35 @@ COPY public.users (id, username, password_hash, full_name, role, is_active, crea
 -- Name: annotation_selections_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.annotation_selections_id_seq', 24, true);
+SELECT pg_catalog.setval('public.annotation_selections_id_seq', 30, true);
 
 
 --
 -- Name: annotations_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.annotations_id_seq', 24, true);
+SELECT pg_catalog.setval('public.annotations_id_seq', 30, true);
 
 
 --
 -- Name: annotator_categories_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.annotator_categories_id_seq', 24, true);
+SELECT pg_catalog.setval('public.annotator_categories_id_seq', 30, true);
 
 
 --
 -- Name: categories_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.categories_id_seq', 6, true);
+SELECT pg_catalog.setval('public.categories_id_seq', 12, true);
 
 
 --
 -- Name: drive_folders_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.drive_folders_id_seq', 45, true);
+SELECT pg_catalog.setval('public.drive_folders_id_seq', 47, true);
 
 
 --
@@ -872,14 +857,14 @@ SELECT pg_catalog.setval('public.edit_requests_id_seq', 1, false);
 -- Name: final_labels_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.final_labels_id_seq', 4, true);
+SELECT pg_catalog.setval('public.final_labels_id_seq', 5, true);
 
 
 --
 -- Name: images_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.images_id_seq', 2823, true);
+SELECT pg_catalog.setval('public.images_id_seq', 2845, true);
 
 
 --
@@ -893,7 +878,7 @@ SELECT pg_catalog.setval('public.notifications_id_seq', 1, false);
 -- Name: options_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.options_id_seq', 36, true);
+SELECT pg_catalog.setval('public.options_id_seq', 72, true);
 
 
 --
@@ -914,7 +899,7 @@ SELECT pg_catalog.setval('public.system_settings_id_seq', 1, false);
 -- Name: users_id_seq; Type: SEQUENCE SET; Schema: public; Owner: -
 --
 
-SELECT pg_catalog.setval('public.users_id_seq', 6, true);
+SELECT pg_catalog.setval('public.users_id_seq', 8, true);
 
 
 --
@@ -1518,5 +1503,5 @@ ALTER TABLE ONLY public.options
 -- PostgreSQL database dump complete
 --
 
-\unrestrict wgQ5bEeFw8hgkZ5OBjnWtXAXUAWuLq8D4VVIn3TZgZPpwS1W4gIY0Sxfcywt4xK
+\unrestrict c6ftYXN42QgABnpGeq1ZfDCzlSrnskeJVtlSmbOAL1Vv9ccWwQ2RYtthQDeeIGQ
 
