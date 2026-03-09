@@ -35,15 +35,37 @@ function StatCard({ icon, label, value, color, active, onClick, tooltip }) {
   );
 }
 
-function TruncatedPath({ path }) {
+/* Compact single-line path pill with copy-on-click */
+function PathPill({ path, variant = 'default' }) {
   if (!path) return <span className="text-gray-300">—</span>;
-  // Show last 2 segments
   const parts = path.split('/');
-  const short = parts.length > 2 ? '…/' + parts.slice(-2).join('/') : path;
+  const short = parts.length > 3
+    ? `…/${parts.slice(-2).join('/')}`
+    : parts.length > 2
+      ? `…/${parts.slice(-2).join('/')}`
+      : path;
+
+  const colors = {
+    default: 'bg-gray-50 text-gray-600 hover:bg-gray-100',
+    blurred: 'bg-amber-50 text-amber-700 hover:bg-amber-100',
+    clean: 'bg-teal-50 text-teal-700 hover:bg-teal-100',
+  };
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(path);
+  };
+
   return (
-    <span className="text-xs text-gray-600 font-mono" title={path}>
-      {short}
-    </span>
+    <button
+      onClick={handleCopy}
+      title={`${path}\n\nClick to copy`}
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-mono max-w-[200px] truncate cursor-pointer transition ${colors[variant]}`}
+    >
+      <svg className="w-3 h-3 shrink-0 opacity-40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+      </svg>
+      <span className="truncate">{short}</span>
+    </button>
   );
 }
 
@@ -104,7 +126,6 @@ export default function PhotoRegistryTab() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      // Extract filename from Content-Disposition header or use default
       const disposition = res.headers.get('Content-Disposition');
       const match = disposition && disposition.match(/filename=(.+)/);
       a.download = match ? match[1] : `photo_registry_${filter}.xlsx`;
@@ -129,7 +150,6 @@ export default function PhotoRegistryTab() {
   const totalDownloaded = summary.total_downloaded || 0;
   const totalDownloadedUniqueNames = summary.total_downloaded_unique_names || totalDownloaded;
 
-  // Build tooltip explaining gap between Drive count and downloaded
   const downloadedTooltip = (() => {
     const parts = [];
     if (driveDupFilenames > 0) parts.push(`${driveDupFilenames} within-folder dup filenames skipped`);
@@ -155,6 +175,12 @@ export default function PhotoRegistryTab() {
     { key: null, icon: '📦', label: 'Delivered', value: summary.total_delivered || 0, color: { bg: 'bg-gradient-to-br from-teal-500 to-emerald-600', ring: 'ring-teal-400' },
       tooltip: 'Images reviewed and approved by a reviewer. The deliverable path is tracked in the DB for external scripts.' },
   ];
+
+  /* Build GCS path string for a row */
+  const getGcsPath = (row) => {
+    if (!row.source_drive_folder_id || !row.filename) return null;
+    return `${row.gcs_folder || 'input'}/${row.source_drive_folder_id}/${row.filename}`;
+  };
 
   return (
     <div className="space-y-5">
@@ -220,7 +246,6 @@ export default function PhotoRegistryTab() {
       {/* Drive Duplicate Filenames info */}
       {(withinFolderDups.length > 0 || crossFolderDups.length > 0) && (
         <div className="space-y-2">
-          {/* Within-folder duplicates */}
           {withinFolderDups.length > 0 && (
             <details className="bg-sky-50 border border-sky-200 rounded-lg px-4 py-2 text-xs">
               <summary className="cursor-pointer text-sky-700 font-medium">
@@ -253,7 +278,6 @@ export default function PhotoRegistryTab() {
             </details>
           )}
 
-          {/* Cross-folder duplicates */}
           {crossFolderDups.length > 0 && (
             <details className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-2 text-xs">
               <summary className="cursor-pointer text-amber-700 font-medium">
@@ -330,28 +354,25 @@ export default function PhotoRegistryTab() {
       {/* Table */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-sm table-fixed">
             <thead>
               <tr className="bg-gray-50 border-b border-gray-200">
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider" title="Unique identifier for each image">Image ID</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Filename</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider" title="Source GCS Folder ID">Folder ID</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Format</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Parent Image</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Original Path</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Processed Path</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Blur</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Manual Blur Path</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider" title="GCS path to the current deliverable version of this image">GCS Path</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider" title="Deliverable status — image is copied here after reviewer approves all annotations">Deliverable</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[60px]">
+                  <span title="Image thumbnail">Img</span>
+                </th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[200px]">Filename</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[100px]" title="Source GCS Folder ID">Folder</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[80px]">Status</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[80px]">Blur</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[180px]" title="Current GCS storage path (click to copy)">GCS Location</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[120px]" title="Deliverable status — approved by reviewer">Deliverable</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading ? (
                 Array.from({ length: 10 }).map((_, i) => (
                   <tr key={i}>
-                    {Array.from({ length: 12 }).map((_, j) => (
+                    {Array.from({ length: 7 }).map((_, j) => (
                       <td key={j} className="px-4 py-3">
                         <div className="h-4 bg-gray-100 rounded animate-pulse" style={{ width: `${60 + Math.random() * 40}%` }} />
                       </td>
@@ -360,182 +381,123 @@ export default function PhotoRegistryTab() {
                 ))
               ) : data?.data?.length === 0 ? (
                 <tr>
-                  <td colSpan={12} className="px-4 py-12 text-center text-gray-400">
+                  <td colSpan={7} className="px-4 py-12 text-center text-gray-400">
                     No images found matching your criteria
                   </td>
                 </tr>
               ) : (
-                data?.data?.map((row, idx) => (
-                  <tr key={row.filename} className="hover:bg-gray-50/50 transition">
-                    {/* Image ID (Drive hex ID) */}
-                    <td className="px-4 py-2.5">
-                      {row.image_drive_id ? (
-                        <span
-                          className="text-[10px] font-mono text-gray-600 truncate max-w-[140px] inline-block"
-                          title={row.image_drive_id}
-                        >
-                          {row.image_drive_id}
-                        </span>
-                      ) : (
-                        <span className="text-gray-300 text-[10px]">—</span>
-                      )}
-                    </td>
+                data?.data?.map((row) => {
+                  const gcsPath = getGcsPath(row);
 
-                    {/* Filename */}
-                    <td className="px-4 py-2.5">
-                      <div className="flex items-center gap-2">
-                        {row.db_id && (
+                  return (
+                    <tr key={row.filename} className="hover:bg-gray-50/50 transition group">
+                      {/* Thumbnail */}
+                      <td className="px-4 py-2">
+                        {row.db_id ? (
                           <SignedImage
                             imageId={row.db_id}
                             alt=""
-                            className="w-8 h-8 rounded object-cover border border-gray-200 shrink-0"
+                            className="w-9 h-9 rounded-lg object-cover border border-gray-200"
                             onError={(e) => { e.target.style.display = 'none'; }}
                           />
+                        ) : (
+                          <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center text-gray-300 text-xs">—</div>
                         )}
+                      </td>
+
+                      {/* Filename + metadata */}
+                      <td className="px-4 py-2">
                         <div className="min-w-0">
-                          <span className="text-xs font-medium text-gray-800 truncate max-w-[200px] block" title={row.filename}>
+                          <span
+                            className="text-xs font-medium text-gray-800 block truncate"
+                            title={row.filename}
+                          >
                             {row.filename}
                           </span>
-                          {row.heic_original && (
-                            <span className="text-[9px] text-indigo-500 font-medium">
-                              📷 from {row.heic_original}
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="text-[10px] text-gray-400 font-medium">
+                              {row.original_format
+                                ? `${row.original_format} → JPG`
+                                : row.filename.split('.').pop().toUpperCase()}
                             </span>
-                          )}
+                            {row.heic_original && (
+                              <span className="text-[9px] text-indigo-500 font-medium" title={`Converted from ${row.heic_original}`}>
+                                📷 {row.heic_original}
+                              </span>
+                            )}
+                            {row.parent_image && (
+                              <span className="text-[9px] text-amber-600" title={`Duplicate of ${row.parent_image}`}>
+                                ↳ dup
+                              </span>
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    </td>
+                      </td>
 
-                    {/* Folder ID */}
-                    <td className="px-4 py-2.5">
-                      {row.source_drive_folder_id ? (
-                        <span
-                          className="text-[10px] font-mono text-purple-600 truncate max-w-[120px] inline-block"
-                          title={row.source_drive_folder_id}
-                        >
-                          {row.source_drive_folder_id.slice(0, 12)}…
-                        </span>
-                      ) : (
-                        <span className="text-gray-300 text-xs">—</span>
-                      )}
-                    </td>
-
-                    {/* Format */}
-                    <td className="px-4 py-2.5">
-                      {row.original_format ? (
-                        <div className="flex flex-col gap-0.5">
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-100 text-indigo-700">
-                            {row.original_format} → JPG
+                      {/* Folder ID */}
+                      <td className="px-4 py-2">
+                        {row.source_drive_folder_id ? (
+                          <span
+                            className="text-[10px] font-mono text-purple-600 truncate block"
+                            title={row.source_drive_folder_id}
+                          >
+                            {row.source_drive_folder_id.slice(0, 10)}…
                           </span>
-                          <span className="text-[9px] text-gray-400 font-mono truncate max-w-[140px]" title={row.filename}>
-                            {row.filename}
+                        ) : (
+                          <span className="text-gray-300 text-xs">—</span>
+                        )}
+                      </td>
+
+                      {/* Status */}
+                      <td className="px-4 py-2">
+                        {row.is_duplicate ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700">
+                            📑 Dup
                           </span>
-                        </div>
-                      ) : (
-                        <span className="text-[10px] text-gray-400 font-medium">
-                          {row.filename.split('.').pop().toUpperCase()}
-                        </span>
-                      )}
-                    </td>
-
-                    {/* Status */}
-                    <td className="px-4 py-2.5">
-                      {row.is_duplicate ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-700">
-                          📑 Duplicate
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700">
-                          ✅ Unique
-                        </span>
-                      )}
-                      {!row.in_database && (
-                        <span className="ml-1 inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-medium bg-gray-100 text-gray-500">
-                          Not in DB
-                        </span>
-                      )}
-                    </td>
-
-                    {/* Parent Image */}
-                    <td className="px-4 py-2.5">
-                      {row.parent_image ? (
-                        <span className="text-xs text-amber-700 font-mono truncate max-w-[160px] inline-block" title={row.parent_image}>
-                          {row.parent_image}
-                        </span>
-                      ) : (
-                        <span className="text-gray-300">—</span>
-                      )}
-                    </td>
-
-                    {/* Original Path */}
-                    <td className="px-4 py-2.5">
-                      <TruncatedPath path={row.original_path} />
-                    </td>
-
-                    {/* Processed Path */}
-                    <td className="px-4 py-2.5">
-                      <TruncatedPath path={row.processed_path} />
-                    </td>
-
-                    {/* Blur Status */}
-                    <td className="px-4 py-2.5">
-                      <div className="flex flex-col gap-0.5">
-                        {row.pipeline_blurred && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-50 text-red-600">
-                            🔒 Pipeline
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700">
+                            ✅ Unique
                           </span>
                         )}
-                        {row.manually_blurred && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-50 text-violet-600">
+                      </td>
+
+                      {/* Blur */}
+                      <td className="px-4 py-2">
+                        {row.pipeline_blurred ? (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-50 text-red-600">
+                            🔒 Auto
+                          </span>
+                        ) : row.manually_blurred ? (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-violet-50 text-violet-600">
                             ✋ Manual
                           </span>
-                        )}
-                        {!row.pipeline_blurred && !row.manually_blurred && (
-                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-50 text-green-600">
+                        ) : (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-50 text-green-600">
                             🟢 Clean
                           </span>
                         )}
-                      </div>
-                    </td>
+                      </td>
 
-                    {/* Manual Blur Path */}
-                    <td className="px-4 py-2.5">
-                      <TruncatedPath path={row.annotated_blur_path} />
-                    </td>
+                      {/* GCS Location */}
+                      <td className="px-4 py-2">
+                        {gcsPath ? (
+                          <PathPill path={gcsPath} />
+                        ) : (
+                          <span className="text-gray-300 text-[10px]">—</span>
+                        )}
+                      </td>
 
-                    {/* GCS Path */}
-                    <td className="px-4 py-2.5">
-                      {row.source_drive_folder_id && row.filename ? (
-                        <span
-                          className="text-[10px] font-mono text-gray-600 break-all"
-                          title={`gs://…/${row.gcs_folder || 'input'}/${row.source_drive_folder_id}/${row.filename}`}
-                        >
-                          {row.gcs_folder || 'input'}/{row.source_drive_folder_id?.slice(0, 8)}…/{row.filename?.length > 20 ? row.filename.slice(0, 20) + '…' : row.filename}
-                        </span>
-                      ) : (
-                        <span className="text-gray-300 text-[10px]">—</span>
-                      )}
-                    </td>
-
-                    {/* Deliverable */}
-                    <td className="px-4 py-2.5">
-                      {row.deliverable_image_path ? (
-                        <div className="flex flex-col gap-0.5">
-                          <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                            (row.pipeline_blurred || row.manually_blurred)
-                              ? 'bg-amber-50 text-amber-700' 
-                              : 'bg-teal-50 text-teal-700'
-                          }`}>
-                            {(row.pipeline_blurred || row.manually_blurred) ? '🔒 Blurred' : '✅ Clean'}
-                            {row.is_manually_modified && ' (Edited)'}
-                          </span>
-                          <TruncatedPath path={row.deliverable_image_path} />
-                        </div>
-                      ) : (
-                        <span className="text-gray-300 text-[10px]">—</span>
-                      )}
-                    </td>
-                  </tr>
-                ))
+                      {/* Deliverable */}
+                      <td className="px-4 py-2">
+                        {row.deliverable_image_path ? (
+                          <PathPill path={row.deliverable_image_path} variant="clean" />
+                        ) : (
+                          <span className="text-gray-300 text-[10px]">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>

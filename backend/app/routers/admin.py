@@ -1872,6 +1872,23 @@ def get_photo_registry(
                     global_filename_map[fname].append({"folder_id": fid, "drive_file_id": did})
             except Exception:
                 pass
+
+    # DB fallback: if no metadata files found, use drive_folders table + images count
+    if drive_metadata["total_in_drive"] == 0:
+        try:
+            from app.models.drive_folder import DriveFolder
+            db_folders = db.query(DriveFolder).all()
+            for df in db_folders:
+                drive_metadata["total_in_drive"] += (df.total_in_drive or 0)
+                drive_metadata["unique_filenames"] += (df.downloaded_count or 0)
+            # If drive_folders also has 0, use image count as last resort
+            if drive_metadata["total_in_drive"] == 0:
+                drive_metadata["total_in_drive"] = len(db_images)
+            if drive_metadata["unique_filenames"] == 0:
+                drive_metadata["unique_filenames"] = len(db_images)
+        except Exception:
+            drive_metadata["total_in_drive"] = len(db_images)
+            drive_metadata["unique_filenames"] = len(db_images)
     
     # Build cross-folder duplicates: filenames that appear in 2+ different folders
     cross_folder_dups = []
@@ -1892,26 +1909,6 @@ def get_photo_registry(
         db_img = db_by_filename.get(filename)
         heic_original = jpg_to_heic_map.get(filename)  # e.g. "IMG_0906.HEIC" if this was converted
 
-        # Paths (search across all workspace roots)
-        original_path = (
-            _find_file_path("01_downloaded_from_drive", filename)
-            or ""
-        )
-
-        # HEIC original path (in _heic_originals subfolder)
-        heic_original_path = ""
-        if heic_original:
-            for ws_root in workspace_roots:
-                heic_originals_dir = ws_root / "01_downloaded_from_drive" / "_heic_originals"
-                result = _file_path_if_exists(heic_originals_dir, heic_original)
-                if result:
-                    heic_original_path = result
-                    break
-
-        processed_path = (
-            _find_file_path("deliverable", filename)
-            or ""
-        )
 
         # Blur status
         pipeline_blurred = False
@@ -1968,8 +1965,6 @@ def get_photo_registry(
             "is_unique": not is_duplicate,
             "is_duplicate": is_duplicate,
             "parent_image": parent_image,
-            "original_path": original_path,
-            "processed_path": processed_path,
             "pipeline_blurred": pipeline_blurred,
             "manually_blurred": manually_blurred,
             "annotated_blur_path": annotated_blur_path,
@@ -1979,7 +1974,6 @@ def get_photo_registry(
             "is_ai_generated": db_img.is_ai_generated if db_img else None,
             "human_visible": db_img.human_visible if db_img else None,
             "heic_original": heic_original or "",
-            "heic_original_path": heic_original_path if heic_original else "",
             "conversion_note": display_note,
             # DB-tracked format conversion columns
             "original_filename": (db_img.original_filename or "") if db_img else (heic_original or ""),
