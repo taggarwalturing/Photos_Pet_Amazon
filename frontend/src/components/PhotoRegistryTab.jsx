@@ -384,8 +384,8 @@ export default function PhotoRegistryTab() {
                           <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-indigo-100 text-indigo-700">
                             {row.original_format} → JPG
                           </span>
-                          <span className="text-[9px] text-gray-400 font-mono truncate max-w-[140px]" title={row.original_filename}>
-                            {row.original_filename}
+                          <span className="text-[9px] text-gray-400 font-mono truncate max-w-[140px]" title={row.filename}>
+                            {row.filename}
                           </span>
                         </div>
                       ) : (

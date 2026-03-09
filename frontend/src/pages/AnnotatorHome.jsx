@@ -474,7 +474,7 @@ export default function AnnotatorHome() {
                             </span>
                           )}
                           <span className="px-2 py-1 bg-black/50 text-white text-[10px] font-medium rounded-lg backdrop-blur-sm truncate block" title={img.filename}>
-                            {img.original_filename || img.filename}
+                            {img.filename}
                           </span>
                         </div>
                         
