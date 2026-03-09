@@ -377,7 +377,7 @@ def proxy_image(image_id: int):
                         if gcs_bucket and fid:
                             # Try the DB-tracked stage first, then fallback stages
                             stages = [img.gcs_folder or "input"]
-                            for s in ("annotated", "input"):
+                            for s in ("blur", "clean", "input"):
                                 if s not in stages:
                                     stages.append(s)
                             for stage in stages:

@@ -1,9 +1,10 @@
 """
 Google Cloud Storage utility for uploading, copying, signing, and deleting
-images in the three-folder bucket layout:
+images in the bucket layout:
 
-  gs://{bucket}/input/{folder_id}/{filename}       — originals (clean, unmodified)
-  gs://{bucket}/annotated/{folder_id}/{filename}    — any modified version (human blur, pipeline blur, or admin-approved)
+  gs://{bucket}/input/{folder_id}/{filename}                — raw originals (added manually)
+  gs://{bucket}/annotated/{folder_id}/clean/{filename}      — clean images (no blur)
+  gs://{bucket}/annotated/{folder_id}/blur/{filename}       — blurred images (by pipeline or manual)
 
 Authentication uses Application Default Credentials (ADC).
 Run `gcloud auth application-default login` on the server to authenticate.
@@ -13,10 +14,14 @@ import os
 import datetime
 from pathlib import Path
 from functools import lru_cache
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from google.cloud import storage
 import google.auth
 from google.auth.transport.requests import Request
+
+# Number of parallel upload threads (I/O bound → threads work well)
+_MAX_UPLOAD_WORKERS = int(os.getenv("GCS_UPLOAD_WORKERS", "8"))
 
 
 # ── Load backend/.env so GCS_BUCKET_NAME / GCS_PROJECT_ID are available ──
@@ -36,7 +41,7 @@ def _load_env():
 _load_env()
 
 
-VALID_STAGES = ("input", "annotated")
+VALID_STAGES = ("input", "clean", "blur")
 
 
 def _service_account_path() -> str | None:
@@ -65,6 +70,7 @@ def _adc_credentials():
     return credentials, project
 
 
+@lru_cache(maxsize=1)
 def _client() -> storage.Client:
     credentials, project = _adc_credentials()
     return storage.Client(
@@ -73,15 +79,27 @@ def _client() -> storage.Client:
     )
 
 
+@lru_cache(maxsize=1)
 def _bucket() -> storage.Bucket:
     bucket_name = os.getenv("GCS_BUCKET_NAME", "amazon-photo-pets")
     return _client().bucket(bucket_name)
 
 
 def gcs_path(folder_id: str, filename: str, stage: str = "input") -> str:
+    """
+    Build the GCS blob path for an image.
+
+    Stages:
+      - ``input``  → ``input/{folder_id}/{filename}``
+      - ``clean``  → ``annotated/{folder_id}/clean/{filename}``
+      - ``blur``   → ``annotated/{folder_id}/blur/{filename}``
+    """
     if stage not in VALID_STAGES:
         raise ValueError(f"Invalid stage '{stage}', must be one of {VALID_STAGES}")
-    return f"{stage}/{folder_id}/{filename}"
+    if stage == "input":
+        return f"input/{folder_id}/{filename}"
+    # clean or blur → under annotated/
+    return f"annotated/{folder_id}/{stage}/{filename}"
 
 
 def upload_file(local_path: str, dest_gcs_path: str, content_type: str = None) -> str:
@@ -102,21 +120,63 @@ def upload_bytes(data: bytes, dest_gcs_path: str, content_type: str = "image/jpe
     return f"gs://{bucket.name}/{dest_gcs_path}"
 
 
-def upload_directory(local_dir: str, gcs_prefix: str, extensions: set = None) -> list[str]:
+def upload_directory(local_dir: str, gcs_prefix: str, extensions: set = None,
+                     max_workers: int = None) -> list[str]:
     """
-    Batch-upload all files in a local directory to GCS under the given prefix.
+    Parallel-upload all files in a local directory to GCS under the given prefix.
     Returns list of gs:// URIs for uploaded files.
     """
     if extensions is None:
         extensions = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tiff", ".tif"}
-    uploaded = []
+
+    files_to_upload = [
+        (str(fpath), f"{gcs_prefix}/{fpath.name}")
+        for fpath in Path(local_dir).iterdir()
+        if fpath.is_file() and fpath.suffix.lower() in extensions
+    ]
+    if not files_to_upload:
+        return []
+
+    return upload_files_parallel(files_to_upload, max_workers=max_workers)
+
+
+def upload_files_parallel(
+    file_dest_pairs: list[tuple[str, str]],
+    max_workers: int = None,
+) -> list[str]:
+    """
+    Upload multiple local files to GCS in parallel.
+
+    Args:
+        file_dest_pairs: list of (local_path, gcs_dest_path) tuples
+        max_workers: thread count (defaults to GCS_UPLOAD_WORKERS env, then 8)
+
+    Returns:
+        list of gs:// URIs that were successfully uploaded
+    """
+    if not file_dest_pairs:
+        return []
+
+    workers = max_workers or _MAX_UPLOAD_WORKERS
     bucket = _bucket()
-    for fpath in Path(local_dir).iterdir():
-        if fpath.is_file() and fpath.suffix.lower() in extensions:
-            dest = f"{gcs_prefix}/{fpath.name}"
-            blob = bucket.blob(dest)
-            blob.upload_from_filename(str(fpath))
-            uploaded.append(f"gs://{bucket.name}/{dest}")
+    bucket_name = bucket.name
+    uploaded: list[str] = []
+
+    def _upload_one(pair):
+        local_path, dest_path = pair
+        blob = bucket.blob(dest_path)
+        blob.upload_from_filename(local_path)
+        return f"gs://{bucket_name}/{dest_path}"
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = {pool.submit(_upload_one, p): p for p in file_dest_pairs}
+        for fut in as_completed(futures):
+            try:
+                uploaded.append(fut.result())
+            except Exception as exc:
+                local, dest = futures[fut]
+                print(f"❌ GCS upload failed {Path(local).name} → {dest}: {exc}")
+
     return uploaded
 
 

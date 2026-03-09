@@ -179,7 +179,7 @@ class MasterPipeline:
         if not all_blobs:
             print("⚠️  No images found in GCS bucket")
             return 0
-
+        
         download_folder = self.folders['downloaded']
         print(f"\n📥 Syncing to: {download_folder}")
 
@@ -290,7 +290,7 @@ class MasterPipeline:
                         continue
                     if heic_orig.exists() and heic_orig.stat().st_size > 0:
                         skipped += 1
-                        continue
+                    continue
                 
                 # Clean up any 0-byte leftover from a previous failed download
                 if output_path.exists() and output_path.stat().st_size == 0:
@@ -1084,23 +1084,23 @@ class MasterPipeline:
     
     def step4_upload_to_gcs(self, folder_id: str) -> dict:
         """
-        Step 4: Upload **only modified** images to GCS ``annotated/{folder_id}/``.
+        Step 4: Upload deliverable images to GCS.
 
-        Clean images (no faces detected, unmodified) stay in ``input/`` — the
-        original in GCS IS the deliverable.  Only pipeline-blurred or QA images
-        are uploaded to ``annotated/``.
+        Clean images   → ``annotated/{folder_id}/clean/{filename}``
+        Blurred images → ``annotated/{folder_id}/blur/{filename}``
 
         The DB ``gcs_folder`` column tracks where the current version lives:
-          • ``input``    — clean / unmodified (default)
-          • ``modified`` — modified by pipeline (faces blurred)
+          • ``input``  — raw original (untouched in input/)
+          • ``clean``  — clean / unmodified (in annotated/clean/)
+          • ``blur``   — pipeline-blurred (in annotated/blur/)
 
-        Returns: dict with counts {uploaded, skipped_clean, total}.
+        Returns: dict with counts {uploaded_clean, uploaded_blur, total}.
         """
         print("\n" + "=" * 70)
-        print("☁️  STEP 4: Upload Modified Images to GCS")
-        print(f"   Destination: annotated/{folder_id}/  (modified only)")
+        print("☁️  STEP 4: Upload Deliverable Images to GCS")
+        print(f"   Destination: annotated/{folder_id}/clean/ & blur/")
         print("=" * 70)
-
+        
         try:
             sys.path.insert(0, str(SCRIPT_DIR.parent))
             from app.utils.gcs import upload_file, gcs_path as build_gcs_path, blob_exists
@@ -1149,29 +1149,56 @@ class MasterPipeline:
                 # No original to compare — treat as modified (safer)
                 modified_filenames.add(f.name)
 
-        uploaded = 0
-        skipped_clean = 0
-        gcs_folder_map = {}  # filename → gcs_folder stage
+        uploaded_blur = 0
+        uploaded_clean = 0
+        gcs_folder_map = {}  # filename → gcs_folder stage ("clean" | "blur")
 
-        for img_path in tqdm(deliverable_files, desc="Uploading to GCS"):
+        # Build list of (local_path, gcs_dest) pairs for parallel upload
+        blur_pairs = []
+        clean_pairs = []
+        for img_path in deliverable_files:
             if img_path.name in modified_filenames:
-                # Modified image → upload to annotated/
-                try:
-                    gcs_dest = build_gcs_path(folder_id, img_path.name, "annotated")
-                    upload_file(str(img_path), gcs_dest)
-                    uploaded += 1
-                    gcs_folder_map[img_path.name] = "annotated"
-                except Exception as e:
-                    print(f"❌ Failed to upload {img_path.name}: {e}")
+                gcs_dest = build_gcs_path(folder_id, img_path.name, "blur")
+                blur_pairs.append((str(img_path), gcs_dest))
+                gcs_folder_map[img_path.name] = "blur"
             else:
-                # Clean image → stays in input/ (already there from sync)
-                skipped_clean += 1
-                gcs_folder_map[img_path.name] = "input"
+                gcs_dest = build_gcs_path(folder_id, img_path.name, "clean")
+                clean_pairs.append((str(img_path), gcs_dest))
+                gcs_folder_map[img_path.name] = "clean"
+
+        # Parallel upload (8 threads by default, I/O-bound)
+        from concurrent.futures import ThreadPoolExecutor, as_completed
+        all_pairs = blur_pairs + clean_pairs
+        num_workers = int(os.environ.get("GCS_UPLOAD_WORKERS", "8"))
+        failed = 0
+
+        def _upload_one(pair):
+            local_path, dest_path = pair
+            upload_file(local_path, dest_path)
+            return dest_path
+
+        print(f"   ⚡ Parallel upload with {num_workers} threads …")
+        with ThreadPoolExecutor(max_workers=num_workers) as pool:
+            futures = {pool.submit(_upload_one, p): p for p in all_pairs}
+            done_count = 0
+            for fut in as_completed(futures):
+                done_count += 1
+                try:
+                    fut.result()
+                except Exception as exc:
+                    local, dest = futures[fut]
+                    print(f"❌ Failed to upload {Path(local).name}: {exc}")
+                    failed += 1
+                if done_count % 20 == 0 or done_count == len(all_pairs):
+                    print(f"   📤 {done_count}/{len(all_pairs)} uploaded", flush=True)
+
+        uploaded_blur = len(blur_pairs)
+        uploaded_clean = len(clean_pairs)
 
         print(f"\n✅ GCS upload summary:")
-        print(f"   📤 Uploaded to annotated/: {uploaded} (modified by pipeline)")
-        print(f"   ⏭️  Kept in input/:       {skipped_clean} (clean, unmodified)")
-        print(f"   📊 Total deliverable:     {len(deliverable_files)}")
+        print(f"   📤 Uploaded to annotated/clean/: {uploaded_clean} (clean images)")
+        print(f"   📤 Uploaded to annotated/blur/:  {uploaded_blur} (blurred by pipeline)")
+        print(f"   📊 Total deliverable:            {len(deliverable_files)}")
 
         # Save the gcs_folder mapping for the import script
         gcs_map_path = self.workspace / 'gcs_folder_map.json'
@@ -1179,8 +1206,8 @@ class MasterPipeline:
             json.dump(gcs_folder_map, f, indent=2)
         print(f"   💾 Saved GCS folder map → {gcs_map_path.name}")
 
-        return {"uploaded": uploaded, "skipped_clean": skipped_clean, "total": len(deliverable_files)}
-
+        return {"uploaded_clean": uploaded_clean, "uploaded_blur": uploaded_blur, "total": len(deliverable_files)}
+    
     def run_complete_pipeline(
         self,
         download: bool = True,
@@ -1453,10 +1480,10 @@ def main():
         # Run per-folder in isolation
         run_for_folders(
             folder_ids=folder_ids,
-            download=args.download,
-            deduplicate=args.deduplicate,
-            pipeline=args.pipeline,
-            use_llm=args.use_llm,
+        download=args.download,
+        deduplicate=args.deduplicate,
+        pipeline=args.pipeline,
+        use_llm=args.use_llm,
             dedup_threshold=threshold,
             config=config,
             source=args.source,
@@ -1472,7 +1499,7 @@ def main():
             dedup_threshold=threshold,
             folder_id=config.google_drive_folder_id,
             source=args.source,
-        )
+    )
     
     return 0
 

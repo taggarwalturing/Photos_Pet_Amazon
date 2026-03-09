@@ -90,11 +90,14 @@ def _get_all_final_images() -> list:
         gcs_cache_dir = PIPELINE_WORKSPACE / "_gcs_arbiter_cache"
         gcs_cache_dir.mkdir(parents=True, exist_ok=True)
 
-        # List images from annotated/ (modified) and input/ (clean originals)
-        for gcs_stage in ("annotated", "input"):
-            stage_prefixes = list_prefixes(f"{gcs_stage}/")
-            for pfx in stage_prefixes:
-                blobs = list_blobs(pfx)
+        # List images from annotated/{folder_id}/clean/ and annotated/{folder_id}/blur/
+        # The annotated/ prefix contains all processed images
+        annotated_prefixes = list_prefixes("annotated/")
+        for folder_pfx in annotated_prefixes:
+            # Each folder prefix: annotated/{folder_id}/
+            for sub in ("clean/", "blur/"):
+                sub_prefix = folder_pfx + sub
+                blobs = list_blobs(sub_prefix)
                 for blob_name in blobs:
                     fname = os.path.basename(blob_name)
                     if not fname:
@@ -102,7 +105,6 @@ def _get_all_final_images() -> list:
                     ext = os.path.splitext(fname)[1].lower()
                     if ext not in supported_exts or fname in seen_names:
                         continue
-                    # Download to local cache
                     local_path = gcs_cache_dir / fname
                     if not local_path.exists() or local_path.stat().st_size == 0:
                         try:
@@ -112,6 +114,27 @@ def _get_all_final_images() -> list:
                             continue
                     images.append(local_path)
                     seen_names.add(fname)
+
+        # Also check input/ for any images not yet in annotated/
+        input_prefixes = list_prefixes("input/")
+        for pfx in input_prefixes:
+            blobs = list_blobs(pfx)
+            for blob_name in blobs:
+                fname = os.path.basename(blob_name)
+                if not fname:
+                    continue
+                ext = os.path.splitext(fname)[1].lower()
+                if ext not in supported_exts or fname in seen_names:
+                    continue
+                local_path = gcs_cache_dir / fname
+                if not local_path.exists() or local_path.stat().st_size == 0:
+                    try:
+                        download_blob_to_file(blob_name, str(local_path))
+                    except Exception as dl_err:
+                        print(f"[Arbiter] GCS download failed for {blob_name}: {dl_err}")
+                        continue
+                images.append(local_path)
+                seen_names.add(fname)
 
     except ImportError:
         pass  # GCS not available — use local only
@@ -755,11 +778,17 @@ class ArbiterStartRequest(BaseModel):
 # ─── API Endpoints ────────────────────────────────────────────
 
 @router.get("/config")
-def get_arbiter_config(admin: User = Depends(require_admin)):
+def get_arbiter_config(
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db),
+):
     """Return current arbiter classifier configuration."""
     config = load_arbiter_config()
-    # Count available images
-    image_count = len(_get_all_final_images())
+
+    # Fast image count from DB (avoid slow GCS listing on every page load)
+    image_count = db.query(sa_func.count(ImageModel.id)).filter(
+        ImageModel.is_duplicate == False,  # noqa: E712
+    ).scalar() or 0
 
     return {
         "gemini_model": config.get("GEMINI_MODEL", "gemini-2.5-pro"),

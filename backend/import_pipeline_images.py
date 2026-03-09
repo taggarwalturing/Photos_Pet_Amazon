@@ -182,8 +182,8 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
     bucket_name = _BACKEND_ENV.get("GCS_BUCKET_NAME") or os.getenv("GCS_BUCKET_NAME", "")
     use_gcs = bool(bucket_name)
 
-    # Load GCS folder map (tells us which images are in input/ vs annotated/)
-    gcs_folder_map = {}  # filename → "input" | "annotated"
+    # Load GCS folder map (tells us which images are in clean/ vs blur/)
+    gcs_folder_map = {}  # filename → "clean" | "blur"
     gcs_map_path = workspace / "gcs_folder_map.json"
     if gcs_map_path.exists():
         try:
@@ -229,8 +229,8 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
             if not original_drive_name:
                 original_drive_name = heic_conversion_map.get(filename)
         
-        # Determine GCS folder stage for this image
-        img_gcs_folder = gcs_folder_map.get(filename, "input")
+        # Determine GCS folder stage for this image (clean or blur)
+        img_gcs_folder = gcs_folder_map.get(filename, "clean")
 
         # Build gs:// URL based on GCS folder map
         if use_gcs and source_fid:

@@ -176,10 +176,15 @@ export default function PhotoRegistryTab() {
       tooltip: 'Images reviewed and approved by a reviewer. The deliverable path is tracked in the DB for external scripts.' },
   ];
 
-  /* Build GCS path string for a row */
+  /* Build GCS path string for a row.
+     Stages: input → input/{folder_id}/{file}
+             clean → annotated/{folder_id}/clean/{file}
+             blur  → annotated/{folder_id}/blur/{file}  */
   const getGcsPath = (row) => {
     if (!row.source_drive_folder_id || !row.filename) return null;
-    return `${row.gcs_folder || 'input'}/${row.source_drive_folder_id}/${row.filename}`;
+    const stage = row.gcs_folder || 'input';
+    if (stage === 'input') return `input/${row.source_drive_folder_id}/${row.filename}`;
+    return `annotated/${row.source_drive_folder_id}/${stage}/${row.filename}`;
   };
 
   return (
@@ -363,6 +368,7 @@ export default function PhotoRegistryTab() {
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[200px]">Filename</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[100px]" title="Source GCS Folder ID">Folder</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[80px]">Status</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[140px]" title="Duplicate status and parent image">Duplicate Info</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[80px]">Blur</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[180px]" title="Current GCS storage path (click to copy)">GCS Location</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider w-[120px]" title="Deliverable status — approved by reviewer">Deliverable</th>
@@ -372,7 +378,7 @@ export default function PhotoRegistryTab() {
               {loading ? (
                 Array.from({ length: 10 }).map((_, i) => (
                   <tr key={i}>
-                    {Array.from({ length: 7 }).map((_, j) => (
+                    {Array.from({ length: 8 }).map((_, j) => (
                       <td key={j} className="px-4 py-3">
                         <div className="h-4 bg-gray-100 rounded animate-pulse" style={{ width: `${60 + Math.random() * 40}%` }} />
                       </td>
@@ -381,7 +387,7 @@ export default function PhotoRegistryTab() {
                 ))
               ) : data?.data?.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-4 py-12 text-center text-gray-400">
+                  <td colSpan={8} className="px-4 py-12 text-center text-gray-400">
                     No images found matching your criteria
                   </td>
                 </tr>
@@ -458,6 +464,30 @@ export default function PhotoRegistryTab() {
                           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-700">
                             ✅ Unique
                           </span>
+                        )}
+                      </td>
+
+                      {/* Duplicate Info */}
+                      <td className="px-4 py-2">
+                        {row.is_duplicate ? (
+                          <div className="min-w-0">
+                            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-50 text-amber-700">
+                              📑 Duplicate
+                            </span>
+                            {row.parent_image && (
+                              <div className="mt-0.5">
+                                <span className="text-[9px] text-gray-400">Parent: </span>
+                                <span
+                                  className="text-[9px] font-mono text-amber-600 truncate inline-block max-w-[110px] align-bottom"
+                                  title={row.parent_image}
+                                >
+                                  {row.parent_image}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-[10px] text-gray-300">—</span>
                         )}
                       </td>
 

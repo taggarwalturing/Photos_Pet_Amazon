@@ -147,10 +147,16 @@ def apply_manual_blur(
             blurred_filename = os.path.splitext(blurred_filename)[0] + '.jpg'
 
         if (image.url or "").startswith("gs://") and image.source_drive_folder_id:
-            annotated_gcs_path = build_gcs_path(image.source_drive_folder_id, image.filename, "annotated")
-            gcs_upload_bytes(blurred_bytes, annotated_gcs_path, content_type="image/jpeg")
-            image.gcs_folder = "annotated"
-            image.annotated_blur_url = f"gs://annotated/{image.source_drive_folder_id}/{image.filename}"
+            blur_gcs_path = build_gcs_path(image.source_drive_folder_id, image.filename, "blur")
+            gcs_upload_bytes(blurred_bytes, blur_gcs_path, content_type="image/jpeg")
+            # Remove old copy from clean/ (image is now in blur/)
+            try:
+                clean_gcs = build_gcs_path(image.source_drive_folder_id, image.filename, "clean")
+                gcs_delete(clean_gcs)
+            except Exception:
+                pass
+            image.gcs_folder = "blur"
+            image.annotated_blur_url = f"gs://{blur_gcs_path}"
         else:
             os.makedirs(BLUR_OUTPUT_DIR, exist_ok=True)
             blurred_path = os.path.join(BLUR_OUTPUT_DIR, blurred_filename)
@@ -344,13 +350,13 @@ def remove_blur(
             "had_original": False,
         }
 
-    # 2. Delete blurred copy from GCS annotated/ (if it exists)
+    # 2. Delete blurred copy from GCS annotated/blur/ (if it exists)
     if image.source_drive_folder_id and image.filename:
         try:
-            gcs_blob = build_gcs_path(image.source_drive_folder_id, image.filename, "annotated")
+            gcs_blob = build_gcs_path(image.source_drive_folder_id, image.filename, "blur")
             gcs_delete(gcs_blob)
         except Exception as e:
-            print(f"Warning: Could not delete GCS annotated/ blob: {e}")
+            print(f"Warning: Could not delete GCS annotated/blur/ blob: {e}")
 
     # Also delete local blur file if it exists
     if image.annotated_blur_url and not image.annotated_blur_url.startswith("gs://"):
@@ -377,12 +383,20 @@ def remove_blur(
         with open(cache_path, "wb") as f:
             f.write(original_bytes)
 
-    # 4. Update database — reset to input/ stage
+    # 4. Upload restored (clean) version to GCS annotated/clean/
+    if image.source_drive_folder_id and image.filename:
+        try:
+            clean_gcs_dest = build_gcs_path(image.source_drive_folder_id, image.filename, "clean")
+            gcs_upload_bytes(original_bytes, clean_gcs_dest, content_type="image/jpeg")
+        except Exception as e:
+            print(f"Warning: Could not upload restored image to GCS annotated/clean/: {e}")
+
+    # 5. Update database — reset to clean stage
     image.manually_blurred = False
     image.blur_regions = None
     image.annotated_blur_url = None
     image.is_using_processed = False
-    image.gcs_folder = "input"
+    image.gcs_folder = "clean"
 
     if current_user.role == "annotator":
         image.is_restore_annotator = True

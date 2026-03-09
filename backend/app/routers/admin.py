@@ -2096,7 +2096,11 @@ def export_photo_registry_excel(
             gcs_folder = db_img.gcs_folder
 
         if folder_id and filename:
-            row["gcs_deliverable_path"] = f"gs://{bucket_name}/{gcs_folder}/{folder_id}/{filename}"
+            # Build GCS path: input → input/{fid}/{fname}; clean/blur → annotated/{fid}/{stage}/{fname}
+            if gcs_folder == "input":
+                row["gcs_deliverable_path"] = f"gs://{bucket_name}/input/{folder_id}/{filename}"
+            else:
+                row["gcs_deliverable_path"] = f"gs://{bucket_name}/annotated/{folder_id}/{gcs_folder}/{filename}"
         else:
             row["gcs_deliverable_path"] = ""
 
