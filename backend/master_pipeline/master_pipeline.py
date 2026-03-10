@@ -923,7 +923,7 @@ class MasterPipeline:
             
             process = subprocess.Popen(
                 [
-                    'python3',
+                    sys.executable,
                     str(pipeline_script),
                     '--input', str(temp_input),
                     '--output', str(temp_pipeline_output),
