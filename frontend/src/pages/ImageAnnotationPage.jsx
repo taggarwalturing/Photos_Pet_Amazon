@@ -278,6 +278,18 @@ export default function ImageAnnotationPage() {
     setBlurActive(false);
     setImageVersion(Date.now()); // fresh cache-buster for new image
     try {
+      // Pre-check: verify image is not locked by another annotator
+      try {
+        const lockRes = await api.get(`/annotator/images/${id}/lock-status`);
+        if (lockRes.data.locked_by_other) {
+          setError('This image has been taken by another annotator.');
+          setLoading(false);
+          return;
+        }
+      } catch (_) {
+        // Lock check failed — continue loading, backend will guard on save
+      }
+
       const res = await api.get(`/annotator/images/${id}`);
       setData(res.data);
       
@@ -375,7 +387,11 @@ export default function ImageAnnotationPage() {
       await loadImage(imageId);
       return true;
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to save');
+      if (err.response?.status === 409) {
+        setError('⚠️ This image has been taken by another annotator. Please go back and choose a different image.');
+      } else {
+        setError(err.response?.data?.detail || 'Failed to save');
+      }
       return false;
     } finally {
       setSaving(false);

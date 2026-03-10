@@ -322,6 +322,16 @@ def create_user(
         role=payload.role,
     )
     db.add(user)
+    db.flush()  # get user.id before committing
+
+    # Auto-assign ALL categories to new annotators
+    assigned_ids = []
+    if payload.role == "annotator":
+        all_cats = db.query(Category).all()
+        for cat in all_cats:
+            db.add(AnnotatorCategory(user_id=user.id, category_id=cat.id))
+            assigned_ids.append(cat.id)
+
     db.commit()
     db.refresh(user)
     return UserResponse(
@@ -331,7 +341,7 @@ def create_user(
         role=user.role,
         is_active=user.is_active,
         created_at=user.created_at,
-        assigned_category_ids=[],
+        assigned_category_ids=assigned_ids,
     )
 
 

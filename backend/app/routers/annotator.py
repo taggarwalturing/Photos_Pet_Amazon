@@ -234,9 +234,15 @@ def list_images_for_annotator(
     my_anns_by_image = defaultdict(list)       # image_id → [Annotation by this user]
     completed_by_image = defaultdict(set)       # image_id → set of completed category_ids
     completed_anns_by_image = defaultdict(list) # image_id → [completed Annotations by anyone]
+    # Track which images are locked by another annotator (human-validated)
+    locked_by_other: dict[int, int] = {}        # image_id → other annotator_id
     for ann in all_annotations:
         if ann.annotator_id == user.id:
             my_anns_by_image[ann.image_id].append(ann)
+        else:
+            # Another annotator — if they human-validated, this image is locked
+            if ann.human_validated:
+                locked_by_other[ann.image_id] = ann.annotator_id
         if ann.status == "completed":
             completed_by_image[ann.image_id].add(ann.category_id)
             completed_anns_by_image[ann.image_id].append(ann)
@@ -328,6 +334,8 @@ def list_images_for_annotator(
         has_rework = any(a.review_status == "rework_requested" for a in my_annotations)
         is_human_validated = any(a.human_validated for a in my_annotations)
 
+        is_locked = img.id in locked_by_other
+
         images_data.append({
             "id": img.id,
             "image_drive_id": img.image_drive_id,
@@ -337,7 +345,7 @@ def list_images_for_annotator(
             "category_status": category_status,
             "category_labels": category_labels,
             "category_label_source": category_label_source,
-            "overall_status": overall_status,
+            "overall_status": "locked" if is_locked else overall_status,
             "completed_count": sum(1 for s in statuses if s in ("completed", "completed_by_other")),
             "total_categories": len(assigned_cat_ids),
             "is_improper": img.is_improper,
@@ -345,6 +353,7 @@ def list_images_for_annotator(
             "has_rework": has_rework,
             "is_human_validated": is_human_validated,
             "has_ai_labels": bool(img.arbiter_labels),
+            "locked_by_other": is_locked,
         })
 
     # Paginate in Python (status filter requires app-level aggregation)
@@ -373,6 +382,35 @@ def list_images_for_annotator(
             for c in categories
         ],
         "assigned_image_count": total_image_count,
+    }
+
+
+@router.get("/images/{image_id}/lock-status")
+def check_image_lock_status(
+    image_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_annotator),
+):
+    """
+    Lightweight endpoint to check if an image is locked by another annotator.
+    Used for real-time pre-checks before opening an image for annotation.
+    """
+    exists = db.query(Image.id).filter(Image.id == image_id).first()
+    if not exists:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    other = (
+        db.query(Annotation.annotator_id)
+        .filter(
+            Annotation.image_id == image_id,
+            Annotation.annotator_id != user.id,
+            Annotation.human_validated == True,
+        )
+        .first()
+    )
+    return {
+        "image_id": image_id,
+        "locked_by_other": other is not None,
     }
 
 
@@ -597,7 +635,23 @@ def save_image_annotations(
     # Block saving annotations for improper images
     if image.is_improper:
         raise HTTPException(status_code=400, detail="Cannot save annotations for improper images")
-    
+
+    # ── CRITICAL: Only ONE annotator may annotate each image ──
+    other_annotator = (
+        db.query(Annotation.annotator_id)
+        .filter(
+            Annotation.image_id == image_id,
+            Annotation.annotator_id != user.id,
+            Annotation.human_validated == True,
+        )
+        .first()
+    )
+    if other_annotator:
+        raise HTTPException(
+            status_code=409,
+            detail="This image has already been annotated by another annotator.",
+        )
+
     # Get assigned categories for edit lock check
     assigned_cat_ids_list = [
         ac.category_id
@@ -991,7 +1045,23 @@ def save_annotation(
     # Block saving annotations for improper images
     if image.is_improper:
         raise HTTPException(status_code=400, detail="Cannot save annotations for improper images")
-    
+
+    # ── CRITICAL: Only ONE annotator may annotate each image ──
+    other_annotator = (
+        db.query(Annotation.annotator_id)
+        .filter(
+            Annotation.image_id == image_id,
+            Annotation.annotator_id != user.id,
+            Annotation.human_validated == True,
+        )
+        .first()
+    )
+    if other_annotator:
+        raise HTTPException(
+            status_code=409,
+            detail="This image has already been annotated by another annotator.",
+        )
+
     # Upsert annotation
     annotation = (
         db.query(Annotation)

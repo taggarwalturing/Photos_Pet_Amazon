@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
@@ -140,12 +140,11 @@ export default function AnnotatorHome() {
     }
   };
 
-  useEffect(() => {
-    loadImages();
-  }, [page, filter]);
+  const pollRef = useRef(null);
+  const [checkingLock, setCheckingLock] = useState(null); // image_id being checked
 
-  const loadImages = async () => {
-    setLoading(true);
+  const loadImages = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const params = new URLSearchParams();
       params.set('page', page);
@@ -157,19 +156,53 @@ export default function AnnotatorHome() {
     } catch (err) {
       console.error(err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
-  };
+  }, [page, filter]);
+
+  useEffect(() => {
+    loadImages();
+  }, [loadImages]);
+
+  // Auto-poll every 10 seconds to catch newly locked images in real-time
+  useEffect(() => {
+    pollRef.current = setInterval(() => {
+      loadImages(true); // silent refresh — no loading spinner
+    }, 10000);
+    return () => clearInterval(pollRef.current);
+  }, [loadImages]);
 
   const handleFilterChange = (f) => {
     setFilter(f); // setFilter already resets page to 1
   };
 
+  // Pre-check lock status before navigating to image detail
+  const handleImageClick = async (imgId) => {
+    setCheckingLock(imgId);
+    try {
+      const res = await api.get(`/annotator/images/${imgId}/lock-status`);
+      if (res.data.locked_by_other) {
+        // Image was just taken — refresh list and show alert
+        loadImages(true);
+        alert('This image was just taken by another annotator. The list has been refreshed.');
+        return;
+      }
+      navigate(`/annotator/image/${imgId}`);
+    } catch (err) {
+      // On error, navigate anyway — the detail page will handle it
+      navigate(`/annotator/image/${imgId}`);
+    } finally {
+      setCheckingLock(null);
+    }
+  };
+
   const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 1;
 
   const totalCompleted = data?.images?.filter(img => img.overall_status === 'completed').length || 0;
-  const totalPending = data?.images?.filter(img => img.overall_status !== 'completed').length || 0;
-  const progressPct = data?.total > 0 && data?.images ? Math.round((totalCompleted / data.images.length) * 100) : 0;
+  const totalLocked = data?.images?.filter(img => img.locked_by_other).length || 0;
+  const totalPending = data?.images?.filter(img => img.overall_status !== 'completed' && !img.locked_by_other).length || 0;
+  const totalAvailable = (data?.images?.length || 0) - totalLocked;
+  const progressPct = totalAvailable > 0 ? Math.round((totalCompleted / totalAvailable) * 100) : 0;
 
   return (
     <div className="min-h-screen mesh-bg">
@@ -400,25 +433,34 @@ export default function AnnotatorHome() {
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 stagger-children">
                 {data.images.map((img) => {
+                  const isLockedByOther = img.locked_by_other === true;
                   const isComplete = img.overall_status === 'completed';
                   const isPartial = img.overall_status === 'partial';
                   const isImproper = img.is_improper;
                   const hasRework = img.has_rework;
-                  const isHumanValidated = img.is_human_validated;  // True if locked
+                  const isHumanValidated = img.is_human_validated;  // True if locked by self
                   const categoryLabels = img.category_labels || {};
                   
                   return (
                     <button
                       key={img.id}
-                      onClick={() => navigate(`/annotator/image/${img.id}`)}
-                      className={`group relative rounded-xl overflow-hidden shadow-md hover:shadow-xl cursor-pointer text-left animate-slide-up transition-all duration-300 ${
-                        hasRework 
-                          ? 'ring-3 ring-orange-400' 
+                      onClick={() => {
+                        if (isLockedByOther) return; // Cannot open locked images
+                        handleImageClick(img.id);
+                      }}
+                      disabled={isLockedByOther || checkingLock === img.id}
+                      className={`group relative rounded-xl overflow-hidden shadow-md text-left animate-slide-up transition-all duration-300 ${
+                        checkingLock === img.id
+                          ? 'ring-2 ring-indigo-400 opacity-80 cursor-wait'
+                          : isLockedByOther
+                          ? 'ring-2 ring-gray-400 opacity-60 cursor-not-allowed'
+                          : hasRework 
+                          ? 'ring-3 ring-orange-400 hover:shadow-xl cursor-pointer' 
                           : isHumanValidated
-                            ? 'ring-2 ring-emerald-500'
+                            ? 'ring-2 ring-emerald-500 hover:shadow-xl cursor-pointer'
                           : isComplete 
-                            ? 'ring-2 ring-blue-400' 
-                            : 'ring-1 ring-gray-200 hover:ring-indigo-400'
+                            ? 'ring-2 ring-blue-400 hover:shadow-xl cursor-pointer' 
+                            : 'ring-1 ring-gray-200 hover:ring-indigo-400 hover:shadow-xl cursor-pointer'
                       }`}
                     >
                       {/* Large Image */}
@@ -435,7 +477,11 @@ export default function AnnotatorHome() {
                         
                         {/* Status badge - top left */}
                         <div className="absolute top-3 left-3">
-                          {isImproper ? (
+                          {isLockedByOther ? (
+                            <span className="px-2.5 py-1 bg-gray-600 text-white text-xs font-bold rounded-lg shadow-lg flex items-center gap-1">
+                              🔒 Taken
+                            </span>
+                          ) : isImproper ? (
                             <span className="px-2.5 py-1 bg-red-500 text-white text-xs font-bold rounded-lg shadow-lg">
                               ⚠ Improper
                             </span>
