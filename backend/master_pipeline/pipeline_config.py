@@ -89,7 +89,17 @@ class PipelineConfig:
         
         # ==================== GOOGLE DRIVE CONFIG ====================
         self.google_drive_folder_id = _get('GOOGLE_DRIVE_FOLDER_ID')
-        self.google_service_account_file = _get('GOOGLE_SERVICE_ACCOUNT_FILE')
+        _sa_file = _get('GOOGLE_SERVICE_ACCOUNT_FILE')
+        if _sa_file and not Path(_sa_file).is_absolute():
+            _backend_root = self.backend_dir.parent  # backend/
+            for candidate in [
+                self.backend_dir / _sa_file,    # master_pipeline/<file>
+                _backend_root / _sa_file,        # backend/<file>
+            ]:
+                if candidate.exists():
+                    _sa_file = str(candidate.resolve())
+                    break
+        self.google_service_account_file = _sa_file
         
         # ==================== GOOGLE CLOUD STORAGE ====================
         self.gcs_bucket_name = _get('GCS_BUCKET_NAME', '')
