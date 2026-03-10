@@ -138,6 +138,9 @@ function PipelineStatistics() {
                   <th className="px-3 py-2.5 text-center font-semibold text-emerald-700 cursor-help">
                     <span title="Images whose annotations have been reviewed and approved by an admin reviewer">✅ Approved</span>
                   </th>
+                  <th className="px-3 py-2.5 text-left font-semibold text-gray-600">
+                    <span title="Pipeline status and notes for this folder">Status / Notes</span>
+                  </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -170,6 +173,28 @@ function PipelineStatistics() {
                       <CellValue value={row.ai_classified} color="indigo" />
                       <CellValue value={row.annotated_images} color="teal" />
                       <CellValue value={row.approved_annotations} color="emerald" />
+                      <td className="px-3 py-2.5 text-left">
+                        <div className="flex items-center gap-1.5">
+                          <span className={`inline-block w-2 h-2 rounded-full ${
+                            row.status === 'completed' ? 'bg-green-500' :
+                            row.status === 'failed' ? 'bg-red-500' :
+                            row.status === 'processing' ? 'bg-blue-500 animate-pulse' :
+                            'bg-gray-300'
+                          }`}></span>
+                          <span className={`text-xs font-medium ${
+                            row.status === 'completed' ? 'text-green-700' :
+                            row.status === 'failed' ? 'text-red-700' :
+                            'text-gray-600'
+                          }`}>
+                            {row.status || 'pending'}
+                          </span>
+                        </div>
+                        {row.notes && (
+                          <p className="text-[10px] text-amber-600 mt-0.5 leading-tight max-w-[200px]" title={row.notes}>
+                            {row.notes.length > 50 ? row.notes.slice(0, 50) + '…' : row.notes}
+                          </p>
+                        )}
+                      </td>
                     </tr>
                   );
                 })}
@@ -210,6 +235,7 @@ function PipelineStatistics() {
                   <td className="px-3 py-2.5 text-center text-emerald-700">
                     {folderStats.totals?.approved || 0}
                   </td>
+                  <td className="px-3 py-2.5"></td>
                 </tr>
               </tfoot>
             </table>

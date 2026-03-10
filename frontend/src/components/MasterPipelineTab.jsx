@@ -16,6 +16,9 @@ export default function MasterPipelineTab() {
   const [folders, setFolders] = useState([]);
   const [unassignedCount, setUnassignedCount] = useState(0);
   
+  // Per-folder force reprocess selection
+  const [forceReprocessIds, setForceReprocessIds] = useState([]);
+  
   // Pipeline options
   const [options, setOptions] = useState({
     download: true,
@@ -24,6 +27,7 @@ export default function MasterPipelineTab() {
     use_llm: false,
     threshold: 0.85,
     source: 'gcs',
+    force_reprocess: false, // kept for backend compat, not exposed in UI
   });
 
   // Fetch pipeline status
@@ -70,9 +74,14 @@ export default function MasterPipelineTab() {
     setStarting(true);
     try {
       const token = localStorage.getItem('token');
-      await axios.post(`${API_BASE}/api/admin/pipeline/start`, options, {
+      const payload = { ...options };
+      if (forceReprocessIds.length > 0 && !options.force_reprocess) {
+        payload.force_reprocess_folder_ids = forceReprocessIds;
+      }
+      await axios.post(`${API_BASE}/api/admin/pipeline/start`, payload, {
         headers: { Authorization: `Bearer ${token}` }
       });
+      setForceReprocessIds([]);
       fetchStatus();
     } catch (error) {
       console.error('Failed to start pipeline:', error);
@@ -336,6 +345,30 @@ export default function MasterPipelineTab() {
         </>
       )}
 
+      {/* Skipped folders banner */}
+      {status?.skipped_folders?.length > 0 && !status.is_running && (
+        <div className="bg-gray-50 border border-gray-200 rounded-xl p-4">
+          <div className="flex items-start gap-3">
+            <span className="text-lg">⏭️</span>
+            <div className="flex-1">
+              <h3 className="text-sm font-semibold text-gray-800">
+                {status.skipped_folders.length} folder(s) skipped — already completed
+              </h3>
+              <p className="text-xs text-gray-500 mt-1">
+                Use the <span className="font-medium">🔄 Reprocess</span> button in the folders table above to re-run specific folders.
+              </p>
+              <div className="flex flex-wrap gap-1.5 mt-2">
+                {status.skipped_folders.map(fid => (
+                  <span key={fid} className="text-[10px] font-mono bg-gray-200 text-gray-600 px-2 py-0.5 rounded">
+                    {fid.length > 16 ? `${fid.substring(0, 16)}…` : fid}
+                  </span>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Current Status */}
       {status && (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
@@ -579,12 +612,16 @@ export default function MasterPipelineTab() {
                   <th className="px-3 py-2 text-center font-medium text-gray-600">In DB</th>
                   <th className="px-3 py-2 text-center font-medium text-gray-600">Blurred</th>
                   <th className="px-3 py-2 text-center font-medium text-gray-600">Clean</th>
-                  <th className="px-3 py-2 text-left font-medium text-gray-600">Added</th>
+                  <th className="px-3 py-2 text-left font-medium text-gray-600">Last Run</th>
+                  <th className="px-3 py-2 text-left font-medium text-gray-600">Notes</th>
+                  <th className="px-3 py-2 text-center font-medium text-gray-600">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {folders.map(f => (
-                  <tr key={f.id} className="hover:bg-gray-50">
+                {folders.map(f => {
+                  const isQueued = forceReprocessIds.includes(f.folder_id);
+                  return (
+                  <tr key={f.id} className={`hover:bg-gray-50 ${isQueued ? 'bg-amber-50/50' : f.status === 'completed' ? 'bg-green-50/30' : f.status === 'failed' ? 'bg-red-50/30' : ''}`}>
                     <td className="px-3 py-2 font-medium text-gray-900">{f.folder_name}</td>
                     <td className="px-3 py-2">
                       <code className="text-xs bg-gray-100 px-1.5 py-0.5 rounded text-gray-600">{f.folder_id.slice(0, 20)}...</code>
@@ -604,10 +641,39 @@ export default function MasterPipelineTab() {
                     <td className="px-3 py-2 text-center text-blue-600">{f.blurred || 0}</td>
                     <td className="px-3 py-2 text-center text-green-600">{f.clean || 0}</td>
                     <td className="px-3 py-2 text-xs text-gray-500">
-                      {f.added_at ? new Date(f.added_at).toLocaleDateString() : '—'}
+                      {f.last_run_at ? new Date(f.last_run_at).toLocaleString() : '—'}
+                    </td>
+                    <td className="px-3 py-2 text-xs text-gray-500 max-w-[180px]">
+                      {f.error_log ? (
+                        <span className="text-amber-600" title={f.error_log}>
+                          {f.error_log.length > 40 ? f.error_log.slice(0, 40) + '…' : f.error_log}
+                        </span>
+                      ) : '—'}
+                    </td>
+                    <td className="px-3 py-2 text-center">
+                      {(f.status === 'completed' || f.status === 'failed') && (
+                        <button
+                          onClick={() => {
+                            setForceReprocessIds(prev =>
+                              prev.includes(f.folder_id)
+                                ? prev.filter(id => id !== f.folder_id)
+                                : [...prev, f.folder_id]
+                            );
+                          }}
+                          className={`px-2 py-1 text-xs rounded font-medium transition ${
+                            isQueued
+                              ? 'bg-amber-100 text-amber-700 border border-amber-300'
+                              : 'bg-gray-100 text-gray-600 hover:bg-amber-50 hover:text-amber-700 border border-gray-200'
+                          }`}
+                          title={isQueued ? 'Click to remove from reprocess queue' : 'Queue this folder for reprocessing'}
+                        >
+                          {isQueued ? '✓ Queued' : '🔄 Reprocess'}
+                        </button>
+                      )}
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -622,6 +688,25 @@ export default function MasterPipelineTab() {
           <p className="mt-3 text-xs text-amber-600">
             ⚠️ {unassignedCount} image(s) in DB have no folder assignment (imported before folder tracking).
           </p>
+        )}
+
+        {forceReprocessIds.length > 0 && (
+          <div className="mt-3 p-3 bg-amber-50 rounded-lg border border-amber-200 flex items-center justify-between">
+            <div>
+              <p className="text-sm font-medium text-amber-800">
+                🔄 {forceReprocessIds.length} folder{forceReprocessIds.length !== 1 ? 's' : ''} queued for reprocessing
+              </p>
+              <p className="text-xs text-amber-600 mt-0.5">
+                {forceReprocessIds.map(id => folders.find(f => f.folder_id === id)?.folder_name || id.slice(0, 16) + '…').join(', ')}
+              </p>
+            </div>
+            <button
+              onClick={() => setForceReprocessIds([])}
+              className="text-xs text-amber-600 hover:text-amber-800 underline"
+            >
+              Clear
+            </button>
+          </div>
         )}
       </div>
 

@@ -1,13 +1,13 @@
 {
   "pipeline_version": "2.0",
   "anonymization_method": "egoblur",
-  "total_images": 11,
+  "total_images": 8,
   "statistics": {
     "obfuscated": 0,
-    "no_face": 11,
+    "no_face": 8,
     "verification_failed": 0,
     "qa_required": 0,
-    "clean": 11,
+    "clean": 8,
     "failed": 0,
     "skipped": 0
   },
@@ -17,88 +17,64 @@
       "face_count": 0,
       "verification": "skipped",
       "animals_detected": 1,
-      "output_name": "1IVHePKDTlLNM5b7TRREdQrFYOSSSfAS2.jpg",
-      "image": "1IVHePKDTlLNM5b7TRREdQrFYOSSSfAS2.jpg"
+      "output_name": "1JQbXM7W1RIFC86ZKB4vj4SPzEzu8gz2X.jpeg",
+      "image": "1JQbXM7W1RIFC86ZKB4vj4SPzEzu8gz2X.jpeg"
     },
     {
       "action": "no_face",
       "face_count": 0,
       "verification": "skipped",
       "animals_detected": 1,
-      "output_name": "1nvnXc25mqKh9UbT9QpwFq6J1jY2qA94X.jpg",
-      "image": "1nvnXc25mqKh9UbT9QpwFq6J1jY2qA94X.jpg"
+      "output_name": "1VxHiPio74Tm9JmuW_cOWN9gX8ODSb2xm.jpeg",
+      "image": "1VxHiPio74Tm9JmuW_cOWN9gX8ODSb2xm.jpeg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "1ZikoRRAp9Ky9UYUvBdSJyeOUEgjhxKH3.jpeg",
+      "image": "1ZikoRRAp9Ky9UYUvBdSJyeOUEgjhxKH3.jpeg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "1ymqdOx-4pnFL7MSQEU6pJCXFYor9cRc4.jpeg",
+      "image": "1ymqdOx-4pnFL7MSQEU6pJCXFYor9cRc4.jpeg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 1,
+      "output_name": "1Hx1_oeZVkoJslZ6OhPaNQd2lPzTNP0tG.jpeg",
+      "image": "1Hx1_oeZVkoJslZ6OhPaNQd2lPzTNP0tG.jpeg"
+    },
+    {
+      "action": "no_face",
+      "face_count": 0,
+      "verification": "skipped",
+      "animals_detected": 0,
+      "output_name": "1DykKcOHrMcCZxfNa_-nwh8tWMbEN4bCC.jpeg",
+      "image": "1DykKcOHrMcCZxfNa_-nwh8tWMbEN4bCC.jpeg"
     },
     {
       "action": "no_face",
       "face_count": 0,
       "verification": "skipped",
       "animals_detected": 2,
-      "output_name": "1xdEA4pPGgnIThrHVZ3DTvl8sWl47Ngze.jpg",
-      "image": "1xdEA4pPGgnIThrHVZ3DTvl8sWl47Ngze.jpg"
+      "output_name": "1ofwwcAyj4jGKgITwy-c7GNo7ndp7zkqD.jpeg",
+      "image": "1ofwwcAyj4jGKgITwy-c7GNo7ndp7zkqD.jpeg"
     },
     {
       "action": "no_face",
       "face_count": 0,
       "verification": "skipped",
       "animals_detected": 1,
-      "output_name": "1yXPPkNGNHEyPeu6YbRr-PxOGuQ-aNvYl.jpg",
-      "image": "1yXPPkNGNHEyPeu6YbRr-PxOGuQ-aNvYl.jpg"
-    },
-    {
-      "action": "no_face",
-      "face_count": 0,
-      "verification": "skipped",
-      "animals_detected": 1,
-      "output_name": "1kEgNhaZcJpbpg-2pl8wp7b6BEIbE9B2h.jpg",
-      "image": "1kEgNhaZcJpbpg-2pl8wp7b6BEIbE9B2h.jpg"
-    },
-    {
-      "action": "no_face",
-      "face_count": 0,
-      "verification": "skipped",
-      "animals_detected": 2,
-      "output_name": "1jBBXFSwpzBfRNWNtRbZR5UE6TpJ0jeeb.jpg",
-      "image": "1jBBXFSwpzBfRNWNtRbZR5UE6TpJ0jeeb.jpg"
-    },
-    {
-      "action": "no_face",
-      "face_count": 0,
-      "verification": "skipped",
-      "animals_detected": 2,
-      "output_name": "1Xc02tjjtOAHniSFKjgV50IDFTWOx_vBV.jpg",
-      "image": "1Xc02tjjtOAHniSFKjgV50IDFTWOx_vBV.jpg"
-    },
-    {
-      "action": "no_face",
-      "face_count": 0,
-      "verification": "skipped",
-      "animals_detected": 2,
-      "output_name": "1Aiok9pFVEC0qdr3oN-AGYCFBf4u7St-7.jpg",
-      "image": "1Aiok9pFVEC0qdr3oN-AGYCFBf4u7St-7.jpg"
-    },
-    {
-      "action": "no_face",
-      "face_count": 0,
-      "verification": "skipped",
-      "animals_detected": 1,
-      "output_name": "1XPuJxShUZfwVnZIhfgCgL6AdU2GKdsXC.jpg",
-      "image": "1XPuJxShUZfwVnZIhfgCgL6AdU2GKdsXC.jpg"
-    },
-    {
-      "action": "no_face",
-      "face_count": 0,
-      "verification": "skipped",
-      "animals_detected": 1,
-      "output_name": "1rzOYkFqNTtU4to3K-BO5j-lDSieQOLdF.jpg",
-      "image": "1rzOYkFqNTtU4to3K-BO5j-lDSieQOLdF.jpg"
-    },
-    {
-      "action": "no_face",
-      "face_count": 0,
-      "verification": "skipped",
-      "animals_detected": 1,
-      "output_name": "16DI-XApmK6B_O97T50ke0vo2i85CYkJj.jpg",
-      "image": "16DI-XApmK6B_O97T50ke0vo2i85CYkJj.jpg"
+      "output_name": "1zb4HFbN7PlOKgNQJXi2AuVW1ANxMefR-.jpeg",
+      "image": "1zb4HFbN7PlOKgNQJXi2AuVW1ANxMefR-.jpeg"
     }
   ]
 }

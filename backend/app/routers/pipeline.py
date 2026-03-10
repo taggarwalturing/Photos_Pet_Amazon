@@ -58,6 +58,8 @@ class PipelineRunRequest(BaseModel):
     threshold: float = 0.85
     folder_ids: Optional[List[str]] = None  # Specific folder IDs to process (uses DB folders if None)
     source: str = "gcs"  # Image source: "gcs" (default) or "drive"
+    force_reprocess: bool = False  # If True, re-run ALL completed folders
+    force_reprocess_folder_ids: Optional[List[str]] = None  # Specific completed folders to force-reprocess
 
 
 class ReprocessRequest(BaseModel):
@@ -102,6 +104,32 @@ async def start_pipeline(
     if folder_ids and request.download and request.source == "drive":
         folder_ids = _resolve_parent_folders(folder_ids, db)
 
+    # ── Skip already-completed folders (unless force-reprocessed) ──
+    # force_reprocess=True  → force ALL completed folders
+    # force_reprocess_folder_ids=[…] → force only those specific folders
+    skipped_folders = []
+    force_ids = set(request.force_reprocess_folder_ids or [])
+    if folder_ids and not request.force_reprocess:
+        completed_ids = set()
+        for rec in db.query(DriveFolder).filter(
+            DriveFolder.folder_id.in_(folder_ids),
+            DriveFolder.status == "completed",
+        ).all():
+            # Skip this folder only if it's NOT in the per-folder force list
+            if rec.folder_id not in force_ids:
+                completed_ids.add(rec.folder_id)
+
+        if completed_ids:
+            skipped_folders = sorted(completed_ids)
+            folder_ids = [fid for fid in folder_ids if fid not in completed_ids]
+            print(f"[PIPELINE] Skipping {len(skipped_folders)} already-completed folder(s): {skipped_folders}")
+
+    if not folder_ids:
+        msg = "No new folders to process."
+        if skipped_folders:
+            msg += f" {len(skipped_folders)} folder(s) already completed — enable 'Force Reprocess' to re-run them."
+        raise HTTPException(status_code=400, detail=msg)
+
     # Reset status
     pipeline_status = {
         "is_running": True,
@@ -118,8 +146,9 @@ async def start_pipeline(
         "requested_by": admin.username,
         "current_folder": None,
         "current_folder_idx": 0,
-        "total_folders": len(folder_ids) if folder_ids else 0,
-        "folder_progress": {}
+        "total_folders": len(folder_ids),
+        "folder_progress": {},
+        "skipped_folders": skipped_folders,
     }
     
     # Pre-populate folder_progress so frontend can show them immediately
@@ -409,35 +438,51 @@ def get_pipeline_stats(
         FROM images
     """)).fetchone()
     
-    unique_count, duplicate_count, cluster_count = _get_workspace_dedup_stats()
-    
     total = stats[0] or 0
     processed = stats[1] or 0
     pending = stats[2] or 0
     failed = stats[3] or 0
-    
-    # Load aggregated Drive metadata from per-folder workspaces
-    drive_meta = _load_all_drive_metadata()
-    
+
+    # Dedup stats from DB (images table)
+    duplicate_count = db.execute(
+        text("SELECT COUNT(*) FROM images WHERE is_duplicate = TRUE")
+    ).scalar() or 0
+    unique_count = total - duplicate_count
+
+    # Aggregate drive_folders stats from DB
+    folder_agg = db.execute(text("""
+        SELECT
+            COALESCE(SUM(total_in_drive), 0),
+            COALESCE(SUM(unique_count), 0),
+            COALESCE(SUM(duplicate_count), 0),
+            MAX(last_run_at)
+        FROM drive_folders
+    """)).fetchone()
+
+    total_in_gcs = folder_agg[0] or 0
+    gcs_unique = folder_agg[1] or 0
+    gcs_duplicates = folder_agg[2] or 0
+    last_run_at = folder_agg[3]
+
     return {
         "total_images": total,
         "processed": processed,
         "pending": pending,
         "failed": failed,
-        "unique_images": unique_count if unique_count > 0 else total - duplicate_count,
+        "unique_images": unique_count,
         "duplicate_images": duplicate_count,
-        "duplicate_clusters": cluster_count,
+        "duplicate_clusters": 0,
         "images_with_faces": stats[4] or 0,
         "images_without_faces": stats[5] or 0,
         "screenshots_skipped": stats[6] or 0,
         "status": "idle" if not pipeline_status["is_running"] else pipeline_status["current_step"],
-        "last_run": pipeline_status.get("completed_at"),
-        # Drive metadata (aggregated across all folders)
-        "total_in_drive": drive_meta.get("total_in_drive", 0),
-        "drive_unique_filenames": drive_meta.get("unique_filenames", 0),
-        "drive_duplicate_filenames": drive_meta.get("duplicate_filename_count", 0),
-        "drive_duplicate_details": drive_meta.get("duplicate_filenames", {}),
-        "drive_scanned_at": drive_meta.get("scanned_at", ""),
+        "last_run": pipeline_status.get("completed_at") or (last_run_at.isoformat() if last_run_at else None),
+        # GCS / Drive metadata (aggregated from drive_folders table)
+        "total_in_drive": total_in_gcs,
+        "drive_unique_filenames": gcs_unique if gcs_unique > 0 else unique_count,
+        "drive_duplicate_filenames": gcs_duplicates,
+        "drive_duplicate_details": {},
+        "drive_scanned_at": last_run_at.isoformat() if last_run_at else "",
     }
 
 
@@ -464,7 +509,7 @@ def _update_drive_folder_stats(folder_ids: List[str] = None):
 
             ws = pipeline_workspace / "folders" / fid
 
-            # Drive or GCS metadata
+            # Drive or GCS metadata — try local file first, then query GCS directly
             meta_path = ws / "gcs_metadata.json"
             if not meta_path.exists():
                 meta_path = ws / "drive_metadata.json"
@@ -473,6 +518,14 @@ def _update_drive_folder_stats(folder_ids: List[str] = None):
                     with open(meta_path) as f:
                         dm = json.load(f)
                     folder_record.total_in_drive = dm.get("total_in_gcs") or dm.get("total_in_drive", 0)
+                except Exception:
+                    pass
+            elif (folder_record.total_in_drive or 0) == 0:
+                # Fallback: count blobs in GCS directly
+                try:
+                    from app.utils.gcs import list_blobs
+                    blobs = [b for b in list_blobs(f"input/{fid}/") if not b.endswith("/")]
+                    folder_record.total_in_drive = len(blobs)
                 except Exception:
                     pass
 
@@ -496,7 +549,7 @@ def _update_drive_folder_stats(folder_ids: List[str] = None):
             folder_record.blurred_count = blurred or 0
             folder_record.clean_count = clean or 0
 
-            # Dedup stats
+            # Dedup stats — try local file first, fallback to DB counts
             dedup_path = ws / "deduplication_stats.json"
             if dedup_path.exists():
                 try:
@@ -506,6 +559,14 @@ def _update_drive_folder_stats(folder_ids: List[str] = None):
                     folder_record.duplicate_count = dd.get("duplicates_found", 0)
                 except Exception:
                     pass
+            # If still not set, derive from DB counts
+            if (folder_record.unique_count or 0) == 0 and (folder_record.downloaded_count or 0) > 0:
+                dup_in_db = db.execute(
+                    text("SELECT COUNT(*) FROM images WHERE source_drive_folder_id = :fid AND is_duplicate = TRUE"),
+                    {"fid": fid}
+                ).scalar() or 0
+                folder_record.unique_count = (folder_record.downloaded_count or 0) - dup_in_db
+                folder_record.duplicate_count = dup_in_db
 
             # Obfuscation stats
             obf_path = ws / "obfuscation_results.json"
@@ -518,7 +579,23 @@ def _update_drive_folder_stats(folder_ids: List[str] = None):
                 except Exception:
                     pass
 
-            folder_record.status = "completed"
+            # Determine per-folder status from in-memory progress
+            fp = pipeline_status.get("folder_progress", {}).get(fid, {})
+            fp_status = fp.get("status", "completed")
+            fp_errors = fp.get("errors", [])
+
+            if fp_status == "failed" or fp_errors:
+                folder_record.status = "failed"
+                folder_record.error_log = "; ".join(fp_errors) if fp_errors else "Unknown error"
+            else:
+                folder_record.status = "completed"
+                if (folder_record.downloaded_count or 0) == 0 and (folder_record.total_in_drive or 0) > 0:
+                    folder_record.error_log = (
+                        "All images already exist in DB from another folder"
+                    )
+                else:
+                    folder_record.error_log = None
+
             folder_record.last_run_at = datetime.now()
 
         db.commit()
@@ -533,11 +610,13 @@ def _init_folder_progress():
     """Create a fresh per-folder progress dict."""
     return {
         "status": "pending",
+        "current_step": None,
         "steps": {
             "download":    {"status": "pending", "current": 0, "total": 0, "message": ""},
             "deduplicate": {"status": "pending", "current": 0, "total": 0, "message": ""},
             "biometric":   {"status": "pending", "current": 0, "total": 0, "message": ""},
-        }
+        },
+        "errors": [],
     }
 
 
@@ -908,11 +987,16 @@ def run_pipeline_background(
             if re.search(r'Found (\d+) duplicate', line):
                 _fp()["deduplicate"]["message"] = line
 
-            # ── errors (skip "verification failed" which is a normal biometric result) ──
-            if "error" in line.lower() or ("failed" in line.lower() and "verification" not in line.lower()):
+            # ── errors (skip normal summary lines and biometric "verification failed") ──
+            is_error_line = "error" in line.lower() or ("failed" in line.lower() and "verification" not in line.lower())
+            # "Failed to process: 0" is a summary line meaning zero failures — not an actual error
+            if is_error_line and re.search(r'(?:failed|error)[^:]*:\s*0\s*$', line.lower()):
+                is_error_line = False
+            if is_error_line:
                 pipeline_status["errors"].append(line)
                 fid = state["current_folder_id"]
                 if fid and fid in pipeline_status.get("folder_progress", {}):
+                    pipeline_status["folder_progress"][fid]["errors"].append(line)
                     if "❌ Folder" in line or "failed:" in line.lower():
                         pipeline_status["folder_progress"][fid]["status"] = "failed"
 
@@ -993,11 +1077,35 @@ def run_pipeline_background(
                 print(f"[PIPELINE] Stats update error: {stats_err}")
                 pipeline_status["errors"].append(f"Stats update error: {str(stats_err)}")
 
+            # ── Cleanup local workspace AFTER stats have been read ──
+            try:
+                import shutil as _shutil
+                bucket_name = os.getenv("GCS_BUCKET_NAME")
+                if bucket_name:
+                    folders_dir = _get_pipeline_workspace() / "folders"
+                    if folders_dir.exists():
+                        for fd in sorted(d for d in folders_dir.iterdir() if d.is_dir()):
+                            _shutil.rmtree(str(fd), ignore_errors=True)
+                        print("[PIPELINE] 🧹 Cleaned up local pipeline workspace (files now in GCS)")
+            except Exception as cleanup_err:
+                print(f"[PIPELINE] Cleanup warning: {cleanup_err}")
+
             pipeline_status["current_step"] = "completed"
         else:
             pipeline_status["current_step"] = "failed"
             pipeline_status["errors"].append(f"Pipeline failed with code {returncode}")
             print(f"[PIPELINE] Pipeline failed with code {returncode}")
+
+            # Mark any still-running folders as failed in the DB
+            for fid, fp in pipeline_status.get("folder_progress", {}).items():
+                if fp["status"] in ("running", "pending"):
+                    fp["status"] = "failed"
+
+            # Persist per-folder stats (completed ones stay completed, failed stay failed)
+            try:
+                _update_drive_folder_stats(folder_ids)
+            except Exception:
+                pass
 
     except Exception as e:
         print(f"[PIPELINE] Exception: {str(e)}")
@@ -1320,14 +1428,9 @@ def list_drive_folders(
             "manually_blurred": r[6],
         }
 
-    # Load drive metadata from per-folder workspaces (aggregated)
-    drive_meta = _load_all_drive_metadata()
-    per_folder_meta = drive_meta.get("per_folder", {})
-
     result = []
     for f in folders:
         db_stats = folder_image_stats.get(f.folder_id, {})
-        meta = per_folder_meta.get(f.folder_id, {})
         result.append({
             "id": f.id,
             "folder_id": f.folder_id,
@@ -1336,17 +1439,18 @@ def list_drive_folders(
             "added_at": f.added_at.isoformat() if f.added_at else None,
             "last_run_at": f.last_run_at.isoformat() if f.last_run_at else None,
             "notes": f.notes,
-            # Stats from DB
+            "error_log": f.error_log,
+            # Stats from DB images table
             "total_in_db": db_stats.get("total_in_db", 0),
             "blurred": db_stats.get("blurred", 0),
             "clean": db_stats.get("clean", 0),
             "failed": db_stats.get("failed", 0),
             "improper": db_stats.get("improper", 0),
             "manually_blurred": db_stats.get("manually_blurred", 0),
-            # Stats from Drive metadata (populated after pipeline scan)
-            "total_in_drive": meta.get("total", f.total_in_drive or 0),
-            "unique_in_drive": meta.get("unique", 0),
-            "duplicates_in_drive": meta.get("duplicates", 0),
+            # Stats from drive_folders table (populated by _update_drive_folder_stats)
+            "total_in_drive": f.total_in_drive or 0,
+            "unique_in_drive": f.unique_count or 0,
+            "duplicates_in_drive": f.duplicate_count or 0,
         })
 
     # Also count images with no folder_id
@@ -1591,38 +1695,61 @@ def get_folder_stats_table(
     """)).fetchall()
     ann_map = {r[0]: {"annotated_images": r[1], "completed": r[2], "approved": r[3]} for r in annotation_rows}
 
-    # Load drive metadata from per-folder workspaces (aggregated)
-    drive_meta = _load_all_drive_metadata()
-    per_folder_meta = drive_meta.get("per_folder", {})
+    # Build lookup maps from drive_folders DB table
+    folder_gcs_count = {f.folder_id: f.total_in_drive or 0 for f in folders}
+    folder_error_log = {f.folder_id: f.error_log for f in folders}
+    folder_status = {f.folder_id: f.status for f in folders}
+
+    # Build a lookup from the image-stats rows  {fid → row}
+    stats_map = {}
+    for r in rows:
+        stats_map[r[0]] = r
+
+    # Collect all folder IDs to display: registered folders + any with images
+    all_fids = list(dict.fromkeys(folder_ids + list(stats_map.keys())))
 
     table = []
     totals = {"total": 0, "blurred": 0, "clean": 0, "failed": 0, "improper": 0,
               "manually_blurred": 0, "with_faces": 0, "ai_classified": 0,
               "annotated_images": 0, "completed": 0, "approved": 0, "total_in_drive": 0}
 
-    for r in rows:
-        fid = r[0]
-        meta = per_folder_meta.get(fid, {})
+    for fid in all_fids:
+        r = stats_map.get(fid)
         ann = ann_map.get(fid, {})
+
         entry = {
             "folder_id": fid if fid != "__unassigned__" else None,
             "folder_name": folder_name_map.get(fid, "Unassigned" if fid == "__unassigned__" else fid[:16] + "..."),
-            "total_in_db": r[1],
-            "blurred": r[2],
-            "clean": r[3],
-            "failed": r[4],
-            "improper": r[5],
-            "manually_blurred": r[6],
-            "with_faces": r[7],
-            "ai_classified": r[8],
+            "total_in_db": r[1] if r else 0,
+            "blurred": r[2] if r else 0,
+            "clean": r[3] if r else 0,
+            "failed": r[4] if r else 0,
+            "improper": r[5] if r else 0,
+            "manually_blurred": r[6] if r else 0,
+            "with_faces": r[7] if r else 0,
+            "ai_classified": r[8] if r else 0,
             "annotated_images": ann.get("annotated_images", 0),
             "completed_annotations": ann.get("completed", 0),
             "approved_annotations": ann.get("approved", 0),
-            "total_in_drive": meta.get("total", 0),
+            "total_in_drive": folder_gcs_count.get(fid, 0),
+            "status": folder_status.get(fid),
+            "notes": folder_error_log.get(fid) or None,
         }
         table.append(entry)
-        for k in totals:
-            totals[k] += entry.get(k, 0) or 0
+
+        # Accumulate totals
+        totals["total"]            += (entry.get("total_in_db") or 0)
+        totals["blurred"]          += (entry.get("blurred") or 0)
+        totals["clean"]            += (entry.get("clean") or 0)
+        totals["failed"]           += (entry.get("failed") or 0)
+        totals["improper"]         += (entry.get("improper") or 0)
+        totals["manually_blurred"] += (entry.get("manually_blurred") or 0)
+        totals["with_faces"]       += (entry.get("with_faces") or 0)
+        totals["ai_classified"]    += (entry.get("ai_classified") or 0)
+        totals["annotated_images"] += (entry.get("annotated_images") or 0)
+        totals["completed"]        += (entry.get("completed_annotations") or 0)
+        totals["approved"]         += (entry.get("approved_annotations") or 0)
+        totals["total_in_drive"]   += (entry.get("total_in_drive") or 0)
 
     return {
         "table": table,

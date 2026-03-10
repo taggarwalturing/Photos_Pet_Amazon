@@ -50,7 +50,7 @@ export default function ArbiterClassifierTab() {
   const [results, setResults] = useState(null);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
-  const [resetOnStart, setResetOnStart] = useState(false);
+  const [reprocessFolderIds, setReprocessFolderIds] = useState([]);
 
   // Filters
   const [selectedCategory, setSelectedCategory] = useState(null);
@@ -58,6 +58,9 @@ export default function ArbiterClassifierTab() {
   const [searchTerm, setSearchTerm] = useState('');
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 30;
+
+  // Per-image reprocess queue
+  const [reprocessQueue, setReprocessQueue] = useState([]);
 
   // Detail modal
   const [detailImage, setDetailImage] = useState(null);
@@ -95,9 +98,15 @@ export default function ArbiterClassifierTab() {
     Promise.all([fetchConfig(), fetchStatus(), fetchResults(), fetchFailed()]).finally(() => setLoading(false));
   }, []);
 
-  // Auto-refresh when running
+  // Auto-refresh when running; refresh config on completion
   useEffect(() => {
-    if (!status?.is_running) return;
+    if (!status?.is_running) {
+      // Refresh config once when run completes (so folder_stats update)
+      if (status?.current_step === 'completed' || status?.current_step === 'stopped') {
+        fetchConfig();
+      }
+      return;
+    }
     const interval = setInterval(() => {
       fetchStatus();
       fetchResults();
@@ -110,10 +119,22 @@ export default function ArbiterClassifierTab() {
   useEffect(() => { fetchResults(); }, [page, searchTerm, selectedCategory, selectedLabel]);
 
   // ─── Actions ──────────────────────────────────────────
-  const startPipeline = async () => {
+  const startPipeline = async (forceImages = null) => {
     setStarting(true);
     try {
-      await api.post('/admin/arbiter/start', { reset: resetOnStart });
+      const payload = {};
+      // Per-folder reprocess
+      if (reprocessFolderIds.length > 0) {
+        payload.reprocess_folder_ids = reprocessFolderIds;
+      }
+      // Per-image reprocess
+      const imagesToReprocess = forceImages || reprocessQueue;
+      if (imagesToReprocess.length > 0) {
+        payload.reprocess_image_names = imagesToReprocess;
+      }
+      await api.post('/admin/arbiter/start', payload);
+      setReprocessQueue([]);
+      setReprocessFolderIds([]);
       fetchStatus();
     } catch (e) {
       alert(e.response?.data?.detail || 'Failed to start arbiter pipeline');
@@ -175,7 +196,11 @@ export default function ArbiterClassifierTab() {
   // ─── Derived data ─────────────────────────────────────
   const summary = results?.summary || {};
   const catStats = summary.category_stats || {};
-  const pct = status?.total > 0 ? Math.round((status.processed / status.total) * 100) : 0;
+  // Use pending_this_run for progress when available (current run only)
+  const pendingThisRun = status?.pending_this_run ?? status?.total ?? 0;
+  const processedThisRun = status?.processed_this_run ?? 0;
+  const pct = pendingThisRun > 0 ? Math.round((processedThisRun / pendingThisRun) * 100) :
+              status?.total > 0 ? Math.round((status.processed / status.total) * 100) : 0;
   const failedCount = summary.failed_count || status?.failed_count || failedImages?.total || 0;
 
   // API error detection — surface from status, results summary, or failed images
@@ -223,11 +248,6 @@ export default function ArbiterClassifierTab() {
           </button>
         ) : (
           <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer">
-              <input type="checkbox" checked={resetOnStart} onChange={e => setResetOnStart(e.target.checked)}
-                className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500" />
-              Reset previous results
-            </label>
             {results?.total > 0 && (
               <button onClick={importLabels} disabled={importing}
                 className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition flex items-center gap-2 disabled:opacity-50 cursor-pointer"
@@ -247,6 +267,35 @@ export default function ArbiterClassifierTab() {
           </div>
         )}
       </div>
+
+      {/* ─── Reprocess queue banner ──────────────── */}
+      {reprocessQueue.length > 0 && !status?.is_running && (
+        <div className="rounded-xl p-4 bg-amber-50 border border-amber-200 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-amber-800">
+              🔄 {reprocessQueue.length} image{reprocessQueue.length !== 1 ? 's' : ''} queued for re-classification
+            </p>
+            <p className="text-xs text-amber-600 mt-0.5 max-w-xl truncate">
+              {reprocessQueue.slice(0, 5).join(', ')}{reprocessQueue.length > 5 ? ` … and ${reprocessQueue.length - 5} more` : ''}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setReprocessQueue([])}
+              className="text-xs text-amber-600 hover:text-amber-800 underline cursor-pointer"
+            >
+              Clear
+            </button>
+            <button
+              onClick={() => startPipeline()}
+              disabled={starting}
+              className="px-3 py-1.5 bg-amber-600 text-white text-xs font-semibold rounded-lg hover:bg-amber-700 transition disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+            >
+              🔄 {starting ? 'Starting…' : `Re-classify ${reprocessQueue.length}`}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ─── Import result banner ─────────────────── */}
       {importResult && (
@@ -322,11 +371,132 @@ export default function ArbiterClassifierTab() {
 
       {/* ─── Config cards ──────────────────────────── */}
       {config && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           <ConfigCard label="Model 1" value={config.gemini_model} sub={config.gemini_provider} icon="🔵" />
           <ConfigCard label="Model 2" value={config.openai_model} sub={config.openai_provider} icon="🟢" />
           <ConfigCard label="Arbiter" value={config.arbiter_model} sub={config.arbiter_provider} icon="⚖️" />
-          <ConfigCard label="Images Available" value={config.available_images} sub="in GCS" icon="🖼️" />
+          <ConfigCard label="Total Unique" value={config.available_images} sub="unique images in DB" icon="🖼️" />
+          <ConfigCard label="Pending" value={config.pending_images ?? config.available_images}
+            sub={`${config.already_classified || 0} already classified`} icon="⏳" />
+        </div>
+      )}
+
+      {/* ─── Per-folder classification status ────── */}
+      {config?.folder_stats?.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-gray-700">📂 Per-Folder Classification Status</h3>
+            <button onClick={fetchConfig}
+              className="px-3 py-1 text-xs border border-gray-300 rounded-lg hover:bg-gray-50 transition cursor-pointer">
+              🔄 Refresh
+            </button>
+          </div>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="px-4 py-2 text-left font-medium text-gray-600">Folder</th>
+                <th className="px-3 py-2 text-center font-medium text-gray-600">Total</th>
+                <th className="px-3 py-2 text-center font-medium text-green-600">Classified</th>
+                <th className="px-3 py-2 text-center font-medium text-amber-600">Pending</th>
+                <th className="px-3 py-2 text-center font-medium text-gray-600">Status</th>
+                <th className="px-2 py-2 text-center font-medium text-gray-600 w-[80px]">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {config.folder_stats.map((f) => {
+                // Use live data from status.folder_progress if arbiter is running
+                const live = status?.folder_progress?.[f.folder_id];
+                const classified = live?.classified ?? f.classified;
+                const pending = live?.pending ?? f.pending;
+                const st = live?.status ?? f.status;
+                const pctDone = f.total > 0 ? Math.round((classified / f.total) * 100) : 0;
+                const isQueued = reprocessFolderIds.includes(f.folder_id);
+                return (
+                  <tr key={f.folder_id} className={`${
+                    isQueued ? 'bg-amber-50/50' :
+                    st === 'completed' ? 'bg-green-50/30' :
+                    st === 'partial' || st === 'running' ? 'bg-amber-50/30' : ''
+                  }`}>
+                    <td className="px-4 py-2.5">
+                      <span className="font-medium text-gray-900 text-xs" title={f.folder_id}>
+                        {f.folder_name}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2.5 text-center text-gray-700">{f.total}</td>
+                    <td className="px-3 py-2.5 text-center text-green-600 font-medium">{classified}</td>
+                    <td className="px-3 py-2.5 text-center text-amber-600 font-medium">{pending}</td>
+                    <td className="px-3 py-2.5 text-center">
+                      {st === 'running' ? (
+                        <div className="flex items-center gap-1.5 justify-center">
+                          <div className="w-16 bg-gray-200 rounded-full h-1.5">
+                            <div className="bg-indigo-500 h-1.5 rounded-full transition-all duration-500"
+                              style={{ width: `${pctDone}%` }} />
+                          </div>
+                          <span className="text-[10px] text-indigo-600 font-medium">{pctDone}%</span>
+                        </div>
+                      ) : (
+                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                          st === 'completed' ? 'bg-green-100 text-green-700' :
+                          st === 'partial' ? 'bg-amber-100 text-amber-700' :
+                          'bg-gray-100 text-gray-600'
+                        }`}>
+                          {st === 'completed' ? '✅ Done' :
+                           st === 'partial' ? '⏳ Partial' : '⏳ Pending'}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-2 py-2.5 text-center">
+                      <button
+                        disabled={status?.is_running}
+                        onClick={() =>
+                          setReprocessFolderIds(prev =>
+                            prev.includes(f.folder_id)
+                              ? prev.filter(id => id !== f.folder_id)
+                              : [...prev, f.folder_id]
+                          )
+                        }
+                        className={`px-2 py-1 text-[10px] rounded font-medium transition cursor-pointer disabled:opacity-40 ${
+                          isQueued
+                            ? 'bg-amber-100 text-amber-700 border border-amber-300'
+                            : 'bg-gray-100 text-gray-500 hover:bg-amber-50 hover:text-amber-700 border border-gray-200'
+                        }`}
+                        title={isQueued ? 'Remove from reprocess queue' : 'Queue this folder for re-classification'}
+                      >
+                        {isQueued ? '✓ Queued' : '🔄 Reprocess'}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          {/* Folder reprocess queue banner */}
+          {reprocessFolderIds.length > 0 && !status?.is_running && (
+            <div className="px-4 py-3 border-t border-amber-200 bg-amber-50 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-medium text-amber-800">
+                  🔄 {reprocessFolderIds.length} folder{reprocessFolderIds.length !== 1 ? 's' : ''} queued for re-classification
+                </p>
+                <p className="text-[10px] text-amber-600 mt-0.5">
+                  Previous results for these folders will be cleared and re-classified
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setReprocessFolderIds([])}
+                  className="text-xs text-amber-600 hover:text-amber-800 underline cursor-pointer">
+                  Clear
+                </button>
+                <button
+                  onClick={() => startPipeline()}
+                  disabled={starting}
+                  className="px-3 py-1.5 bg-amber-600 text-white text-xs font-semibold rounded-lg hover:bg-amber-700 transition disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
+                >
+                  🔄 {starting ? 'Starting…' : `Re-classify ${reprocessFolderIds.length} folder(s)`}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -351,7 +521,14 @@ export default function ArbiterClassifierTab() {
             </div>
             <div className="text-right">
               <p className="text-3xl font-bold">{pct}%</p>
-              <p className="text-sm text-white/70">{status?.processed || 0} / {status?.total || 0}</p>
+              <p className="text-sm text-white/70">
+                {processedThisRun} / {pendingThisRun} this run
+              </p>
+              {(status?.already_classified > 0 && pendingThisRun < status?.total) && (
+                <p className="text-xs text-white/50">
+                  {status.already_classified} already classified · {status.total} total
+                </p>
+              )}
             </div>
           </div>
           <div className="w-full bg-white/20 rounded-full h-3">
@@ -371,6 +548,30 @@ export default function ArbiterClassifierTab() {
               </span>
             )}
           </div>
+
+          {/* Per-folder progress during run */}
+          {status?.folder_progress && Object.keys(status.folder_progress).length > 0 && (
+            <div className="mt-3 pt-3 border-t border-white/20 space-y-1.5">
+              {Object.entries(status.folder_progress).map(([fid, fp]) => {
+                const fpPct = fp.total > 0 ? Math.round((fp.classified / fp.total) * 100) : 0;
+                return (
+                  <div key={fid} className="flex items-center gap-3">
+                    <span className="text-xs text-white/70 truncate w-40" title={fid}>
+                      📂 {fp.folder_name}
+                    </span>
+                    <div className="flex-1 bg-white/15 rounded-full h-1.5">
+                      <div className="bg-white/70 h-1.5 rounded-full transition-all duration-500"
+                        style={{ width: `${fpPct}%` }} />
+                    </div>
+                    <span className="text-[10px] text-white/60 w-20 text-right">
+                      {fp.classified}/{fp.total}
+                      {fp.status === 'completed' ? ' ✅' : ''}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 
@@ -617,11 +818,14 @@ export default function ArbiterClassifierTab() {
                       </th>
                     ))}
                     <th className="px-3 py-3 text-center font-semibold text-gray-600">Agree</th>
+                    <th className="px-2 py-3 text-center font-semibold text-gray-600 w-[70px]">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
-                  {results.results.map((row, idx) => (
-                    <tr key={idx} className="hover:bg-gray-50/50 transition-colors cursor-pointer"
+                  {results.results.map((row, idx) => {
+                    const isQueued = reprocessQueue.includes(row.image);
+                    return (
+                    <tr key={idx} className={`hover:bg-gray-50/50 transition-colors cursor-pointer ${isQueued ? 'bg-amber-50/50' : ''}`}
                       onClick={() => setDetailImage(row)}>
                       <td className="px-4 py-2.5">
                         <span className="font-medium text-gray-900 truncate block max-w-[200px]" title={row.image}>
@@ -647,8 +851,29 @@ export default function ArbiterClassifierTab() {
                           {row.agreement_count}/6
                         </span>
                       </td>
+                      <td className="px-2 py-2.5 text-center">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setReprocessQueue(prev =>
+                              prev.includes(row.image)
+                                ? prev.filter(n => n !== row.image)
+                                : [...prev, row.image]
+                            );
+                          }}
+                          className={`px-2 py-1 text-[10px] rounded font-medium transition cursor-pointer ${
+                            isQueued
+                              ? 'bg-amber-100 text-amber-700 border border-amber-300'
+                              : 'bg-gray-100 text-gray-500 hover:bg-amber-50 hover:text-amber-700 border border-gray-200'
+                          }`}
+                          title={isQueued ? 'Remove from reprocess queue' : 'Queue for re-classification'}
+                        >
+                          {isQueued ? '✓ Queued' : '🔄'}
+                        </button>
+                      </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

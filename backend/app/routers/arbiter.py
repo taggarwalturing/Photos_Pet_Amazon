@@ -50,98 +50,93 @@ ERRORS_FILE = RESULTS_DIR / "failed_images.json"
 
 def _get_all_final_images() -> list:
     """
-    Collect all final output images across per-folder workspaces, legacy workspace,
-    and GCS bucket.
+    DB-driven: get unique (non-duplicate) images, download from GCS if needed.
 
-    For GCS images that are not locally available, downloads them to a local
-    temp cache so they can be read by the arbiter vision models.
-
-    Returns a sorted list of Path objects.
+    Returns a sorted list of Path objects (local paths to images).
     """
-    supported_exts = {".jpg", ".jpeg", ".png"}
-    images = []
-    seen_names = set()
-    
-    # Per-folder workspaces (local)
-    folders_dir = PIPELINE_WORKSPACE / "folders"
-    if folders_dir.exists():
-        for fd in sorted(folders_dir.iterdir()):
-            if not fd.is_dir():
-                continue
-            final_dir = fd / "deliverable"
-            if final_dir.exists():
-                for p in final_dir.iterdir():
-                    if p.is_file() and p.suffix.lower() in supported_exts and p.name not in seen_names:
-                        images.append(p)
-                        seen_names.add(p.name)
-    
-    # Legacy flat workspace
-    if FINAL_OUTPUT_DIR.exists():
-        for p in FINAL_OUTPUT_DIR.iterdir():
-            if p.is_file() and p.suffix.lower() in supported_exts and p.name not in seen_names:
-                images.append(p)
-                seen_names.add(p.name)
+    from app.database import SessionLocal
+    from app.utils.gcs import download_blob_to_file, gcs_path as _gcs_path
 
-    # GCS: fetch images from annotated/ and input/ prefixes that are not already local
+    db = SessionLocal()
     try:
-        from app.utils.gcs import list_blobs, download_blob_to_file, list_prefixes
-        import os
+        # Only fetch unique (non-duplicate) images from DB
+        db_images = db.query(ImageModel).filter(
+            ImageModel.is_duplicate == False,  # noqa: E712
+        ).all()
+    finally:
+        db.close()
 
-        gcs_cache_dir = PIPELINE_WORKSPACE / "_gcs_arbiter_cache"
-        gcs_cache_dir.mkdir(parents=True, exist_ok=True)
+    if not db_images:
+        return []
 
-        # List images from annotated/{folder_id}/clean/ and annotated/{folder_id}/blur/
-        # The annotated/ prefix contains all processed images
-        annotated_prefixes = list_prefixes("annotated/")
-        for folder_pfx in annotated_prefixes:
-            # Each folder prefix: annotated/{folder_id}/
-            for sub in ("clean/", "blur/"):
-                sub_prefix = folder_pfx + sub
-                blobs = list_blobs(sub_prefix)
-                for blob_name in blobs:
-                    fname = os.path.basename(blob_name)
-                    if not fname:
-                        continue
-                    ext = os.path.splitext(fname)[1].lower()
-                    if ext not in supported_exts or fname in seen_names:
-                        continue
-                    local_path = gcs_cache_dir / fname
-                    if not local_path.exists() or local_path.stat().st_size == 0:
-                        try:
-                            download_blob_to_file(blob_name, str(local_path))
-                        except Exception as dl_err:
-                            print(f"[Arbiter] GCS download failed for {blob_name}: {dl_err}")
-                            continue
-                    images.append(local_path)
-                    seen_names.add(fname)
+    gcs_cache_dir = PIPELINE_WORKSPACE / "_gcs_arbiter_cache"
+    gcs_cache_dir.mkdir(parents=True, exist_ok=True)
 
-        # Also check input/ for any images not yet in annotated/
-        input_prefixes = list_prefixes("input/")
-        for pfx in input_prefixes:
-            blobs = list_blobs(pfx)
-            for blob_name in blobs:
-                fname = os.path.basename(blob_name)
-                if not fname:
-                    continue
-                ext = os.path.splitext(fname)[1].lower()
-                if ext not in supported_exts or fname in seen_names:
-                    continue
-                local_path = gcs_cache_dir / fname
-                if not local_path.exists() or local_path.stat().st_size == 0:
-                    try:
-                        download_blob_to_file(blob_name, str(local_path))
-                    except Exception as dl_err:
-                        print(f"[Arbiter] GCS download failed for {blob_name}: {dl_err}")
-                        continue
-                images.append(local_path)
-                seen_names.add(fname)
+    images = []
+    for img in db_images:
+        fname = img.filename
+        if not fname:
+            continue
+        local_path = gcs_cache_dir / fname
+        if local_path.exists() and local_path.stat().st_size > 0:
+            images.append(local_path)
+            continue
+        # Download from GCS
+        folder_id = img.source_drive_folder_id or ""
+        gcs_folder = img.gcs_folder or "clean"
+        # Try annotated sub-stage first, then input
+        downloaded = False
+        for stage in (gcs_folder, "input"):
+            try:
+                blob_path = _gcs_path(folder_id, fname, stage)
+                download_blob_to_file(blob_path, str(local_path))
+                if local_path.exists() and local_path.stat().st_size > 0:
+                    downloaded = True
+                    break
+            except Exception:
+                continue
+        if downloaded:
+            images.append(local_path)
+        else:
+            print(f"[Arbiter] Could not download {fname} for folder {folder_id}")
 
-    except ImportError:
-        pass  # GCS not available — use local only
-    except Exception as gcs_err:
-        print(f"[Arbiter] GCS image listing error: {gcs_err}")
-    
     return sorted(images, key=lambda x: x.name)
+
+
+def _get_per_folder_image_counts() -> dict:
+    """
+    Returns per-folder image counts for the arbiter.
+    { folder_id: { "folder_name": str, "total": int, "filenames": set } }
+    """
+    from app.database import SessionLocal
+    from app.models.drive_folder import DriveFolder
+
+    db = SessionLocal()
+    try:
+        db_images = db.query(
+            ImageModel.source_drive_folder_id,
+            ImageModel.filename,
+        ).filter(
+            ImageModel.is_duplicate == False,  # noqa: E712
+        ).all()
+
+        folders_db = {f.folder_id: f.folder_name or f.folder_id[:16] + "..."
+                      for f in db.query(DriveFolder).all()}
+    finally:
+        db.close()
+
+    result = {}
+    for folder_id, fname in db_images:
+        fid = folder_id or "__unassigned__"
+        if fid not in result:
+            result[fid] = {
+                "folder_name": folders_db.get(fid, fid[:16] + "..."),
+                "total": 0,
+                "filenames": set(),
+            }
+        result[fid]["total"] += 1
+        result[fid]["filenames"].add(fname)
+    return result
 
 CATEGORIES = ["lighting", "viewpoint", "environment", "occlusion", "activity", "multipet"]
 
@@ -509,6 +504,24 @@ def run_arbiter_background():
         arbiter_status["total"] = len(image_files)
         arbiter_status["processed"] = len(processed_names)
         arbiter_status["current_step"] = "running"
+        arbiter_status["already_classified"] = len(processed_names)
+        arbiter_status["pending_this_run"] = len(to_process)
+        arbiter_status["processed_this_run"] = 0
+
+        # Build per-folder tracking
+        per_folder = _get_per_folder_image_counts()
+        folder_progress = {}
+        for fid, info in per_folder.items():
+            classified_in_folder = len(info["filenames"] & processed_names)
+            pending_in_folder = info["total"] - classified_in_folder
+            folder_progress[fid] = {
+                "folder_name": info["folder_name"],
+                "total": info["total"],
+                "classified": classified_in_folder,
+                "pending": pending_in_folder,
+                "status": "completed" if pending_in_folder == 0 else "running",
+            }
+        arbiter_status["folder_progress"] = folder_progress
 
         results = existing.get("results", [])
         results_lock = threading.Lock()
@@ -582,6 +595,19 @@ def run_arbiter_background():
                     arbiter_status["failed_count"] = len(failed_images)
                     arbiter_status["current_image"] = result.get("image", "")
                     count += 1
+                    arbiter_status["processed_this_run"] = count
+
+                    # Update per-folder progress
+                    img_name = result.get("image", "")
+                    fp = arbiter_status.get("folder_progress", {})
+                    for fid, finfo in fp.items():
+                        pf_counts = per_folder.get(fid, {})
+                        if img_name in pf_counts.get("filenames", set()):
+                            finfo["classified"] += 1
+                            finfo["pending"] = max(0, finfo["pending"] - 1)
+                            if finfo["pending"] == 0:
+                                finfo["status"] = "completed"
+                            break
 
                     # Save periodically
                     if count % batch_size == 0 or count == len(to_process):
@@ -772,7 +798,8 @@ def _get_actionable_message(dominant_type: str, total_errors: int) -> str:
 
 # ─── Request / Response Models ────────────────────────────────
 class ArbiterStartRequest(BaseModel):
-    reset: bool = False   # If True, clear previous results and start fresh
+    reprocess_folder_ids: Optional[List[str]] = None   # Re-classify all images in these folders
+    reprocess_image_names: Optional[List[str]] = None  # Re-classify specific images by filename
 
 
 # ─── API Endpoints ────────────────────────────────────────────
@@ -790,6 +817,32 @@ def get_arbiter_config(
         ImageModel.is_duplicate == False,  # noqa: E712
     ).scalar() or 0
 
+    # Per-folder breakdown and classification status
+    per_folder = _get_per_folder_image_counts()
+
+    # Check which images are already classified
+    already_classified = set()
+    if RESULTS_FILE.exists():
+        try:
+            with open(RESULTS_FILE) as f:
+                existing = json.load(f)
+            already_classified = {r["image"] for r in existing.get("results", [])}
+        except Exception:
+            pass
+
+    folder_stats = []
+    for fid, info in per_folder.items():
+        classified_in_folder = len(info["filenames"] & already_classified)
+        folder_stats.append({
+            "folder_id": fid,
+            "folder_name": info["folder_name"],
+            "total": info["total"],
+            "classified": classified_in_folder,
+            "pending": info["total"] - classified_in_folder,
+            "status": "completed" if classified_in_folder == info["total"] else
+                      "partial" if classified_in_folder > 0 else "pending",
+        })
+
     return {
         "gemini_model": config.get("GEMINI_MODEL", "gemini-2.5-pro"),
         "gemini_provider": config.get("GEMINI_PROVIDER", "google"),
@@ -802,7 +855,10 @@ def get_arbiter_config(
         "timeout_seconds": int(config.get("TIMEOUT_SECONDS", "120")),
         "pipeline_version": config.get("PIPELINE_VERSION", "1"),
         "available_images": image_count,
+        "already_classified": len(already_classified),
+        "pending_images": image_count - len(already_classified),
         "categories": CATEGORIES,
+        "folder_stats": folder_stats,
     }
 
 
@@ -829,11 +885,43 @@ def start_arbiter(
     if not _get_all_final_images():
         raise HTTPException(status_code=400, detail="No final output images found. Run the master pipeline first.")
 
-    if request.reset:
+    # Collect images to reprocess — from folder IDs and/or individual image names
+    reprocess_names = set(request.reprocess_image_names or [])
+
+    # Resolve folder IDs → image filenames
+    if request.reprocess_folder_ids:
+        per_folder = _get_per_folder_image_counts()
+        for fid in request.reprocess_folder_ids:
+            if fid in per_folder:
+                reprocess_names |= per_folder[fid]["filenames"]
+
+    if reprocess_names:
+        # Remove selected images from existing results so they get re-classified
         if RESULTS_FILE.exists():
-            RESULTS_FILE.unlink()
+            try:
+                with open(RESULTS_FILE) as f:
+                    existing = json.load(f)
+                existing["results"] = [
+                    r for r in existing.get("results", [])
+                    if r.get("image") not in reprocess_names
+                ]
+                with open(RESULTS_FILE, "w") as f:
+                    json.dump(existing, f, indent=2)
+            except Exception:
+                pass
+        # Also remove from failed list
         if ERRORS_FILE.exists():
-            ERRORS_FILE.unlink()
+            try:
+                with open(ERRORS_FILE) as f:
+                    existing_errors = json.load(f)
+                existing_errors["failed"] = [
+                    e for e in existing_errors.get("failed", [])
+                    if e.get("image") not in reprocess_names
+                ]
+                with open(ERRORS_FILE, "w") as f:
+                    json.dump(existing_errors, f, indent=2)
+            except Exception:
+                pass
 
     # Reset status
     arbiter_status = {
@@ -852,7 +940,12 @@ def start_arbiter(
 
     background_tasks.add_task(run_arbiter_background)
 
-    return {"message": "Arbiter classifier started", "status": arbiter_status}
+    folder_ids = request.reprocess_folder_ids or []
+    msg = (
+        f"Arbiter started — re-classifying {len(reprocess_names)} image(s) from {len(folder_ids)} folder(s)"
+        if reprocess_names else "Arbiter classifier started"
+    )
+    return {"message": msg, "status": arbiter_status}
 
 
 @router.post("/stop")

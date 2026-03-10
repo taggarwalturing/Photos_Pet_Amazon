@@ -479,16 +479,8 @@ def import_images_from_pipeline():
         print(f"   • Clean images (no faces): {total_clean}")
         print(f"   • Total in database: {len(existing_filenames)}")
         
-        # Cleanup local files after successful GCS upload
-        bucket_name = os.getenv("GCS_BUCKET_NAME")
-        if bucket_name and (total_new > 0 or total_updated > 0):
-            try:
-                if folders_dir.exists():
-                    for folder_dir in sorted([d for d in folders_dir.iterdir() if d.is_dir()]):
-                        shutil.rmtree(str(folder_dir), ignore_errors=True)
-                    print(f"🧹 Cleaned up local pipeline workspace (files now in GCS)")
-            except Exception as cleanup_err:
-                print(f"⚠️  Cleanup warning: {cleanup_err}")
+        # NOTE: Workspace cleanup is handled by the pipeline runner AFTER
+        # stats have been read from local metadata files (gcs_metadata.json, etc.)
         
         return total_new
         
