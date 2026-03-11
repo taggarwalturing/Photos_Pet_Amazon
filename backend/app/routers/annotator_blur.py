@@ -28,8 +28,10 @@ from app.utils.gcs import (
 
 router = APIRouter(prefix="/annotator/blur", tags=["Annotator Blur"])
 
-# Cache directory (same as main.py proxy)
+# Cache directories (same as main.py proxy)
 CACHE_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "image_cache")
+VIEW_DIR = os.path.join(CACHE_DIR, "view")
+THUMB_DIR = os.path.join(CACHE_DIR, "thumbnails")
 
 # Output folder for manually blurred images
 from app.utils import get_pipeline_workspace as _get_pw
@@ -40,6 +42,65 @@ def _blur_output_dir():
 
 
 BLUR_OUTPUT_DIR = _blur_output_dir()
+
+
+def _invalidate_all_caches(image_id: int, new_bytes: bytes = None):
+    """
+    Invalidate (or replace) all cached versions of an image: full, view, thumb.
+    If new_bytes is provided, regenerate all tiers with the new image data.
+    If None, just delete all cached files.
+    """
+    from PIL import Image as PILImage
+    import io as _io
+
+    for d in (CACHE_DIR, VIEW_DIR, THUMB_DIR):
+        os.makedirs(d, exist_ok=True)
+
+    if new_bytes is None:
+        # Just delete all cached files
+        for d in (CACHE_DIR, VIEW_DIR, THUMB_DIR):
+            p = os.path.join(d, f"{image_id}.jpg")
+            if os.path.exists(p):
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
+        return
+
+    # Write full-res
+    with open(os.path.join(CACHE_DIR, f"{image_id}.jpg"), "wb") as f:
+        f.write(new_bytes)
+
+    # Generate and write view (1200px)
+    try:
+        pil = PILImage.open(_io.BytesIO(new_bytes))
+        if pil.mode in ('RGBA', 'P'):
+            pil = pil.convert('RGB')
+        pil.thumbnail((1200, 1200), PILImage.LANCZOS)
+        buf = _io.BytesIO()
+        pil.save(buf, format='JPEG', quality=85)
+        with open(os.path.join(VIEW_DIR, f"{image_id}.jpg"), "wb") as f:
+            f.write(buf.getvalue())
+    except Exception:
+        # If view generation fails, at least delete stale cache
+        p = os.path.join(VIEW_DIR, f"{image_id}.jpg")
+        if os.path.exists(p):
+            os.remove(p)
+
+    # Generate and write thumbnail (400px)
+    try:
+        pil = PILImage.open(_io.BytesIO(new_bytes))
+        if pil.mode in ('RGBA', 'P'):
+            pil = pil.convert('RGB')
+        pil.thumbnail((400, 400), PILImage.LANCZOS)
+        buf = _io.BytesIO()
+        pil.save(buf, format='JPEG', quality=70)
+        with open(os.path.join(THUMB_DIR, f"{image_id}.jpg"), "wb") as f:
+            f.write(buf.getvalue())
+    except Exception:
+        p = os.path.join(THUMB_DIR, f"{image_id}.jpg")
+        if os.path.exists(p):
+            os.remove(p)
 
 
 class BlurRegion(BaseModel):
@@ -163,11 +224,8 @@ def apply_manual_blur(
                 f.write(blurred_bytes)
             image.gcs_annotated_path = f"annotated_blur/{blurred_filename}"
 
-        # 5. Update the image cache so the proxy serves the blurred version
-        cache_path = os.path.join(CACHE_DIR, f"{image.id}.jpg")
-        os.makedirs(CACHE_DIR, exist_ok=True)
-        with open(cache_path, "wb") as f:
-            f.write(blurred_bytes)
+        # 5. Update ALL image caches (full, view, thumb) so proxy serves blurred version
+        _invalidate_all_caches(image.id, blurred_bytes)
 
         # 6. Update database
         image.manually_blurred = True
@@ -306,21 +364,16 @@ def remove_blur(
         except Exception as e:
             print(f"Warning: Could not delete blurred file: {e}")
 
-    # 3. Replace cache with the original image
-    cache_path = os.path.join(CACHE_DIR, f"{image.id}.jpg")
+    # 3. Replace ALL caches (full, view, thumb) with the original image
     import cv2
     import numpy as np
     arr = np.frombuffer(original_bytes, dtype=np.uint8)
     img_cv = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if img_cv is not None:
         _, buf = cv2.imencode(".jpg", img_cv, [cv2.IMWRITE_JPEG_QUALITY, 90])
-        os.makedirs(CACHE_DIR, exist_ok=True)
-        with open(cache_path, "wb") as f:
-            f.write(buf.tobytes())
+        _invalidate_all_caches(image.id, buf.tobytes())
     else:
-        os.makedirs(CACHE_DIR, exist_ok=True)
-        with open(cache_path, "wb") as f:
-            f.write(original_bytes)
+        _invalidate_all_caches(image.id, original_bytes)
 
     # 4. Upload restored (clean) version to GCS annotated/clean/
     if folder_id != "unknown" and image.filename:
@@ -423,21 +476,16 @@ def restore_image(
             detail="Image not found locally or on GCS. Cannot restore.",
         )
 
-    # Write restored version to cache
-    cache_path = os.path.join(CACHE_DIR, f"{image.id}.jpg")
+    # Write restored version to ALL caches (full, view, thumb)
     import cv2
     import numpy as np
     arr = np.frombuffer(restored_bytes, dtype=np.uint8)
     img_cv = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if img_cv is not None:
         _, buf = cv2.imencode(".jpg", img_cv, [cv2.IMWRITE_JPEG_QUALITY, 90])
-        os.makedirs(CACHE_DIR, exist_ok=True)
-        with open(cache_path, "wb") as f:
-            f.write(buf.tobytes())
+        _invalidate_all_caches(image.id, buf.tobytes())
     else:
-        os.makedirs(CACHE_DIR, exist_ok=True)
-        with open(cache_path, "wb") as f:
-            f.write(restored_bytes)
+        _invalidate_all_caches(image.id, restored_bytes)
 
     image.is_using_processed = True
     image.is_manually_modified = True

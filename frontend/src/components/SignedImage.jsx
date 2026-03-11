@@ -24,15 +24,18 @@ export default function SignedImage({ imageId, folder, refreshKey, fallbackToPro
       return;
     }
 
+    // Cache-buster for refreshKey changes (e.g. after blur apply/undo)
+    const bust = refreshKey ? `?t=${refreshKey}` : '';
+
     if (thumbnail) {
       // Fast path: 400px thumbnail, no signed-url round-trip
-      if (mountedRef.current) setSrc(getThumbUrl(imageId));
+      if (mountedRef.current) setSrc(getThumbUrl(imageId) + bust);
       return;
     }
 
     if (view) {
       // Medium path: 1200px view image, no signed-url round-trip
-      if (mountedRef.current) setSrc(getViewUrl(imageId));
+      if (mountedRef.current) setSrc(getViewUrl(imageId) + bust);
       return;
     }
 
