@@ -1,7 +1,24 @@
 import io
 import cv2
 import numpy as np
+from PIL import Image as PILImage, ImageOps
 from roi_blur import blur_boxes
+
+
+def _decode_with_exif(image_bytes: bytes):
+    """
+    Decode image bytes to a cv2 (BGR) array, respecting EXIF orientation.
+    Browsers auto-rotate based on EXIF, so we must do the same server-side
+    to ensure blur coordinates match what the user saw.
+    """
+    pil_img = PILImage.open(io.BytesIO(image_bytes))
+    # Apply EXIF orientation (transpose if needed)
+    pil_img = ImageOps.exif_transpose(pil_img)
+    if pil_img.mode == 'RGBA':
+        pil_img = pil_img.convert('RGB')
+    # Convert PIL (RGB) → cv2 (BGR)
+    arr = np.array(pil_img)
+    return cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
 
 
 def blur_image_regions(image_bytes: bytes, regions: list[dict], ksize: int = 151, sigma: float = 80.0) -> bytes:
@@ -21,8 +38,13 @@ def blur_image_regions(image_bytes: bytes, regions: list[dict], ksize: int = 151
     Returns:
         JPEG bytes of the image with blurred regions.
     """
-    arr = np.frombuffer(image_bytes, dtype=np.uint8)
-    img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
+    # Use PIL to decode with EXIF orientation applied (matches browser display)
+    try:
+        img = _decode_with_exif(image_bytes)
+    except Exception:
+        # Fallback to raw cv2 decode if PIL fails
+        arr = np.frombuffer(image_bytes, dtype=np.uint8)
+        img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     if img is None:
         raise ValueError("Could not decode image")
 
