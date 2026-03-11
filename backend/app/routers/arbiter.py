@@ -48,47 +48,63 @@ RESULTS_FILE = RESULTS_DIR / "final_images_results.json"
 ERRORS_FILE = RESULTS_DIR / "failed_images.json"
 
 
-def _get_all_final_images() -> list:
+def _get_image_metadata_list() -> list:
     """
-    DB-driven: get unique (non-duplicate) images, download from GCS if needed.
+    DB-driven: get lightweight metadata for all unique (non-duplicate) images.
+    Does NOT download anything — just returns a list of dicts with info needed
+    to download on demand.
 
-    Returns a sorted list of Path objects (local paths to images).
+    Returns sorted list of dicts: [{"filename": str, "folder_id": str, "gcs_folder": str}, ...]
     """
     from app.database import SessionLocal
-    from app.utils.gcs import download_blob_to_file, gcs_path as _gcs_path
 
     db = SessionLocal()
     try:
-        # Only fetch unique (non-duplicate) images from DB
-        db_images = db.query(ImageModel).filter(
+        db_images = db.query(
+            ImageModel.filename,
+            ImageModel.source_folder_id,
+            ImageModel.gcs_folder,
+        ).filter(
             ImageModel.is_duplicate == False,  # noqa: E712
         ).all()
     finally:
         db.close()
 
-    if not db_images:
-        return []
+    metadata = []
+    for fname, folder_id, gcs_folder in db_images:
+        if not fname:
+            continue
+        metadata.append({
+            "filename": fname,
+            "folder_id": folder_id or "",
+            "gcs_folder": gcs_folder or "clean",
+        })
+    return sorted(metadata, key=lambda x: x["filename"])
+
+
+def _download_batch(batch_meta: list) -> list:
+    """
+    Download a batch of images from GCS on demand.
+    Returns list of Path objects (local paths to downloaded images).
+    Skips images that are already cached locally.
+    """
+    from app.utils.gcs import download_blob_to_file, gcs_path as _gcs_path
 
     gcs_cache_dir = PIPELINE_WORKSPACE / "_gcs_arbiter_cache"
     gcs_cache_dir.mkdir(parents=True, exist_ok=True)
 
-    images = []
-    for img in db_images:
-        fname = img.filename
-        if not fname:
-            continue
+    paths = []
+    for meta in batch_meta:
+        fname = meta["filename"]
         local_path = gcs_cache_dir / fname
         if local_path.exists() and local_path.stat().st_size > 0:
-            images.append(local_path)
+            paths.append(local_path)
             continue
         # Download from GCS
-        folder_id = img.source_folder_id or ""
-        gcs_folder = img.gcs_folder or "clean"
-        # Try annotated sub-stage first, then input
         downloaded = False
-        for stage in (gcs_folder, "input"):
+        for stage in (meta["gcs_folder"], "input"):
             try:
-                blob_path = _gcs_path(folder_id, fname, stage)
+                blob_path = _gcs_path(meta["folder_id"], fname, stage)
                 download_blob_to_file(blob_path, str(local_path))
                 if local_path.exists() and local_path.stat().st_size > 0:
                     downloaded = True
@@ -96,11 +112,26 @@ def _get_all_final_images() -> list:
             except Exception:
                 continue
         if downloaded:
-            images.append(local_path)
+            paths.append(local_path)
         else:
-            print(f"[Arbiter] Could not download {fname} for folder {folder_id}")
+            print(f"[Arbiter] Could not download {fname} for folder {meta['folder_id']}")
+    return paths
 
-    return sorted(images, key=lambda x: x.name)
+
+def _cleanup_batch_cache(batch_paths: list, keep_cache: bool = False):
+    """
+    Remove downloaded images from local cache after a batch is processed.
+    This keeps disk usage bounded for large datasets (50K+).
+    Set keep_cache=True to keep files (useful for small datasets).
+    """
+    if keep_cache:
+        return
+    for p in batch_paths:
+        try:
+            if p.exists():
+                p.unlink()
+        except Exception:
+            pass
 
 
 def _get_per_folder_image_counts() -> dict:
@@ -479,10 +510,10 @@ def run_arbiter_background():
         workers = int(config.get("PARALLEL_WORKERS", "5"))
         batch_size = int(config.get("BATCH_SIZE", "50"))
 
-        # Collect images from all per-folder workspaces + legacy
-        image_files = _get_all_final_images()
+        # ── Collect image metadata (lightweight — no downloads) ──
+        all_image_meta = _get_image_metadata_list()
 
-        if not image_files:
+        if not all_image_meta:
             arbiter_status["is_running"] = False
             arbiter_status["current_step"] = "failed"
             arbiter_status["errors"].append("No images found in any final output folder")
@@ -499,13 +530,13 @@ def run_arbiter_background():
                 pass
 
         processed_names = {r["image"] for r in existing.get("results", [])}
-        to_process = [p for p in image_files if p.name not in processed_names]
+        pending_meta = [m for m in all_image_meta if m["filename"] not in processed_names]
 
-        arbiter_status["total"] = len(image_files)
+        arbiter_status["total"] = len(all_image_meta)
         arbiter_status["processed"] = len(processed_names)
         arbiter_status["current_step"] = "running"
         arbiter_status["already_classified"] = len(processed_names)
-        arbiter_status["pending_this_run"] = len(to_process)
+        arbiter_status["pending_this_run"] = len(pending_meta)
         arbiter_status["processed_this_run"] = 0
 
         # Build per-folder tracking
@@ -524,7 +555,6 @@ def run_arbiter_background():
         arbiter_status["folder_progress"] = folder_progress
 
         results = existing.get("results", [])
-        results_lock = threading.Lock()
 
         # Load existing errors for resume
         failed_images = []
@@ -536,11 +566,7 @@ def run_arbiter_background():
             except json.JSONDecodeError:
                 pass
 
-        # Remove previously-failed images from the skip list (so they get retried)
-        previously_failed_names = {f["image"] for f in failed_images}
-
-        if not to_process:
-            # Check if there are failed images that need to be tracked
+        if not pending_meta:
             arbiter_status["is_running"] = False
             arbiter_status["current_step"] = "completed"
             arbiter_status["completed_at"] = datetime.now().isoformat()
@@ -548,7 +574,11 @@ def run_arbiter_background():
             return
 
         # Clear previously-failed entries that are being retried
-        failed_images = [f for f in failed_images if f["image"] not in {p.name for p in to_process}]
+        pending_filenames = {m["filename"] for m in pending_meta}
+        failed_images = [f for f in failed_images if f["image"] not in pending_filenames]
+
+        # For datasets under 1000 images, keep cache; for larger ones, clean up after each batch
+        keep_cache = len(all_image_meta) < 1000
 
         def process_one(img_path):
             if _stop_event.is_set():
@@ -564,22 +594,40 @@ def run_arbiter_background():
                 "details": result["predictions"],
             }
 
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = {executor.submit(process_one, p): p for p in to_process}
-            count = 0
+        # ── Process in true bounded batches ──────────────────────
+        import gc
+        total_count = 0  # count of images processed this run (across all batches)
 
-            for future in as_completed(futures):
-                if _stop_event.is_set():
-                    break
+        for batch_start in range(0, len(pending_meta), batch_size):
+            if _stop_event.is_set():
+                break
 
-                result = future.result()
-                if result is None:
-                    continue
+            batch_meta = pending_meta[batch_start:batch_start + batch_size]
+            batch_num = (batch_start // batch_size) + 1
+            total_batches = (len(pending_meta) + batch_size - 1) // batch_size
+            arbiter_status["current_step"] = f"running (batch {batch_num}/{total_batches})"
 
-                with results_lock:
+            # Download only this batch from GCS
+            batch_paths = _download_batch(batch_meta)
+            if not batch_paths:
+                print(f"[ARBITER] Batch {batch_num}: no images downloaded, skipping")
+                continue
+
+            batch_results = []
+
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                futures = {executor.submit(process_one, p): p for p in batch_paths}
+
+                for future in as_completed(futures):
+                    if _stop_event.is_set():
+                        break
+
+                    result = future.result()
+                    if result is None:
+                        continue
+
                     if "error" in result:
                         arbiter_status["errors"].append(f"{result['image']}: {result['error']}")
-                        # Persist to failed images list
                         failed_images.append({
                             "image": result["image"],
                             "error": result["error"],
@@ -588,14 +636,15 @@ def run_arbiter_background():
                         })
                     else:
                         results.append(result)
+                        batch_results.append(result)
                         arbiter_status["agreements"] += result.get("agreement_count", 0)
                         arbiter_status["arbiter_calls"] += result.get("arbiter_calls", 0)
 
+                    total_count += 1
                     arbiter_status["processed"] = len(results)
                     arbiter_status["failed_count"] = len(failed_images)
                     arbiter_status["current_image"] = result.get("image", "")
-                    count += 1
-                    arbiter_status["processed_this_run"] = count
+                    arbiter_status["processed_this_run"] = total_count
 
                     # Update per-folder progress
                     img_name = result.get("image", "")
@@ -609,17 +658,21 @@ def run_arbiter_background():
                                 finfo["status"] = "completed"
                             break
 
-                    # Save periodically
-                    if count % batch_size == 0 or count == len(to_process):
-                        _save_results_and_errors(results, failed_images, cfg)
-                        # Also save to database
-                        _save_predictions_to_db(results[-batch_size:])
+            # ── End of batch: save to disk + DB, then cleanup ──
+            _save_results_and_errors(results, failed_images, cfg)
+            if batch_results:
+                _save_predictions_to_db(batch_results)
+            _cleanup_batch_cache(batch_paths, keep_cache=keep_cache)
 
-        # Final save
+            # Force garbage collection to free memory between batches
+            del batch_paths, batch_results, futures
+            gc.collect()
+
+            print(f"[ARBITER] Batch {batch_num}/{total_batches} done. "
+                  f"Total: {len(results)} classified, {len(failed_images)} failed.")
+
+        # Final save (catches any edge cases)
         _save_results_and_errors(results, failed_images, cfg)
-
-        # Save all results to database (final pass to catch any missed)
-        _save_predictions_to_db(results)
 
         arbiter_status["is_running"] = False
         arbiter_status["failed_count"] = len(failed_images)
@@ -931,7 +984,7 @@ def start_arbiter(
     if arbiter_status["is_running"]:
         raise HTTPException(status_code=400, detail="Arbiter pipeline is already running")
 
-    if not _get_all_final_images():
+    if not _get_image_metadata_list():
         raise HTTPException(status_code=400, detail="No final output images found. Run the master pipeline first.")
 
     # Collect images to reprocess — from folder IDs and/or individual image names
@@ -1292,11 +1345,12 @@ def run_retry_failed_background(failed_names: list):
         }
         workers = int(config.get("PARALLEL_WORKERS", "5"))
 
-        # Resolve failed image names to actual file paths
-        supported_exts = {".jpg", ".jpeg", ".png"}
+        # Resolve failed image names to metadata, then download on demand
         failed_set = set(failed_names)
-        all_images = _get_all_final_images()
-        to_retry = [p for p in all_images if p.name in failed_set]
+        all_meta = _get_image_metadata_list()
+        retry_meta = [m for m in all_meta if m["filename"] in failed_set]
+        retry_paths = _download_batch(retry_meta)
+        to_retry = retry_paths
 
         if not to_retry:
             arbiter_status["is_running"] = False
