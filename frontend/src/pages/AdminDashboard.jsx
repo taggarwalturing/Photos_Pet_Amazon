@@ -203,17 +203,11 @@ function UsersTab() {
 
     setAssigning(true);
     try {
-      // Save the count first if it was edited
-      if (count !== null) {
-        await api.put(`/admin/users/${userId}`, { assigned_image_count: count });
-      }
-      // Then run the full sequential assignment for all annotators
-      const res = await api.post('/admin/assign-images');
+      // Call per-annotator assignment endpoint (only affects this annotator)
+      const queryCount = count !== null ? `?count=${count}` : '';
+      const res = await api.post(`/admin/assign-images/${userId}${queryCount}`);
       const data = res.data;
-      const thisUser = data.assignments.find(a => a.annotator_id === userId);
-      const msg = thisUser
-        ? `✅ Assigned ${thisUser.assigned} images (${thisUser.image_id_range})`
-        : '✅ Assignment updated (0 images for this annotator)';
+      const msg = `✅ Assigned ${data.assigned} images to ${data.username} (${data.image_id_range})`;
       alert(msg);
       setEditingImageCount(prev => { const copy = { ...prev }; delete copy[userId]; return copy; });
       load();

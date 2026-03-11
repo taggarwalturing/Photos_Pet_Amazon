@@ -332,82 +332,68 @@ def update_user(
     )
 
 
-@router.post("/assign-images")
-def assign_images_to_annotators(
+@router.post("/assign-images/{user_id}")
+def assign_images_to_single_annotator(
+    user_id: int,
     db: Session = Depends(get_db),
     _admin: User = Depends(require_admin),
+    count: int = Query(None, description="Number of images to assign (overrides stored count)"),
 ):
     """
-    Assign images to annotators in continuous sequential blocks based on
-    each annotator's `assigned_image_count`.
+    Assign images to a SINGLE annotator without touching other annotators'
+    assignments.
 
     Algorithm:
-    1. Get all active annotators (role=annotator, is_active=True) ordered by id.
-    2. Get all assignable images (non-duplicate, ordered by id).
-    3. Clear all existing assignments.
-    4. For each annotator, assign the next N images in sequence.
-
-    Only annotators with assigned_image_count > 0 get images.
-    Images beyond the total assigned count remain unassigned (invisible to all annotators).
+    1. Clear only THIS annotator's current assignments.
+    2. Get unassigned images (not assigned to any other annotator) ordered by id.
+    3. Assign the first `count` unassigned images to this annotator.
     """
-    # Get active annotators ordered by ID, only those with an assignment count > 0
-    annotators = (
-        db.query(User)
-        .filter(
-            User.role == "annotator",
-            User.is_active == True,  # noqa: E712
-            User.assigned_image_count > 0,
-        )
-        .order_by(User.id)
-        .all()
-    )
+    annotator = db.query(User).filter(User.id == user_id, User.role == "annotator").first()
+    if not annotator:
+        raise HTTPException(status_code=404, detail="Annotator not found")
 
-    # Get all assignable images (non-duplicate) ordered by ID
-    all_images = (
+    # Update stored count if provided
+    if count is not None:
+        annotator.assigned_image_count = count
+    assign_count = annotator.assigned_image_count or 0
+
+    # Clear only THIS annotator's current assignments
+    cleared = (
         db.query(Image)
-        .filter(Image.is_duplicate == False)  # noqa: E712
-        .order_by(Image.id)
-        .all()
+        .filter(Image.assigned_to == annotator.id)
+        .update({"assigned_to": None}, synchronize_session="fetch")
     )
 
-    # Clear all existing assignments first
-    db.query(Image).filter(Image.assigned_to.isnot(None)).update(
-        {"assigned_to": None}, synchronize_session="fetch"
-    )
+    assigned_ids = []
+    if assign_count > 0:
+        # Get unassigned, non-duplicate images ordered by ID
+        unassigned_images = (
+            db.query(Image)
+            .filter(
+                Image.is_duplicate == False,  # noqa: E712
+                Image.assigned_to.is_(None),
+            )
+            .order_by(Image.id)
+            .limit(assign_count)
+            .all()
+        )
 
-    # Assign in sequential blocks
-    cursor = 0
-    assignment_summary = []
-    for annotator in annotators:
-        count = annotator.assigned_image_count or 0
-        if count <= 0:
-            continue
-
-        # Slice the next `count` images for this annotator
-        end = min(cursor + count, len(all_images))
-        assigned_ids = []
-        for i in range(cursor, end):
-            all_images[i].assigned_to = annotator.id
-            assigned_ids.append(all_images[i].id)
-
-        assignment_summary.append({
-            "annotator_id": annotator.id,
-            "username": annotator.username,
-            "requested": count,
-            "assigned": len(assigned_ids),
-            "image_id_range": f"{assigned_ids[0]}–{assigned_ids[-1]}" if assigned_ids else "none",
-        })
-
-        cursor = end
+        for img in unassigned_images:
+            img.assigned_to = annotator.id
+            assigned_ids.append(img.id)
 
     db.commit()
 
-    unassigned_count = len(all_images) - cursor
+    id_range = f"{assigned_ids[0]}–{assigned_ids[-1]}" if assigned_ids else "none"
+    print(f"[ADMIN] Assigned {len(assigned_ids)} images to {annotator.username} "
+          f"(requested {assign_count}, cleared {cleared})")
+
     return {
-        "total_images": len(all_images),
-        "total_assigned": cursor,
-        "unassigned": unassigned_count,
-        "assignments": assignment_summary,
+        "annotator_id": annotator.id,
+        "username": annotator.username,
+        "requested": assign_count,
+        "assigned": len(assigned_ids),
+        "image_id_range": id_range,
     }
 
 
