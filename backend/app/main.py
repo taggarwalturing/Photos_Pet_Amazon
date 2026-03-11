@@ -160,6 +160,34 @@ def _migrate():
                     conn.execute(text("ALTER TABLE images RENAME COLUMN source_folder_id TO source_folder_id"))
                 except Exception:
                     pass
+        # Drop deprecated columns from old schema
+        deprecated_columns = [
+            "compliance_processed", "processing_log", "original_url",
+            "source_drive_folder_id", "image_path", "arbiter_classified_at",
+            "annotated_blur_url", "restored_by_annotator_id",
+            "restored_at_annotator", "original_format", "parent_image",
+        ]
+        # Re-read columns after adds
+        existing_img_after = {c["name"] for c in inspect(engine).get_columns("images")}
+        for old_col in deprecated_columns:
+            if old_col in existing_img_after:
+                try:
+                    conn.execute(text(f"ALTER TABLE images DROP COLUMN IF EXISTS {old_col}"))
+                    print(f"[MIGRATE] Dropped deprecated column: {old_col}")
+                except Exception as e:
+                    print(f"[MIGRATE] Warning: could not drop {old_col}: {e}")
+
+        # Relax NOT NULL constraints that don't match the model
+        for col_relax in ["url", "is_improper", "human_faces_detected",
+                          "is_using_processed", "manually_blurred",
+                          "is_blurred_annotator", "is_restore_annotator",
+                          "is_manually_modified", "is_programmatically_blurred",
+                          "is_duplicate"]:
+            try:
+                conn.execute(text(f"ALTER TABLE images ALTER COLUMN {col_relax} DROP NOT NULL"))
+            except Exception:
+                pass
+
         print("[MIGRATE] Checked images table columns")
 
     # ── Performance indexes ──
