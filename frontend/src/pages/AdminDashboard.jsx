@@ -521,235 +521,6 @@ function UsersTab() {
   );
 }
 
-// ─── Progress Tab ─────────────────────────────────────────────
-
-function ProgressTab() {
-  const [progress, setProgress] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    api.get('/admin/progress').then((res) => {
-      setProgress(res.data);
-      setLoading(false);
-    });
-  }, []);
-
-  if (loading) return <LoadingSkeleton rows={6} />;
-
-  if (progress.length === 0) {
-    return (
-      <div className="py-16 text-center animate-fade-in">
-        <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-indigo-100 to-purple-100 rounded-2xl flex items-center justify-center">
-          <svg className="w-8 h-8 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
-        </div>
-        <p className="text-lg font-medium text-gray-700">No assignments yet</p>
-        <p className="text-sm text-gray-500 mt-1">Create annotators and assign categories to see progress here.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-6 animate-fade-in">
-      <h2 className="text-lg font-bold text-gray-900">Annotation Progress</h2>
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-gradient-to-r from-gray-50 to-gray-50/80 text-gray-600 text-left">
-              <th className="px-5 py-3.5 font-semibold">Turing ID</th>
-              <th className="px-5 py-3.5 font-semibold">Category</th>
-              <th className="px-5 py-3.5 font-semibold">Progress</th>
-              <th className="px-5 py-3.5 font-semibold">Completed</th>
-              <th className="px-5 py-3.5 font-semibold">Skipped</th>
-              <th className="px-5 py-3.5 font-semibold">Pending</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {progress.map((p, i) => {
-              const pct = p.total_images > 0 ? Math.round((p.completed / p.total_images) * 100) : 0;
-              return (
-                <tr key={i} className="hover:bg-gray-50/50 transition-colors">
-                  <td className="px-5 py-3">
-                    <div className="flex items-center gap-2">
-                      <Avatar name={p.annotator_username} size="sm" />
-                      <span className="font-medium text-gray-900">{p.annotator_username}</span>
-                    </div>
-                  </td>
-                  <td className="px-5 py-3"><Badge variant="primary">{p.category_name}</Badge></td>
-                  <td className="px-5 py-3 w-48">
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1 bg-gray-200 rounded-full h-2">
-                        <div className="bg-gradient-to-r from-indigo-500 to-purple-500 h-2 rounded-full animate-progress" style={{ width: `${pct}%` }} />
-                      </div>
-                      <span className="text-xs text-gray-500 w-10 text-right">{pct}%</span>
-                    </div>
-                  </td>
-                  <td className="px-5 py-3 text-green-600 font-medium">{p.completed}</td>
-                  <td className="px-5 py-3 text-amber-600">{p.skipped}</td>
-                  <td className="px-5 py-3 text-gray-500">{p.pending}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-// ─── Image Completion Tab ─────────────────────────────────────
-
-function ImageCompletionTab() {
-  const [images, setImages] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState('all'); // all, complete, incomplete
-  const [page, setPage] = useState(1);
-
-  useEffect(() => {
-    api.get('/admin/images/completion').then((res) => {
-      setImages(res.data);
-      setLoading(false);
-    });
-  }, []);
-
-  if (loading) return <LoadingSkeleton rows={4} />;
-
-  const filtered = images.filter((img) => {
-    if (filter === 'complete') return img.is_fully_complete;
-    if (filter === 'incomplete') return !img.is_fully_complete;
-    return true;
-  });
-
-  const totalComplete = images.filter((img) => img.is_fully_complete).length;
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const safePage = Math.min(page, totalPages);
-  const paginatedImages = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
-
-  const handleFilterChange = (f) => {
-    setFilter(f);
-    setPage(1);
-  };
-
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-lg font-semibold text-gray-900">Image Completion Status</h2>
-          <p className="text-sm text-gray-500 mt-1">
-            {totalComplete} / {images.length} images fully annotated across all categories
-          </p>
-        </div>
-        <div className="flex gap-2">
-          {['all', 'incomplete', 'complete'].map((f) => (
-            <button
-              key={f}
-              onClick={() => handleFilterChange(f)}
-              className={`px-3 py-1.5 text-xs font-medium rounded-full border transition cursor-pointer ${
-                filter === f
-                  ? 'bg-indigo-600 text-white border-indigo-600'
-                  : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400'
-              }`}
-            >
-              {f === 'all' ? `All (${images.length})` : f === 'complete' ? `Complete (${totalComplete})` : `Incomplete (${images.length - totalComplete})`}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Overall progress bar */}
-      <div className="bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500 rounded-xl p-5 text-white shadow-lg">
-        <div className="flex justify-between text-sm mb-3">
-          <span className="font-medium">Overall Completion</span>
-          <span className="text-lg font-bold">{images.length > 0 ? Math.round((totalComplete / images.length) * 100) : 0}%</span>
-        </div>
-        <div className="w-full bg-white/20 rounded-full h-3">
-          <div
-            className="bg-white h-3 rounded-full transition-all animate-progress"
-            style={{ width: `${images.length > 0 ? (totalComplete / images.length) * 100 : 0}%` }}
-          />
-        </div>
-        <p className="text-sm text-white/70 mt-2">{totalComplete} of {images.length} images fully annotated</p>
-      </div>
-
-      {/* Image cards */}
-      <div className="space-y-3">
-        {paginatedImages.map((img) => {
-          const pct = img.total_categories > 0
-            ? Math.round((img.completed_categories / img.total_categories) * 100)
-            : 0;
-          return (
-            <div key={img.image_id} className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="flex items-start gap-4">
-                <img
-                  src={getImageUrl(img.image_id)}
-                  alt={img.image_filename}
-                  className="w-20 h-20 rounded-lg object-cover shrink-0"
-                />
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium text-gray-900 text-sm">{img.image_filename}</span>
-                      {img.is_fully_complete ? (
-                        <span className="px-2 py-0.5 bg-green-100 text-green-700 text-xs font-medium rounded-full">
-                          Complete
-                        </span>
-                      ) : (
-                        <span className="px-2 py-0.5 bg-amber-100 text-amber-700 text-xs font-medium rounded-full">
-                          {img.completed_categories}/{img.total_categories} categories
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-xs text-gray-500">{pct}%</span>
-                  </div>
-                  <div className="w-full bg-gray-200 rounded-full h-1.5 mb-3">
-                    <div
-                      className={`h-1.5 rounded-full transition-all ${img.is_fully_complete ? 'bg-green-500' : 'bg-indigo-500'}`}
-                      style={{ width: `${pct}%` }}
-                    />
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {img.category_details.map((cat) => (
-                      <span
-                        key={cat.category_id}
-                        className={`inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium ${
-                          cat.status === 'completed'
-                            ? 'bg-green-50 text-green-700'
-                            : cat.status === 'skipped'
-                              ? 'bg-amber-50 text-amber-700'
-                              : cat.status === 'in_progress'
-                                ? 'bg-blue-50 text-blue-700'
-                                : cat.status === 'unassigned'
-                                  ? 'bg-red-50 text-red-500 border border-red-200 border-dashed'
-                                  : 'bg-gray-100 text-gray-500'
-                        }`}
-                      >
-                        {cat.status === 'completed' && (
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                        )}
-                        {cat.category_name}
-                        {cat.annotator_username && (
-                          <span className="opacity-60">({cat.annotator_username})</span>
-                        )}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Pagination */}
-      <div className="flex items-center justify-between text-sm text-gray-500">
-        <span>Showing {((safePage - 1) * PAGE_SIZE) + 1}–{Math.min(safePage * PAGE_SIZE, filtered.length)} of {filtered.length}</span>
-        <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />
-      </div>
-    </div>
-  );
-}
-
 // ─── Images Tab ───────────────────────────────────────────────
 
 function ImagesTab() {
@@ -3463,7 +3234,7 @@ export default function AdminDashboard() {
   const { user, logout } = useAuth();
 
   // Derive active tab from URL path: /admin/review -> 'review', /admin -> 'users'
-  const VALID_TABS = ['users', 'progress', 'review', 'completion', 'images', 'improper', 'edit-requests', 'annotator-stats', 'settings', 'pipeline', 'arbiter', 'compliance', 'photo-registry'];
+  const VALID_TABS = ['users', 'review', 'images', 'improper', 'edit-requests', 'annotator-stats', 'settings', 'pipeline', 'arbiter', 'compliance', 'photo-registry'];
   const pathSegment = location.pathname.replace(/^\/admin\/?/, '').split('/')[0] || 'users';
   const activeTab = VALID_TABS.includes(pathSegment) ? pathSegment : 'users';
 
@@ -3475,14 +3246,8 @@ export default function AdminDashboard() {
     { key: 'users', label: 'Users', icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
     )},
-    { key: 'progress', label: 'Progress', icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" /></svg>
-    )},
     { key: 'review', label: 'Review', icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-    )},
-    { key: 'completion', label: 'Image Status', icon: (
-      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
     )},
     { key: 'images', label: 'Images', icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" /></svg>
@@ -3571,9 +3336,7 @@ export default function AdminDashboard() {
       <main className="flex-1 min-w-0">
         <div className={activeTab === 'review' ? 'p-5' : 'p-6'}>
             {activeTab === 'users' && <UsersTab />}
-            {activeTab === 'progress' && <ProgressTab />}
             {activeTab === 'review' && <ReviewTab />}
-            {activeTab === 'completion' && <ImageCompletionTab />}
             {activeTab === 'images' && <ImagesTab />}
           {activeTab === 'improper' && <ImproperImagesTab />}
           {activeTab === 'edit-requests' && <EditRequestsTab />}
