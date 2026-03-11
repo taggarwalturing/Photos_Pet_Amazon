@@ -9,7 +9,7 @@ import json
 import os
 from pathlib import Path
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, UploadFile, File, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import text, func
@@ -271,6 +271,62 @@ async def reprocess_failed_images(
     return {
         "message": f"Reprocessing {len(images)} images",
         "image_ids": request.image_ids
+    }
+
+
+class ReprocessFolderRequest(BaseModel):
+    folder_id: str
+    reprocess_all: bool = False  # If True, reprocess ALL images; if False, only failed/pending
+
+
+@router.post("/reprocess-folder")
+async def reprocess_folder(
+    request: ReprocessFolderRequest,
+    background_tasks: BackgroundTasks,
+    admin: User = Depends(require_admin),
+    db: Session = Depends(get_db)
+):
+    """
+    Reprocess images in a specific folder.
+    By default only reprocesses failed/pending images.
+    Set reprocess_all=True to reprocess everything in the folder.
+    """
+    if pipeline_status["is_running"]:
+        raise HTTPException(status_code=400, detail="Cannot reprocess while pipeline is running")
+
+    if request.reprocess_all:
+        images = db.query(Image).filter(
+            Image.source_folder_id == request.folder_id,
+            Image.is_duplicate == False,  # noqa: E712
+        ).all()
+    else:
+        images = db.query(Image).filter(
+            Image.source_folder_id == request.folder_id,
+            Image.is_duplicate == False,  # noqa: E712
+            Image.pipeline_status.in_(["pending", "failed", "error", None]),
+        ).all()
+
+    if not images:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No {'images' if request.reprocess_all else 'failed/pending images'} found in folder {request.folder_id}"
+        )
+
+    image_ids = [img.id for img in images]
+
+    # Reset their processing status
+    for image in images:
+        image.pipeline_status = "pending"
+        image.compliance_status = "pending_reprocess"
+    db.commit()
+
+    # Start reprocessing in background
+    background_tasks.add_task(reprocess_images_background, image_ids, db)
+
+    return {
+        "message": f"Reprocessing {len(images)} images in folder {request.folder_id}",
+        "image_ids": image_ids,
+        "folder_id": request.folder_id,
     }
 
 
@@ -1116,26 +1172,68 @@ def run_pipeline_background(
 
 
 def reprocess_images_background(image_ids: List[int], db: Session):
-    """Reprocess specific images in the background."""
+    """
+    Reprocess specific images in the background.
+    
+    1. Marks images as pipeline_status='pending' in DB
+    2. Removes their files from deliverable/ so biometric step re-processes them
+    3. Creates a _reprocess_filenames.json marker so step3 knows to force-reprocess
+    4. Re-runs the pipeline for the affected folder(s)
+    """
     import subprocess
     import sys
     from pathlib import Path
     
     try:
-        # Get image files
         images = db.query(Image).filter(Image.id.in_(image_ids)).all()
         
-        # TODO: Implement selective reprocessing
-        # For now, just mark them for reprocessing and they'll be picked up
-        # in the next pipeline run
+        if not images:
+            print("[REPROCESS] No images found for given IDs")
+            return
         
+        # Group images by folder_id
+        folder_to_filenames: Dict[str, list] = {}
         for image in images:
             image.pipeline_status = "pending"
+            image.compliance_status = "pending_reprocess"
+            fid = image.source_folder_id or "unknown"
+            folder_to_filenames.setdefault(fid, []).append(image.filename)
         
         db.commit()
         
+        workspace = _get_pipeline_workspace()
+        
+        # For each folder, remove images from deliverable/ and write reprocess marker
+        for fid, filenames in folder_to_filenames.items():
+            folder_workspace = workspace / "folders" / fid
+            deliverable_dir = folder_workspace / "deliverable"
+            
+            # Remove from deliverable so biometric step re-processes them
+            removed = 0
+            for fname in filenames:
+                deliverable_file = deliverable_dir / fname
+                if deliverable_file.exists():
+                    try:
+                        deliverable_file.unlink()
+                        removed += 1
+                    except Exception as e:
+                        print(f"[REPROCESS] Could not remove {deliverable_file}: {e}")
+            
+            # Write reprocess marker file
+            marker_path = folder_workspace / "_reprocess_filenames.json"
+            try:
+                import json
+                with open(marker_path, "w") as f:
+                    json.dump(filenames, f)
+                print(f"[REPROCESS] Folder {fid}: removed {removed} from deliverable, "
+                      f"marked {len(filenames)} for reprocess")
+            except Exception as e:
+                print(f"[REPROCESS] Could not write reprocess marker: {e}")
+        
     except Exception as e:
         print(f"Reprocessing error: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 @router.post("/sync-status")

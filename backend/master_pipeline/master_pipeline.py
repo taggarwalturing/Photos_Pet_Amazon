@@ -844,6 +844,9 @@ class MasterPipeline:
         
         Reads from 01_downloaded_from_drive/ (skipping duplicates via dedup stats),
         outputs directly to deliverable/.
+        
+        Per-image skip: images already in deliverable/ are skipped unless their
+        filename appears in a _reprocess_filenames.json marker file.
         """
         print("\n" + "=" * 70)
         print("🔐 STEP 3: Biometric Compliance Pipeline")
@@ -867,12 +870,31 @@ class MasterPipeline:
             except Exception as e:
                 print(f"   ⚠️  Could not load dedup stats: {e}")
         
+        # Load reprocess list (if any) — these images should NOT be skipped
+        reprocess_marker = self.workspace / '_reprocess_filenames.json'
+        force_reprocess_filenames = set()
+        if reprocess_marker.exists():
+            try:
+                with open(reprocess_marker, 'r') as f:
+                    force_reprocess_filenames = set(json.load(f))
+                print(f"   🔄 Force-reprocessing {len(force_reprocess_filenames)} images from reprocess marker")
+            except Exception:
+                pass
+        
+        # Collect already-processed filenames in deliverable/ (for per-image skip)
+        already_processed = set()
+        if output_folder.exists():
+            for f in output_folder.iterdir():
+                if f.is_file() and f.suffix.lower() in {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff', '.tif'}:
+                    already_processed.add(f.name)
+        
         # Filter to unique images only (create a temp input dir with symlinks/copies)
         temp_input = self.workspace / '_temp_biometric_input'
         temp_input.mkdir(exist_ok=True)
         
         image_exts = {'.jpg', '.jpeg', '.png', '.webp', '.bmp', '.tiff', '.tif'}
         unique_count = 0
+        skipped_already_processed = 0
         for img_path in input_folder.iterdir():
             if not img_path.is_file():
                 continue
@@ -882,6 +904,10 @@ class MasterPipeline:
                 continue
             if img_path.name in duplicate_filenames:
                 continue
+            # Per-image skip: already in deliverable/ and not in reprocess list
+            if img_path.name in already_processed and img_path.name not in force_reprocess_filenames:
+                skipped_already_processed += 1
+                continue
             # Symlink to temp input (avoids copying)
             link_path = temp_input / img_path.name
             if not link_path.exists():
@@ -890,6 +916,20 @@ class MasterPipeline:
                 except OSError:
                     shutil.copy2(img_path, link_path)
             unique_count += 1
+        
+        if skipped_already_processed > 0:
+            print(f"   ⏭️  Skipped {skipped_already_processed} already-processed images in deliverable/")
+        
+        # Clean up reprocess marker after use
+        if reprocess_marker.exists():
+            try:
+                reprocess_marker.unlink()
+            except Exception:
+                pass
+        
+        if unique_count == 0:
+            print(f"\n✅ All images already processed — nothing to do")
+            return {"skipped": skipped_already_processed, "processed": 0}
         
         print(f"\n🖼️  Processing {unique_count} unique images...")
         
