@@ -7,6 +7,7 @@ import re
 import os
 import io
 import datetime
+import threading
 from contextlib import asynccontextmanager
 from app.config import settings
 from app.database import engine, Base, SessionLocal, get_db
@@ -385,6 +386,36 @@ def get_cached_view(image_id: int):
     return None, None
 
 
+# Max cache sizes (bytes).  Full-res is the heavy one (~2-5MB each).
+# View (~100KB) and thumb (~20KB) are small — no eviction needed.
+FULL_CACHE_MAX_BYTES = 2 * 1024 * 1024 * 1024   # 2 GB for full-res images
+_cache_evict_lock = threading.Lock()
+
+
+def _evict_oldest_cached(cache_dir: str, max_bytes: int):
+    """Remove oldest files from a cache directory until total size < max_bytes."""
+    try:
+        files = []
+        for f in os.listdir(cache_dir):
+            fp = os.path.join(cache_dir, f)
+            if os.path.isfile(fp) and not os.path.isdir(fp):
+                files.append((fp, os.path.getmtime(fp), os.path.getsize(fp)))
+        total = sum(s for _, _, s in files)
+        if total <= max_bytes:
+            return
+        # Sort oldest first
+        files.sort(key=lambda x: x[1])
+        while total > max_bytes and files:
+            fp, _, sz = files.pop(0)
+            try:
+                os.remove(fp)
+                total -= sz
+            except OSError:
+                pass
+    except Exception:
+        pass
+
+
 def cache_image(image_id: int, content: bytes, mime_type: str):
     """Cache full image, medium-res view, and thumbnail."""
     try:
@@ -400,6 +431,9 @@ def cache_image(image_id: int, content: bytes, mime_type: str):
         thumb_content = _make_thumbnail(jpeg_content)
         with open(os.path.join(THUMB_DIR, f"{image_id}.jpg"), "wb") as f:
             f.write(thumb_content)
+        # Evict oldest full-res images if cache is too large
+        with _cache_evict_lock:
+            _evict_oldest_cached(CACHE_DIR, FULL_CACHE_MAX_BYTES)
     except Exception as e:
         print(f"Failed to cache image {image_id}: {e}")
 
