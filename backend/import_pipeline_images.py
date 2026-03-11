@@ -8,6 +8,10 @@ Supports two workspace layouts:
 Each per-folder workspace carries its own drive_metadata.json, obfuscation_results.json,
 and deduplication_stats.json.
 
+If deduplication_stats.json is missing, the importer will automatically run the
+deduplicator on the downloaded images before importing, so duplicates are always
+detected — no manual intervention required.
+
 Folder structure (simplified):
   pipeline_workspace/folders/{folder_id}/
     ├── 01_downloaded_from_drive/   ← raw downloads + HEIC conversions
@@ -27,8 +31,162 @@ from app.database import SessionLocal
 from app.config import settings
 from app.utils.gcs import gcs_path as build_gcs_path
 
+# Setup paths for deduplicator import
+_SCRIPT_DIR = Path(__file__).parent
+_MASTER_PIPELINE_DIR = _SCRIPT_DIR / "master_pipeline"
+_DEDUP_DIR = _MASTER_PIPELINE_DIR / "FaceDetectionBlur"
+
+# Register HEIC/HEIF support for PIL (needed for dedup scan of HEIC images)
+try:
+    import pillow_heif
+    pillow_heif.register_heif_opener()
+    _HEIF_AVAILABLE = True
+except ImportError:
+    _HEIF_AVAILABLE = False
+
 # Explicitly load .env to avoid stale os.environ
 _BACKEND_ENV = dotenv_values(Path(__file__).parent / ".env")
+
+
+def _auto_run_dedup(scan_folder: Path, stats_output_path: Path) -> dict:
+    """
+    Automatically run the deduplicator on a folder of images.
+    Called when no pre-computed deduplication_stats.json is found.
+
+    1. Converts any HEIC/HEIF/AVIF → JPEG (in-place) so they are scannable.
+    2. Runs AdvancedDeduplicator on all scannable images.
+    3. Saves deduplication_stats.json for future re-imports.
+
+    Returns:
+        dict with 'duplicate_map' and 'duplicate_filenames', or {} if dedup failed.
+    """
+    if not scan_folder.is_dir():
+        return {}
+
+    # Scannable image extensions (what the deduplicator supports)
+    scannable_exts = {'.jpg', '.jpeg', '.png', '.webp'}
+    heic_exts = {'.heic', '.heif', '.avif'}
+
+    all_files = [f for f in scan_folder.iterdir() if f.is_file() and not f.name.startswith(('_', '.'))]
+    image_files = [f for f in all_files if f.suffix.lower() in (scannable_exts | heic_exts)]
+
+    if len(image_files) < 2:
+        print(f"   ⏭️  Only {len(image_files)} image(s) in {scan_folder.name} — skipping dedup")
+        return {}
+
+    # ── Step 1: Convert HEIC/HEIF/AVIF to JPEG so dedup can scan them ──
+    heic_files = [f for f in image_files if f.suffix.lower() in heic_exts]
+    if heic_files:
+        if not _HEIF_AVAILABLE:
+            print(f"   ⚠️  {len(heic_files)} HEIC files found but pillow-heif not installed — they will be skipped by dedup")
+        else:
+            from PIL import Image as PILImage
+            converted = 0
+            originals_dir = scan_folder / '_heic_originals'
+            originals_dir.mkdir(exist_ok=True)
+            for hf in heic_files:
+                jpg_path = scan_folder / (hf.stem + '.jpeg')
+                if jpg_path.exists():
+                    continue  # already converted
+                try:
+                    pil_img = PILImage.open(str(hf))
+                    if pil_img.mode != 'RGB':
+                        pil_img = pil_img.convert('RGB')
+                    pil_img.save(str(jpg_path), 'JPEG', quality=95)
+                    # Move original to _heic_originals
+                    shutil.move(str(hf), str(originals_dir / hf.name))
+                    converted += 1
+                except Exception as e:
+                    print(f"   ⚠️  Failed to convert {hf.name}: {e}")
+            if converted:
+                print(f"   🔄 Auto-converted {converted} HEIC/HEIF/AVIF → JPEG for dedup scan")
+
+    # ── Step 2: Run deduplicator ──
+    # Refresh file list after conversion
+    scannable_images = [
+        f for f in scan_folder.iterdir()
+        if f.is_file() and f.suffix.lower() in scannable_exts and not f.name.startswith(('_', '.'))
+    ]
+
+    if len(scannable_images) < 2:
+        print(f"   ⏭️  Only {len(scannable_images)} scannable image(s) — skipping dedup")
+        return {}
+
+    print(f"   🔍 Auto-running deduplication on {len(scannable_images)} images...")
+
+    try:
+        # Import deduplicator
+        if str(_DEDUP_DIR) not in sys.path:
+            sys.path.insert(0, str(_DEDUP_DIR))
+        from image_deduplicator_advanced import AdvancedDeduplicator
+
+        threshold = float(_BACKEND_ENV.get('DEDUP_THRESHOLD', '0.85'))
+        deduplicator = AdvancedDeduplicator(similarity_threshold=threshold)
+        deduplicator.scan_images(scan_folder)
+
+        if not deduplicator.images:
+            print(f"   ⚠️  Deduplicator found no images")
+            return {}
+
+        deduplicator.find_duplicates()
+
+        # Build duplicate map
+        duplicate_map = {}
+        for img in deduplicator.images:
+            if img.is_duplicate and img.duplicate_of:
+                duplicate_map[img.filename] = img.duplicate_of
+
+        # Also include HEIC sources of duplicate JPGs
+        heic_manifest_path = scan_folder / "_heic_conversions.json"
+        jpg_to_heic = {}
+        if heic_manifest_path.exists():
+            try:
+                with open(heic_manifest_path, 'r') as f:
+                    heic_manifest = json.load(f)
+                for jpg_name, info in heic_manifest.items():
+                    jpg_to_heic[jpg_name] = info.get('original_filename', '')
+            except Exception:
+                pass
+
+        extended_duplicates = set(duplicate_map.keys())
+        for dup_jpg in list(duplicate_map.keys()):
+            heic_source = jpg_to_heic.get(dup_jpg)
+            if heic_source:
+                extended_duplicates.add(heic_source)
+
+        stats = {
+            'total_images': len(scannable_images),
+            'unique_images': len(scannable_images) - len(duplicate_map),
+            'duplicate_images': len(duplicate_map),
+            'duplicate_pairs': len(duplicate_map),
+            'duplicate_map': duplicate_map,
+            'duplicate_filenames': list(extended_duplicates),
+            'auto_generated': True,  # Mark that this was auto-generated by importer
+        }
+
+        if duplicate_map:
+            print(f"   ⚠️  Found {len(duplicate_map)} duplicate(s)!")
+            for dup, parent in duplicate_map.items():
+                print(f"      {dup} → duplicate of {parent}")
+        else:
+            print(f"   ✅ No duplicates found in {len(scannable_images)} images")
+
+        # Save for future re-imports
+        try:
+            with open(stats_output_path, 'w') as f:
+                json.dump(stats, f, indent=2)
+            print(f"   💾 Saved dedup stats to {stats_output_path.name}")
+        except Exception as e:
+            print(f"   ⚠️  Could not save dedup stats: {e}")
+
+        return stats
+
+    except ImportError as e:
+        print(f"   ⚠️  Deduplicator not available ({e}) — skipping auto-dedup")
+        return {}
+    except Exception as e:
+        print(f"   ⚠️  Auto-dedup failed: {e}")
+        return {}
 
 
 def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_filenames: set = None):
@@ -71,6 +229,9 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
         except Exception as e:
             print(f"   ⚠️  Could not load biometric results: {e}")
     
+    # Download directory (used for dedup scan and HEIC mapping)
+    download_dir = workspace / "01_downloaded_from_drive"
+
     # Load deduplication stats for is_duplicate / parent_image
     dedup_stats_path = workspace / "deduplication_stats.json"
     duplicate_map = {}      # filename → parent_filename
@@ -85,6 +246,14 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                 print(f"   📊 Loaded dedup info: {len(duplicate_map)} duplicate pairs")
         except Exception as e:
             print(f"   ⚠️  Could not load dedup stats: {e}")
+    else:
+        # ── Auto-run deduplication if no stats file exists ──
+        # Scan the deliverable folder (or download folder if it exists) for duplicates
+        scan_folder = download_dir if download_dir.is_dir() else final_output
+        dedup_result = _auto_run_dedup(scan_folder, dedup_stats_path)
+        if dedup_result:
+            duplicate_map = dedup_result.get('duplicate_map', {})
+            duplicate_filenames = set(dedup_result.get('duplicate_filenames', []))
     
     # Get all image files from deliverable output
     image_extensions = {'.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif', '.avif'}
@@ -99,8 +268,6 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
     print(f"   📁 Found {len(image_files)} images in deliverable/")
     
     # HEIC conversion map
-    download_dir = workspace / "01_downloaded_from_drive"
-    
     heic_conversion_map = {}
     manifest_path = download_dir / "_heic_conversions.json"
     if manifest_path.exists():
