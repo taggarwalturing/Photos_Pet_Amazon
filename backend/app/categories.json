@@ -1,0 +1,88 @@
+{
+  "categories": [
+    {
+      "id": 1,
+      "name": "Lighting Variation",
+      "key": "lighting",
+      "display_order": 1,
+      "options": [
+        {"id": 1, "label": "Dusk-dawn lighting", "key": "dusk_dawn", "is_typical": false, "display_order": 1},
+        {"id": 2, "label": "Harsh outdoor sunlight with shadows", "key": "harsh_sunlight", "is_typical": false, "display_order": 2},
+        {"id": 3, "label": "Low light conditions", "key": "low_light", "is_typical": false, "display_order": 3},
+        {"id": 4, "label": "Well-lit conditions (typical)", "key": "well_lit", "is_typical": true, "display_order": 4},
+        {"id": 5, "label": "None of the Above", "key": "none_of_the_above", "is_typical": false, "display_order": 5}
+      ]
+    },
+    {
+      "id": 2,
+      "name": "Angle & Perspective Variation",
+      "key": "viewpoint",
+      "display_order": 2,
+      "options": [
+        {"id": 6, "label": "Front-facing at eye level (typical)", "key": "front_eye_level", "is_typical": true, "display_order": 1},
+        {"id": 7, "label": "Ground-level view", "key": "ground_level", "is_typical": false, "display_order": 2},
+        {"id": 8, "label": "No head showing", "key": "no_head", "is_typical": false, "display_order": 3},
+        {"id": 9, "label": "Partial view (head only)", "key": "partial_head_only", "is_typical": false, "display_order": 4},
+        {"id": 10, "label": "Top-down view", "key": "top_down", "is_typical": false, "display_order": 5},
+        {"id": 11, "label": "None of the Above", "key": "none_of_the_above", "is_typical": false, "display_order": 6}
+      ]
+    },
+    {
+      "id": 3,
+      "name": "Environmental Context Variation",
+      "key": "environment",
+      "display_order": 3,
+      "options": [
+        {"id": 12, "label": "In car-carrier", "key": "car_carrier", "is_typical": false, "display_order": 1},
+        {"id": 13, "label": "Indoor setting (typical)", "key": "indoor", "is_typical": true, "display_order": 2},
+        {"id": 14, "label": "Outdoor dirt road", "key": "outdoor_dirt", "is_typical": false, "display_order": 3},
+        {"id": 15, "label": "Snow environment", "key": "snow", "is_typical": false, "display_order": 4},
+        {"id": 16, "label": "Vet clinic", "key": "vet_clinic", "is_typical": false, "display_order": 5},
+        {"id": 17, "label": "Yard with a complex background", "key": "yard_complex_bg", "is_typical": false, "display_order": 6},
+        {"id": 18, "label": "None of the Above", "key": "none_of_the_above", "is_typical": false, "display_order": 7}
+      ]
+    },
+    {
+      "id": 4,
+      "name": "Occlusion & Partial Visibility",
+      "key": "occlusion",
+      "display_order": 4,
+      "options": [
+        {"id": 19, "label": "Behind furniture (face only)", "key": "behind_furniture", "is_typical": false, "display_order": 1},
+        {"id": 20, "label": "Full-body, unobstructed (typical)", "key": "full_body", "is_typical": true, "display_order": 2},
+        {"id": 21, "label": "Partially hidden under a blanket", "key": "under_blanket", "is_typical": false, "display_order": 3},
+        {"id": 22, "label": "Peeking out of box-carrier", "key": "peeking_box", "is_typical": false, "display_order": 4},
+        {"id": 23, "label": "Toy obscuring part of body", "key": "toy_obscuring", "is_typical": false, "display_order": 5},
+        {"id": 24, "label": "None of the Above", "key": "none_of_the_above", "is_typical": false, "display_order": 6}
+      ]
+    },
+    {
+      "id": 5,
+      "name": "Activity & Motion",
+      "key": "activity",
+      "display_order": 5,
+      "options": [
+        {"id": 25, "label": "Eating-drinking", "key": "eating_drinking", "is_typical": false, "display_order": 1},
+        {"id": 26, "label": "Jumping to catch toy", "key": "jumping", "is_typical": false, "display_order": 2},
+        {"id": 27, "label": "Playing with another pet", "key": "playing_other_pet", "is_typical": false, "display_order": 3},
+        {"id": 28, "label": "Running with motion blur", "key": "running_blur", "is_typical": false, "display_order": 4},
+        {"id": 29, "label": "Sitting still-posed (typical)", "key": "sitting_posed", "is_typical": true, "display_order": 5},
+        {"id": 30, "label": "Sleeping-curled up", "key": "sleeping", "is_typical": false, "display_order": 6},
+        {"id": 31, "label": "None of the Above", "key": "none_of_the_above", "is_typical": false, "display_order": 7}
+      ]
+    },
+    {
+      "id": 6,
+      "name": "Multi-Pet Disambiguation",
+      "key": "multipet",
+      "display_order": 6,
+      "options": [
+        {"id": 32, "label": "Pet with breed lookalike", "key": "breed_lookalike", "is_typical": false, "display_order": 1},
+        {"id": 33, "label": "Single pet (typical)", "key": "single_pet", "is_typical": true, "display_order": 2},
+        {"id": 34, "label": "Three pets of same breed", "key": "three_same_breed", "is_typical": false, "display_order": 3},
+        {"id": 35, "label": "Two similar-looking pets together", "key": "two_similar", "is_typical": false, "display_order": 4},
+        {"id": 36, "label": "None of the Above", "key": "none_of_the_above", "is_typical": false, "display_order": 5}
+      ]
+    }
+  ]
+}
