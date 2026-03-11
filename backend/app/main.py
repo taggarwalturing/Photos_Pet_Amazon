@@ -146,6 +146,7 @@ def _migrate():
             "original_filename": "VARCHAR(500)",
             "image_drive_id": "VARCHAR(200)",
             "source_folder_id": "VARCHAR(200)",
+            "updated_at": "TIMESTAMPTZ DEFAULT now()",
         }
         with engine.begin() as conn:
             for col_name, col_def in new_columns.items():
