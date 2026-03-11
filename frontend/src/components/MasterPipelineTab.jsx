@@ -311,19 +311,6 @@ export default function MasterPipelineTab() {
             <div className="space-y-3">
               <h3 className="text-sm font-medium text-gray-700">Advanced Options:</h3>
               
-              <label className="flex items-center gap-3 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={options.use_llm}
-                  onChange={(e) => setOptions({...options, use_llm: e.target.checked})}
-                  className="w-4 h-4 text-indigo-600 rounded focus:ring-indigo-500"
-                />
-                <div>
-                  <span className="text-sm font-medium text-gray-900">LLM Validation</span>
-                  <p className="text-xs text-gray-500">Use AI to validate duplicate detection</p>
-                </div>
-              </label>
-
               <div>
                 <label className="text-sm font-medium text-gray-900">
                   Similarity Threshold: {options.threshold}
