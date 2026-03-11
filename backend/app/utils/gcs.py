@@ -221,8 +221,54 @@ def _signing_credentials():
     return None
 
 
+# ── Startup check: can the signing SA actually read GCS objects? ──
+# If the SA lacks storage.objects.get permission, signed URLs will always
+# return 403 to the browser. In that case, we skip signing entirely and
+# let the caller fall back to the proxy endpoint (which uses ADC).
+_sa_has_gcs_access = None  # None = not yet checked, True/False after check
+
+
+def _check_sa_gcs_access() -> bool:
+    """One-time check: can the signing SA read a blob from the bucket?"""
+    global _sa_has_gcs_access
+    if _sa_has_gcs_access is not None:
+        return _sa_has_gcs_access
+
+    sa_path = _service_account_path()
+    if not sa_path:
+        _sa_has_gcs_access = False
+        return False
+
+    try:
+        from google.oauth2 import service_account as sa_mod
+        from google.cloud import storage as gcs_storage
+
+        sa_creds = sa_mod.Credentials.from_service_account_file(
+            sa_path, scopes=["https://www.googleapis.com/auth/cloud-platform"],
+        )
+        client = gcs_storage.Client(credentials=sa_creds, project=sa_creds.project_id)
+        bucket_name = os.getenv("GCS_BUCKET_NAME", "amazon-photo-pets")
+        bucket = client.bucket(bucket_name)
+        # Just check if we can list 1 blob (minimal permission test)
+        blobs = list(bucket.list_blobs(max_results=1))
+        _sa_has_gcs_access = True
+        print(f"[GCS] Service account CAN access bucket — signed URLs enabled")
+    except Exception as e:
+        _sa_has_gcs_access = False
+        print(f"[GCS] Service account CANNOT access bucket ({e}) — signed URLs disabled, using proxy")
+    return _sa_has_gcs_access
+
+
 def generate_signed_url(blob_gcs_path: str, expiration_seconds: int = 3600) -> str:
-    """Generate a V4 signed URL for direct browser access."""
+    """
+    Generate a V4 signed URL for direct browser access.
+    Raises RuntimeError if the signing SA lacks GCS permissions,
+    so the caller can fall back to the proxy endpoint.
+    """
+    # Check SA access once — if SA can't read GCS, signed URLs are useless
+    if not _check_sa_gcs_access():
+        raise RuntimeError("Service account lacks GCS read access; use proxy instead")
+
     bucket = _bucket()
     blob = bucket.blob(blob_gcs_path)
     

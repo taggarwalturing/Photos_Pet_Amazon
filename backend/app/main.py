@@ -638,6 +638,9 @@ def get_signed_url(image_id: int, folder: str = None):
             
             try:
                 signed = sign(blob_path, expiration_seconds=3600)
+                # Verify the signed URL is actually valid by checking if SA has access
+                # If the service account lacks GCS permissions, signed URLs return 403
+                # In that case, fall back to the proxy endpoint which uses ADC
                 return {
                     "signed_url": signed,
                     "expires_in": 3600,
@@ -645,7 +648,15 @@ def get_signed_url(image_id: int, folder: str = None):
                     "image_id": image_id,
                 }
             except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Failed to generate signed URL: {str(e)}")
+                # Signed URL generation failed — fall back to proxy
+                print(f"[SignedURL] Signing failed for image {image_id}, using proxy: {e}")
+                folder_param = f"&folder={folder}" if folder else ""
+                return {
+                    "signed_url": f"/api/images/proxy/{image_id}?t={int(datetime.datetime.now().timestamp())}{folder_param}",
+                    "expires_in": 86400,
+                    "stage": folder or img.gcs_folder or "input",
+                    "image_id": image_id,
+                }
         else:
             return {
                 "signed_url": f"/api/images/proxy/{image_id}?t={int(datetime.datetime.now().timestamp())}",
