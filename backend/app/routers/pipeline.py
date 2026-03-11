@@ -104,10 +104,12 @@ async def start_pipeline(
     if folder_ids and request.download and request.source == "drive":
         folder_ids = _resolve_parent_folders(folder_ids, db)
 
-    # ── Skip already-completed folders (unless force-reprocessed) ──
+    # ── Skip already-completed folders (unless force-reprocessed or new images detected) ──
     # force_reprocess=True  → force ALL completed folders
     # force_reprocess_folder_ids=[…] → force only those specific folders
+    # Smart detection: if GCS has more images than DB for a completed folder, re-include it
     skipped_folders = []
+    folders_with_new_images = []
     force_ids = set(request.force_reprocess_folder_ids or [])
     if folder_ids and not request.force_reprocess:
         completed_ids = set()
@@ -119,10 +121,40 @@ async def start_pipeline(
             if rec.folder_id not in force_ids:
                 completed_ids.add(rec.folder_id)
 
+        if completed_ids and request.source == "gcs" and request.download:
+            # Smart detection: check if GCS has new images not yet in DB
+            try:
+                from app.utils.gcs import list_blobs
+                image_exts = {'.jpg', '.jpeg', '.png', '.gif', '.webp', '.heic', '.heif', '.avif', '.bmp', '.tiff', '.tif'}
+                for fid in list(completed_ids):
+                    # Count images in GCS input/{fid}/
+                    gcs_prefix = f"input/{fid}/"
+                    gcs_blobs = [
+                        b for b in list_blobs(gcs_prefix)
+                        if os.path.splitext(b)[1].lower() in image_exts
+                    ]
+                    gcs_count = len(gcs_blobs)
+
+                    # Count images in DB for this folder
+                    db_count = db.query(func.count(Image.id)).filter(
+                        Image.source_folder_id == fid,
+                    ).scalar() or 0
+
+                    if gcs_count > db_count:
+                        # New images detected — don't skip this folder
+                        completed_ids.discard(fid)
+                        folders_with_new_images.append(fid)
+                        print(f"[PIPELINE] Folder {fid}: {gcs_count} in GCS vs {db_count} in DB — "
+                              f"new images detected, will re-process")
+            except Exception as e:
+                print(f"[PIPELINE] Smart detection failed, falling back to skip: {e}")
+
         if completed_ids:
             skipped_folders = sorted(completed_ids)
             folder_ids = [fid for fid in folder_ids if fid not in completed_ids]
             print(f"[PIPELINE] Skipping {len(skipped_folders)} already-completed folder(s): {skipped_folders}")
+        if folders_with_new_images:
+            print(f"[PIPELINE] Re-including {len(folders_with_new_images)} folder(s) with new images: {folders_with_new_images}")
 
     if not folder_ids:
         msg = "No new folders to process."
