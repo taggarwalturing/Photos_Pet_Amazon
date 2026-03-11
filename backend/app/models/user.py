@@ -1,4 +1,4 @@
-"""Simplified User model — 7 columns, no category relationships."""
+"""Simplified User model — includes image assignment count."""
 from datetime import datetime, timezone
 from sqlalchemy import Column, Integer, String, Boolean, DateTime
 from app.database import Base
@@ -13,4 +13,5 @@ class User(Base):
     full_name = Column(String(255))
     role = Column(String(20), default="annotator", nullable=False)   # admin | annotator
     is_active = Column(Boolean, default=True)
+    assigned_image_count = Column(Integer, default=0)                # how many images to assign
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))

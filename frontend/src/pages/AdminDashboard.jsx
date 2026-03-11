@@ -132,6 +132,8 @@ function UsersTab() {
   const [loading, setLoading] = useState(true);
   const [dailyStats, setDailyStats] = useState(null);
   const [dailyDays, setDailyDays] = useState(7);
+  const [editingImageCount, setEditingImageCount] = useState({}); // { userId: count }
+  const [assigning, setAssigning] = useState(false);
 
   const generatePassword = () => {
     const chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%&*';
@@ -195,6 +197,30 @@ function UsersTab() {
     );
   };
 
+  const saveImageCount = async (userId, count) => {
+    try {
+      await api.put(`/admin/users/${userId}`, { assigned_image_count: count });
+      load();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Error updating count');
+    }
+  };
+
+  const handleAssignImages = async () => {
+    if (!confirm('This will reassign all images in sequential order based on each annotator\'s count. Existing assignments will be cleared. Continue?')) return;
+    setAssigning(true);
+    try {
+      const res = await api.post('/admin/assign-images');
+      const data = res.data;
+      alert(`✅ Assignment complete!\n\nTotal images: ${data.total_images}\nAssigned: ${data.total_assigned}\nUnassigned: ${data.unassigned}\n\n${data.assignments.map(a => `${a.username}: ${a.assigned} images (${a.image_id_range})`).join('\n')}`);
+      load();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Assignment failed');
+    } finally {
+      setAssigning(false);
+    }
+  };
+
   if (loading) return <LoadingSkeleton rows={6} />;
 
   return (
@@ -204,12 +230,21 @@ function UsersTab() {
           <h2 className="text-lg font-bold text-gray-900">Users & Assignments</h2>
           <p className="text-sm text-gray-500 mt-0.5">{users.filter(u => u.role === 'annotator').length} annotators, {users.filter(u => u.role === 'admin').length} admins</p>
         </div>
-        <button
-          onClick={() => setShowCreate(!showCreate)}
-          className="px-4 py-2 bg-gradient-to-r from-indigo-500 to-purple-500 text-white text-sm font-medium rounded-lg hover:from-indigo-600 hover:to-purple-600 transition shadow-sm cursor-pointer"
-        >
-          + New Annotator
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handleAssignImages}
+            disabled={assigning}
+            className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-sm font-medium rounded-lg hover:from-emerald-600 hover:to-teal-600 transition shadow-sm cursor-pointer disabled:opacity-50"
+          >
+            {assigning ? '⏳ Assigning…' : '📋 Assign Images'}
+          </button>
+          <button
+            onClick={() => setShowCreate(!showCreate)}
+            className="px-4 py-2 bg-gradient-to-r from-indigo-500 to-purple-500 text-white text-sm font-medium rounded-lg hover:from-indigo-600 hover:to-purple-600 transition shadow-sm cursor-pointer"
+          >
+            + New Annotator
+          </button>
+        </div>
       </div>
 
       {/* Create form */}
@@ -313,8 +348,8 @@ function UsersTab() {
               <th className="px-5 py-3.5 font-semibold">Turing ID</th>
               <th className="px-5 py-3 font-medium">Name</th>
               <th className="px-5 py-3 font-medium">Role</th>
-              <th className="px-5 py-3 font-medium">Categories</th>
-              <th className="px-5 py-3 font-medium">Images</th>
+              <th className="px-5 py-3 font-medium">Assign Count</th>
+              <th className="px-5 py-3 font-medium">Assigned</th>
               <th className="px-5 py-3 font-medium">Today</th>
               <th className="px-5 py-3 font-medium">Progress</th>
               <th className="px-5 py-3 font-medium">Improper</th>
@@ -324,7 +359,6 @@ function UsersTab() {
           </thead>
           <tbody className="divide-y divide-gray-100">
             {users.map((u) => {
-              const userImageCount = u.assigned_image_count || 0;
               return (
                 <tr key={u.id} className={`transition-colors hover:bg-gray-50/50 ${!u.is_active ? 'opacity-50' : ''}`}>
                   <td className="px-5 py-3">
@@ -341,19 +375,33 @@ function UsersTab() {
                     {u.role}
                   </span>
                 </td>
-                <td className="px-5 py-3 text-gray-600">
+                <td className="px-5 py-3">
                   {u.role === 'annotator' ? (
-                    <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-xs rounded-full">
-                      All Categories
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <input
+                        type="number"
+                        min="0"
+                        value={editingImageCount[u.id] !== undefined ? editingImageCount[u.id] : (u.assigned_image_count || 0)}
+                        onChange={(e) => setEditingImageCount(prev => ({ ...prev, [u.id]: parseInt(e.target.value) || 0 }))}
+                        onBlur={(e) => {
+                          const newVal = parseInt(e.target.value) || 0;
+                          if (newVal !== (u.assigned_image_count || 0)) {
+                            saveImageCount(u.id, newVal);
+                          }
+                          setEditingImageCount(prev => { const copy = { ...prev }; delete copy[u.id]; return copy; });
+                        }}
+                        onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+                        className="w-20 px-2 py-1 text-sm border border-gray-300 rounded-lg text-center focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
+                      />
+                    </div>
                   ) : '—'}
                 </td>
                   <td className="px-5 py-3">
                     {u.role === 'annotator' ? (
                       <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
-                        userImageCount > 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                        (u.actual_assigned || 0) > 0 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
                       }`}>
-                        {userImageCount} images
+                        {u.actual_assigned || 0} images
                       </span>
                     ) : '—'}
                   </td>
@@ -373,15 +421,15 @@ function UsersTab() {
                           <div className="w-20 bg-gray-200 rounded-full h-2">
                             <div
                               className="bg-indigo-500 h-2 rounded-full transition-all"
-                              style={{ width: `${u.total_annotations_needed > 0 ? Math.min(100, (u.completed_annotations / u.total_annotations_needed) * 100) : 0}%` }}
+                              style={{ width: `${(u.actual_assigned || 0) > 0 ? Math.min(100, (u.completed_annotations / (u.actual_assigned || 1)) * 100) : 0}%` }}
                             />
                           </div>
                           <span className="text-xs text-gray-500">
-                            {u.total_annotations_needed > 0 ? Math.round((u.completed_annotations / u.total_annotations_needed) * 100) : 0}%
+                            {(u.actual_assigned || 0) > 0 ? Math.round((u.completed_annotations / (u.actual_assigned || 1)) * 100) : 0}%
                           </span>
                         </div>
                         <span className="text-[10px] text-gray-400">
-                          {u.completed_annotations}/{u.total_annotations_needed} annotations
+                          {u.completed_annotations}/{u.actual_assigned || 0} annotated
                         </span>
                       </div>
                     ) : '—'}

@@ -139,6 +139,7 @@ def _migrate():
             "improper_reason": "TEXT",
             "marked_improper_by": "INTEGER REFERENCES users(id)",
             "marked_improper_at": "TIMESTAMPTZ",
+            "assigned_to": "INTEGER REFERENCES users(id)",
             "locked_by": "INTEGER REFERENCES users(id)",
             "locked_at": "TIMESTAMPTZ",
             "deliverable_image_path": "VARCHAR(500)",
@@ -192,6 +193,22 @@ def _migrate():
 
         print("[MIGRATE] Checked images table columns")
 
+    # ── Users table: add new columns ──
+    if "users" in inspector.get_table_names():
+        existing_usr = {col["name"] for col in inspector.get_columns("users")}
+        user_new_columns = {
+            "assigned_image_count": "INTEGER DEFAULT 0",
+        }
+        with engine.begin() as conn:
+            for col_name, col_def in user_new_columns.items():
+                if col_name not in existing_usr:
+                    try:
+                        conn.execute(text(f"ALTER TABLE users ADD COLUMN {col_name} {col_def}"))
+                        print(f"[MIGRATE] Added users.{col_name}")
+                    except Exception as e:
+                        print(f"[MIGRATE] Warning: could not add users.{col_name}: {e}")
+        print("[MIGRATE] Checked users table columns")
+
     # ── Performance indexes ──
     with engine.begin() as conn:
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_images_image_id ON images(image_id)"))
@@ -203,6 +220,7 @@ def _migrate():
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_images_annotated_by ON images(annotated_by)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_images_deliverable ON images(deliverable_image_path) WHERE deliverable_image_path IS NOT NULL"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_images_manually_blurred ON images(manually_blurred) WHERE manually_blurred = TRUE"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_images_assigned_to ON images(assigned_to)"))
     print("[MIGRATE] Ensured performance indexes exist")
 
 _migrate()

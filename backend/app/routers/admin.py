@@ -67,6 +67,13 @@ def list_users(
             )
             .count()
         )
+
+        # Count images actually assigned to this user
+        actual_assigned = (
+            db.query(Image)
+            .filter(Image.assigned_to == u.id)
+            .count()
+        )
         
         result.append(UserResponse(
             id=u.id,
@@ -76,8 +83,10 @@ def list_users(
             is_active=u.is_active,
             created_at=u.created_at,
             total_images=total_images if u.role == "annotator" else 0,
+            assigned_image_count=u.assigned_image_count or 0,
             completed_annotations=completed_annotations,
             today_image_count=today_image_count,
+            actual_assigned=actual_assigned,
         ))
     return result
 
@@ -306,8 +315,11 @@ def update_user(
         user.is_active = payload.is_active
     if payload.password is not None:
         user.password_hash = hash_password(payload.password)
+    if payload.assigned_image_count is not None:
+        user.assigned_image_count = payload.assigned_image_count
     db.commit()
     db.refresh(user)
+    actual_assigned = db.query(Image).filter(Image.assigned_to == user.id).count()
     return UserResponse(
         id=user.id,
         username=user.username,
@@ -315,7 +327,129 @@ def update_user(
         role=user.role,
         is_active=user.is_active,
         created_at=user.created_at,
+        assigned_image_count=user.assigned_image_count or 0,
+        actual_assigned=actual_assigned,
     )
+
+
+@router.post("/assign-images")
+def assign_images_to_annotators(
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """
+    Assign images to annotators in continuous sequential blocks based on
+    each annotator's `assigned_image_count`.
+
+    Algorithm:
+    1. Get all active annotators (role=annotator, is_active=True) ordered by id.
+    2. Get all assignable images (non-duplicate, ordered by id).
+    3. Clear all existing assignments.
+    4. For each annotator, assign the next N images in sequence.
+
+    Only annotators with assigned_image_count > 0 get images.
+    Images beyond the total assigned count remain unassigned (invisible to all annotators).
+    """
+    # Get active annotators ordered by ID, only those with an assignment count > 0
+    annotators = (
+        db.query(User)
+        .filter(
+            User.role == "annotator",
+            User.is_active == True,  # noqa: E712
+            User.assigned_image_count > 0,
+        )
+        .order_by(User.id)
+        .all()
+    )
+
+    # Get all assignable images (non-duplicate) ordered by ID
+    all_images = (
+        db.query(Image)
+        .filter(Image.is_duplicate == False)  # noqa: E712
+        .order_by(Image.id)
+        .all()
+    )
+
+    # Clear all existing assignments first
+    db.query(Image).filter(Image.assigned_to.isnot(None)).update(
+        {"assigned_to": None}, synchronize_session="fetch"
+    )
+
+    # Assign in sequential blocks
+    cursor = 0
+    assignment_summary = []
+    for annotator in annotators:
+        count = annotator.assigned_image_count or 0
+        if count <= 0:
+            continue
+
+        # Slice the next `count` images for this annotator
+        end = min(cursor + count, len(all_images))
+        assigned_ids = []
+        for i in range(cursor, end):
+            all_images[i].assigned_to = annotator.id
+            assigned_ids.append(all_images[i].id)
+
+        assignment_summary.append({
+            "annotator_id": annotator.id,
+            "username": annotator.username,
+            "requested": count,
+            "assigned": len(assigned_ids),
+            "image_id_range": f"{assigned_ids[0]}–{assigned_ids[-1]}" if assigned_ids else "none",
+        })
+
+        cursor = end
+
+    db.commit()
+
+    unassigned_count = len(all_images) - cursor
+    return {
+        "total_images": len(all_images),
+        "total_assigned": cursor,
+        "unassigned": unassigned_count,
+        "assignments": assignment_summary,
+    }
+
+
+@router.get("/assignment-summary")
+def get_assignment_summary(
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """Get current image assignment summary for all annotators."""
+    annotators = (
+        db.query(User)
+        .filter(User.role == "annotator")
+        .order_by(User.id)
+        .all()
+    )
+
+    total_images = db.query(Image).filter(Image.is_duplicate == False).count()  # noqa: E712
+    total_assigned = db.query(Image).filter(Image.assigned_to.isnot(None)).count()
+
+    summary = []
+    for a in annotators:
+        actual = db.query(Image).filter(Image.assigned_to == a.id).count()
+        completed = (
+            db.query(Image)
+            .filter(Image.assigned_to == a.id, Image.annotation_status == "completed")
+            .count()
+        )
+        summary.append({
+            "annotator_id": a.id,
+            "username": a.username,
+            "requested": a.assigned_image_count or 0,
+            "actual_assigned": actual,
+            "completed": completed,
+            "pending": actual - completed,
+        })
+
+    return {
+        "total_images": total_images,
+        "total_assigned": total_assigned,
+        "unassigned": total_images - total_assigned,
+        "annotators": summary,
+    }
 
 
 # ── Categories ────────────────────────────────────────────────────

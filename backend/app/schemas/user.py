@@ -26,6 +26,7 @@ class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     is_active: Optional[bool] = None
     password: Optional[str] = None
+    assigned_image_count: Optional[int] = None
 
 
 class UserResponse(BaseModel):
@@ -37,8 +38,10 @@ class UserResponse(BaseModel):
     created_at: datetime
     # Computed stats (filled by the endpoint, not the ORM)
     total_images: int = 0             # total images in system
+    assigned_image_count: int = 0     # how many images to assign to this annotator
     completed_annotations: int = 0    # images this user has annotated
     today_image_count: int = 0        # distinct images annotated today
+    actual_assigned: int = 0          # how many images are actually assigned in DB
 
     class Config:
         from_attributes = True

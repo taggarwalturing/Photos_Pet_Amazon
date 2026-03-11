@@ -147,13 +147,28 @@ def list_images_for_annotator(
     categories = get_categories()
     option_id_to_label = _build_option_id_to_label()
 
-    # Get all non-duplicate, non-improper images (ordered by ID)
-    all_images = (
-        db.query(Image)
-        .filter(Image.is_duplicate == False)  # noqa: E712
-        .order_by(Image.id)
-        .all()
-    )
+    # Get images assigned to this annotator (or all non-duplicate if no assignments exist)
+    has_any_assignments = db.query(Image).filter(Image.assigned_to.isnot(None)).count() > 0
+
+    if has_any_assignments:
+        # Assignment mode: only show images assigned to this user
+        all_images = (
+            db.query(Image)
+            .filter(
+                Image.is_duplicate == False,  # noqa: E712
+                Image.assigned_to == user.id,
+            )
+            .order_by(Image.id)
+            .all()
+        )
+    else:
+        # No assignments configured yet — show all (legacy mode)
+        all_images = (
+            db.query(Image)
+            .filter(Image.is_duplicate == False)  # noqa: E712
+            .order_by(Image.id)
+            .all()
+        )
     
     # Get all active soft locks
     active_soft_locks = _get_all_soft_locks(exclude_user_id=user.id)
@@ -396,6 +411,11 @@ def get_image_for_annotation(
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
 
+    # Enforce assignment: if assignments exist, block access to unassigned images
+    has_any_assignments = db.query(Image).filter(Image.assigned_to.isnot(None)).count() > 0
+    if has_any_assignments and image.assigned_to != user.id:
+        raise HTTPException(status_code=403, detail="This image is not assigned to you")
+
     categories = get_categories()
     existing_annotations = image.annotations or {}
     arbiter_labels = image.arbiter_labels or {}
@@ -450,14 +470,21 @@ def get_image_for_annotation(
             "ai_suggestion": ai_suggestion,
         })
 
-    # Navigation (non-duplicate images)
-    all_image_ids = [
-        row.id for row in
-        db.query(Image.id)
-        .filter(Image.is_duplicate == False)  # noqa: E712
-        .order_by(Image.id)
-        .all()
-    ]
+    # Navigation — only within images assigned to this user
+    has_any_assignments = db.query(Image).filter(Image.assigned_to.isnot(None)).count() > 0
+    if has_any_assignments:
+        nav_query = (
+            db.query(Image.id)
+            .filter(Image.is_duplicate == False, Image.assigned_to == user.id)  # noqa: E712
+            .order_by(Image.id)
+        )
+    else:
+        nav_query = (
+            db.query(Image.id)
+            .filter(Image.is_duplicate == False)  # noqa: E712
+            .order_by(Image.id)
+        )
+    all_image_ids = [row.id for row in nav_query.all()]
     current_idx = all_image_ids.index(image_id) if image_id in all_image_ids else 0
     prev_id = all_image_ids[current_idx - 1] if current_idx > 0 else None
     next_id = all_image_ids[current_idx + 1] if current_idx < len(all_image_ids) - 1 else None
@@ -534,6 +561,11 @@ async def save_image_annotations(
     image = db.query(Image).filter(Image.id == image_id).first()
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
+
+    # Enforce assignment
+    has_any_assignments = db.query(Image).filter(Image.assigned_to.isnot(None)).count() > 0
+    if has_any_assignments and image.assigned_to != user.id:
+        raise HTTPException(status_code=403, detail="This image is not assigned to you")
     
     if image.is_improper:
         raise HTTPException(status_code=400, detail="Cannot save annotations for improper images")
