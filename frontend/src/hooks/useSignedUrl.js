@@ -25,6 +25,11 @@ export function getProxyUrl(imageId) {
   return `${API_BASE}/api/images/proxy/${imageId}?t=${Date.now()}`;
 }
 
+export function getThumbUrl(imageId) {
+  if (!imageId) return '';
+  return `${API_BASE}/api/images/thumb/${imageId}`;
+}
+
 export async function fetchSignedUrl(imageId, folder = null) {
   if (!imageId) return '';
 

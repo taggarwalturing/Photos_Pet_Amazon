@@ -297,7 +297,13 @@ async def ws_locks(websocket: WebSocket, token: str = WSQuery(None)):
 # With local file caching for fast subsequent loads
 
 CACHE_DIR = os.path.join(os.path.dirname(__file__), "..", "image_cache")
+THUMB_DIR = os.path.join(CACHE_DIR, "thumbnails")
 os.makedirs(CACHE_DIR, exist_ok=True)
+os.makedirs(THUMB_DIR, exist_ok=True)
+
+# Thumbnail size for gallery grid (max width/height)
+THUMB_MAX_SIZE = 400
+
 
 def get_cached_image(image_id: int):
     """Check if image is cached locally."""
@@ -307,26 +313,56 @@ def get_cached_image(image_id: int):
             return f.read(), "image/jpeg"
     return None, None
 
-def cache_image(image_id: int, content: bytes, mime_type: str):
-    """Cache image locally (convert to JPEG for consistency)."""
+
+def get_cached_thumbnail(image_id: int):
+    """Check if thumbnail is cached locally."""
+    thumb_path = os.path.join(THUMB_DIR, f"{image_id}.jpg")
+    if os.path.exists(thumb_path):
+        with open(thumb_path, "rb") as f:
+            return f.read(), "image/jpeg"
+    return None, None
+
+
+def _to_jpeg(content: bytes, mime_type: str) -> bytes:
+    """Convert image bytes to JPEG if not already."""
+    if mime_type == "image/jpeg":
+        return content
     try:
-        # Always save as JPEG for consistency
-        cache_path = os.path.join(CACHE_DIR, f"{image_id}.jpg")
-        
-        # If not JPEG, convert using PIL
-        if mime_type != "image/jpeg":
-            try:
-                pil_image = PILImage.open(io.BytesIO(content))
-                if pil_image.mode in ('RGBA', 'P'):
-                    pil_image = pil_image.convert('RGB')
-                output_buffer = io.BytesIO()
-                pil_image.save(output_buffer, format='JPEG', quality=85)
-                content = output_buffer.getvalue()
-            except Exception:
-                pass  # Keep original content if conversion fails
-        
-        with open(cache_path, "wb") as f:
-            f.write(content)
+        pil_image = PILImage.open(io.BytesIO(content))
+        if pil_image.mode in ('RGBA', 'P'):
+            pil_image = pil_image.convert('RGB')
+        buf = io.BytesIO()
+        pil_image.save(buf, format='JPEG', quality=85)
+        return buf.getvalue()
+    except Exception:
+        return content
+
+
+def _make_thumbnail(content: bytes) -> bytes:
+    """Create a small thumbnail from image bytes."""
+    try:
+        pil_image = PILImage.open(io.BytesIO(content))
+        if pil_image.mode in ('RGBA', 'P'):
+            pil_image = pil_image.convert('RGB')
+        pil_image.thumbnail((THUMB_MAX_SIZE, THUMB_MAX_SIZE), PILImage.LANCZOS)
+        buf = io.BytesIO()
+        pil_image.save(buf, format='JPEG', quality=70)
+        return buf.getvalue()
+    except Exception:
+        return content  # Return original if thumbnail generation fails
+
+
+def cache_image(image_id: int, content: bytes, mime_type: str):
+    """Cache full image and generate thumbnail."""
+    try:
+        jpeg_content = _to_jpeg(content, mime_type)
+        # Save full image
+        with open(os.path.join(CACHE_DIR, f"{image_id}.jpg"), "wb") as f:
+            f.write(jpeg_content)
+        # Save thumbnail
+        thumb_content = _make_thumbnail(jpeg_content)
+        with open(os.path.join(THUMB_DIR, f"{image_id}.jpg"), "wb") as f:
+            f.write(thumb_content)
     except Exception as e:
         print(f"Failed to cache image {image_id}: {e}")
 
@@ -602,6 +638,95 @@ def proxy_image(image_id: int):
         except Exception as e:
             print(f"Error fetching image {file_id}: {e}")
             raise HTTPException(status_code=502, detail=f"Failed to fetch image: {str(e)}")
+    finally:
+        db.close()
+
+
+@app.get("/api/images/thumb/{image_id}")
+def proxy_thumbnail(image_id: int):
+    """
+    Return a small thumbnail (~400px) for gallery grid views.
+    Much faster than the full proxy — typically 15-30KB vs 2-5MB.
+    Auto-generates thumbnail on first request and caches it.
+    """
+    # Check thumbnail cache first
+    cached_content, cached_mime = get_cached_thumbnail(image_id)
+    if cached_content:
+        return Response(
+            content=cached_content,
+            media_type=cached_mime,
+            headers={
+                "Cache-Control": "public, max-age=604800",
+                "X-Cache": "THUMB-HIT",
+            }
+        )
+
+    # Check if full image is cached — generate thumbnail from it
+    full_content, full_mime = get_cached_image(image_id)
+    if full_content:
+        thumb = _make_thumbnail(full_content)
+        # Save thumbnail for next time
+        try:
+            with open(os.path.join(THUMB_DIR, f"{image_id}.jpg"), "wb") as f:
+                f.write(thumb)
+        except Exception:
+            pass
+        return Response(
+            content=thumb,
+            media_type="image/jpeg",
+            headers={
+                "Cache-Control": "public, max-age=604800",
+                "X-Cache": "THUMB-GEN",
+            }
+        )
+
+    # Neither cached — fetch from GCS, cache both, return thumbnail
+    db = SessionLocal()
+    try:
+        img = db.query(Image).filter(Image.id == image_id).first()
+        if not img:
+            raise HTTPException(status_code=404, detail="Image not found")
+
+        url = img.url or ""
+        content = None
+
+        if url.startswith('gs://'):
+            try:
+                from app.utils.gcs import download_to_bytes, parse_gs_uri
+                _, blob_path = parse_gs_uri(url)
+                content = download_to_bytes(blob_path)
+            except Exception as e:
+                print(f"[Thumb] GCS fetch failed for {img.filename}: {e}")
+                raise HTTPException(status_code=502, detail=f"GCS fetch failed")
+        elif url.startswith('file://'):
+            local_path = url.replace('file://', '')
+            if not os.path.isabs(local_path):
+                backend_dir = os.path.dirname(os.path.dirname(__file__))
+                local_path = os.path.join(backend_dir, local_path)
+            if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
+                with open(local_path, "rb") as f:
+                    content = f.read()
+
+        if not content:
+            raise HTTPException(status_code=404, detail="Image not accessible")
+
+        ext = os.path.splitext(img.filename)[1].lower()
+        mime_type = {'.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+                     '.gif': 'image/gif', '.webp': 'image/webp'}.get(ext, 'image/jpeg')
+
+        # Cache full image + thumbnail
+        cache_image(image_id, content, mime_type)
+
+        # Return thumbnail
+        thumb = _make_thumbnail(_to_jpeg(content, mime_type))
+        return Response(
+            content=thumb,
+            media_type="image/jpeg",
+            headers={
+                "Cache-Control": "public, max-age=604800",
+                "X-Cache": "THUMB-MISS",
+            }
+        )
     finally:
         db.close()
 

@@ -445,6 +445,7 @@ export default function AnnotatorHome() {
                           alt={img.filename}
                           className="w-full h-full object-cover"
                           loading="lazy"
+                          thumbnail
                         />
                         
                         {/* Dark gradient overlay for text readability */}

@@ -8,13 +8,13 @@ import ArbiterClassifierTab from '../components/ArbiterClassifierTab';
 import AnnotatorStatsTab from '../components/AnnotatorStatsTab';
 import BoundingBoxCanvas from '../components/BoundingBoxCanvas';
 import SignedImage from '../components/SignedImage';
-import { getProxyUrl } from '../hooks/useSignedUrl';
+import { getProxyUrl, getThumbUrl } from '../hooks/useSignedUrl';
 
 const PAGE_SIZE = 10;
 
 const getImageUrl = (imageId) => {
   if (!imageId) return '';
-  return getProxyUrl(imageId);
+  return getThumbUrl(imageId);
 };
 
 /* ─── Reusable UI Helpers ──────────────────────────────────── */

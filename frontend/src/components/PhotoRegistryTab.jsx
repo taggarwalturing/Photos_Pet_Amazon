@@ -405,6 +405,7 @@ export default function PhotoRegistryTab() {
                             alt=""
                             className="w-9 h-9 rounded-lg object-cover border border-gray-200"
                             onError={(e) => { e.target.style.display = 'none'; }}
+                            thumbnail
                           />
                         ) : (
                           <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center text-gray-300 text-xs">—</div>
