@@ -885,7 +885,7 @@ export default function ImageAnnotationPage() {
             <div ref={imageContainerRef} className="relative max-w-full max-h-full overflow-hidden flex items-center justify-center">
               <SignedImage
                 imageId={imageId}
-                view={!blurActive}
+                view={true}
                 refreshKey={imageVersion}
                 alt={data?.filename || ''}
                 className={`max-w-full max-h-full object-contain rounded-lg block ${isImproper ? 'opacity-50' : ''}`}
