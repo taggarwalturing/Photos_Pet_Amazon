@@ -133,7 +133,7 @@ function UsersTab() {
   const [dailyStats, setDailyStats] = useState(null);
   const [dailyDays, setDailyDays] = useState(7);
   const [editingImageCount, setEditingImageCount] = useState({}); // { userId: count }
-  const [assigning, setAssigning] = useState(false);
+  const [assigningUserId, setAssigningUserId] = useState(null);
 
   const generatePassword = () => {
     const chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%&*';
@@ -201,7 +201,7 @@ function UsersTab() {
     const rawVal = editingImageCount[userId];
     const count = rawVal !== undefined ? (parseInt(rawVal) || 0) : null;
 
-    setAssigning(true);
+    setAssigningUserId(userId);
     try {
       // Call per-annotator assignment endpoint (only affects this annotator)
       const queryCount = count !== null ? `?count=${count}` : '';
@@ -216,7 +216,7 @@ function UsersTab() {
     } catch (err) {
       alert(err.response?.data?.detail || 'Assignment failed');
     } finally {
-      setAssigning(false);
+      setAssigningUserId(null);
     }
   };
 
@@ -382,10 +382,10 @@ function UsersTab() {
                       />
                       <button
                         onClick={() => handleAssignForUser(u.id)}
-                        disabled={assigning}
+                        disabled={assigningUserId !== null}
                         className="px-2.5 py-1 text-xs font-semibold bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition cursor-pointer disabled:opacity-50 whitespace-nowrap"
                       >
-                        {assigning ? '…' : 'Assign'}
+                        {assigningUserId === u.id ? '…' : 'Assign'}
                       </button>
                     </div>
                   ) : '—'}
