@@ -1,7 +1,15 @@
 import { useState, useEffect, useRef } from 'react';
-import { fetchSignedUrl, getProxyUrl, getThumbUrl } from '../hooks/useSignedUrl';
+import { fetchSignedUrl, getProxyUrl, getThumbUrl, getViewUrl } from '../hooks/useSignedUrl';
 
-export default function SignedImage({ imageId, folder, refreshKey, fallbackToProxy = true, thumbnail = false, ...imgProps }) {
+/**
+ * SignedImage component for displaying images at different resolutions.
+ *
+ * Props:
+ *   thumbnail={true}  → 400px gallery grid (smallest, fastest)
+ *   view={true}       → 1200px annotation/review view (medium, fast)
+ *   (neither)         → full-res via signed URL (largest, slowest)
+ */
+export default function SignedImage({ imageId, folder, refreshKey, fallbackToProxy = true, thumbnail = false, view = false, ...imgProps }) {
   const [src, setSrc] = useState('');
   const mountedRef = useRef(true);
 
@@ -17,19 +25,24 @@ export default function SignedImage({ imageId, folder, refreshKey, fallbackToPro
     }
 
     if (thumbnail) {
-      // Fast path: use thumbnail endpoint directly (no signed-url round-trip)
+      // Fast path: 400px thumbnail, no signed-url round-trip
       if (mountedRef.current) setSrc(getThumbUrl(imageId));
+      return;
+    }
+
+    if (view) {
+      // Medium path: 1200px view image, no signed-url round-trip
+      if (mountedRef.current) setSrc(getViewUrl(imageId));
       return;
     }
 
     fetchSignedUrl(imageId, folder).then((url) => {
       if (mountedRef.current) setSrc(url);
     });
-  }, [imageId, folder, refreshKey, thumbnail]);
+  }, [imageId, folder, refreshKey, thumbnail, view]);
 
   const handleError = () => {
     if (fallbackToProxy && imageId) {
-      // For thumbnails, fall back to full proxy on error
       setSrc(getProxyUrl(imageId));
     }
   };

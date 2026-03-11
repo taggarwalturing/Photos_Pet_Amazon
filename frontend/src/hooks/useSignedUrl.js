@@ -30,6 +30,11 @@ export function getThumbUrl(imageId) {
   return `${API_BASE}/api/images/thumb/${imageId}`;
 }
 
+export function getViewUrl(imageId) {
+  if (!imageId) return '';
+  return `${API_BASE}/api/images/view/${imageId}`;
+}
+
 export async function fetchSignedUrl(imageId, folder = null) {
   if (!imageId) return '';
 

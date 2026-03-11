@@ -998,6 +998,7 @@ function ImageLightbox({ img, images, idx, getStatusBadges, onClose, onNavigate,
         <div ref={imageContainerRef} className="relative max-w-5xl w-full mx-16 flex items-center justify-center">
           <SignedImage
             imageId={img.id}
+            view={true}
             refreshKey={imageVersion}
             alt={img.filename}
             className="max-w-full max-h-[80vh] object-contain rounded-lg block"
@@ -1394,6 +1395,7 @@ function ImageDetailModal({ row, categories, tableImages, onApprove, onSaveEdits
             <div ref={imageContainerRef} className="relative w-full h-full overflow-hidden flex items-center justify-center">
               <SignedImage
                 imageId={row.image_id}
+                view={true}
                 refreshKey={imageVersion}
                 alt={row.image_filename}
                 className="max-w-full max-h-full object-contain rounded-lg block"

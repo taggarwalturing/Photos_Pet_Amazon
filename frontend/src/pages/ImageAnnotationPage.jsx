@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
 import BoundingBoxCanvas from '../components/BoundingBoxCanvas';
 import CategoryGuideModal from '../components/CategoryGuideModal';
-import { fetchSignedUrl, getProxyUrl, invalidateSignedUrl } from '../hooks/useSignedUrl';
+import { fetchSignedUrl, getProxyUrl, invalidateSignedUrl, getViewUrl } from '../hooks/useSignedUrl';
 import SignedImage from '../components/SignedImage';
 
 const getImageUrl = (imageId) => {
@@ -457,6 +457,16 @@ export default function ImageAnnotationPage() {
     loadImage(imageId);
   }, [imageId, loadImage]);
 
+  // Preload next/prev images so navigation feels instant
+  useEffect(() => {
+    if (!data) return;
+    const toPreload = [data.next_image_id, data.prev_image_id].filter(Boolean);
+    toPreload.forEach((id) => {
+      const img = new Image();
+      img.src = getViewUrl(id);
+    });
+  }, [data?.next_image_id, data?.prev_image_id]);
+
   const handleCategoryChange = (categoryId, value) => {
     setPendingChanges((prev) => ({ ...prev, [categoryId]: value }));
   };
@@ -875,6 +885,7 @@ export default function ImageAnnotationPage() {
             <div ref={imageContainerRef} className="relative max-w-full max-h-full overflow-hidden flex items-center justify-center">
               <SignedImage
                 imageId={imageId}
+                view={!blurActive}
                 refreshKey={imageVersion}
                 alt={data?.filename || ''}
                 className={`max-w-full max-h-full object-contain rounded-lg block ${isImproper ? 'opacity-50' : ''}`}

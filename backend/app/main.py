@@ -298,11 +298,15 @@ async def ws_locks(websocket: WebSocket, token: str = WSQuery(None)):
 
 CACHE_DIR = os.path.join(os.path.dirname(__file__), "..", "image_cache")
 THUMB_DIR = os.path.join(CACHE_DIR, "thumbnails")
+VIEW_DIR = os.path.join(CACHE_DIR, "view")  # Medium-res for annotation/review
 os.makedirs(CACHE_DIR, exist_ok=True)
 os.makedirs(THUMB_DIR, exist_ok=True)
+os.makedirs(VIEW_DIR, exist_ok=True)
 
 # Thumbnail size for gallery grid (max width/height)
 THUMB_MAX_SIZE = 400
+# View size for annotation/review (max width/height)
+VIEW_MAX_SIZE = 1200
 
 
 def get_cached_image(image_id: int):
@@ -352,13 +356,46 @@ def _make_thumbnail(content: bytes) -> bytes:
         return content  # Return original if thumbnail generation fails
 
 
+def _make_view_image(content: bytes) -> bytes:
+    """Create a medium-res image (1200px) for annotation/review views."""
+    try:
+        pil_image = PILImage.open(io.BytesIO(content))
+        if pil_image.mode in ('RGBA', 'P'):
+            pil_image = pil_image.convert('RGB')
+        w, h = pil_image.size
+        if max(w, h) <= VIEW_MAX_SIZE:
+            # Already small enough, just save as JPEG
+            buf = io.BytesIO()
+            pil_image.save(buf, format='JPEG', quality=85)
+            return buf.getvalue()
+        pil_image.thumbnail((VIEW_MAX_SIZE, VIEW_MAX_SIZE), PILImage.LANCZOS)
+        buf = io.BytesIO()
+        pil_image.save(buf, format='JPEG', quality=85)
+        return buf.getvalue()
+    except Exception:
+        return content
+
+
+def get_cached_view(image_id: int):
+    """Check if medium-res view image is cached locally."""
+    view_path = os.path.join(VIEW_DIR, f"{image_id}.jpg")
+    if os.path.exists(view_path):
+        with open(view_path, "rb") as f:
+            return f.read(), "image/jpeg"
+    return None, None
+
+
 def cache_image(image_id: int, content: bytes, mime_type: str):
-    """Cache full image and generate thumbnail."""
+    """Cache full image, medium-res view, and thumbnail."""
     try:
         jpeg_content = _to_jpeg(content, mime_type)
         # Save full image
         with open(os.path.join(CACHE_DIR, f"{image_id}.jpg"), "wb") as f:
             f.write(jpeg_content)
+        # Save medium-res view (1200px)
+        view_content = _make_view_image(jpeg_content)
+        with open(os.path.join(VIEW_DIR, f"{image_id}.jpg"), "wb") as f:
+            f.write(view_content)
         # Save thumbnail
         thumb_content = _make_thumbnail(jpeg_content)
         with open(os.path.join(THUMB_DIR, f"{image_id}.jpg"), "wb") as f:
@@ -638,6 +675,94 @@ def proxy_image(image_id: int):
         except Exception as e:
             print(f"Error fetching image {file_id}: {e}")
             raise HTTPException(status_code=502, detail=f"Failed to fetch image: {str(e)}")
+    finally:
+        db.close()
+
+
+@app.get("/api/images/view/{image_id}")
+def proxy_view(image_id: int):
+    """
+    Return a medium-res image (~1200px) for annotation/review views.
+    Much faster than full-res proxy (~80-150KB vs 2-5MB).
+    Perfect for annotation where pixel-perfect detail isn't needed.
+    """
+    # Check view cache first
+    cached_content, cached_mime = get_cached_view(image_id)
+    if cached_content:
+        return Response(
+            content=cached_content,
+            media_type=cached_mime,
+            headers={
+                "Cache-Control": "public, max-age=604800",
+                "X-Cache": "VIEW-HIT",
+            }
+        )
+
+    # Check if full image is cached — generate view from it
+    full_content, full_mime = get_cached_image(image_id)
+    if full_content:
+        view = _make_view_image(full_content)
+        try:
+            with open(os.path.join(VIEW_DIR, f"{image_id}.jpg"), "wb") as f:
+                f.write(view)
+        except Exception:
+            pass
+        return Response(
+            content=view,
+            media_type="image/jpeg",
+            headers={
+                "Cache-Control": "public, max-age=604800",
+                "X-Cache": "VIEW-GEN",
+            }
+        )
+
+    # Neither cached — fetch from GCS, cache all sizes, return view
+    db = SessionLocal()
+    try:
+        img = db.query(Image).filter(Image.id == image_id).first()
+        if not img:
+            raise HTTPException(status_code=404, detail="Image not found")
+
+        url = img.url or ""
+        content = None
+
+        if url.startswith('gs://'):
+            try:
+                from app.utils.gcs import download_to_bytes, parse_gs_uri
+                _, blob_path = parse_gs_uri(url)
+                content = download_to_bytes(blob_path)
+            except Exception as e:
+                print(f"[View] GCS fetch failed for {img.filename}: {e}")
+                raise HTTPException(status_code=502, detail=f"GCS fetch failed")
+        elif url.startswith('file://'):
+            local_path = url.replace('file://', '')
+            if not os.path.isabs(local_path):
+                backend_dir = os.path.dirname(os.path.dirname(__file__))
+                local_path = os.path.join(backend_dir, local_path)
+            if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
+                with open(local_path, "rb") as f:
+                    content = f.read()
+
+        if not content:
+            raise HTTPException(status_code=404, detail="Image not accessible")
+
+        ext = os.path.splitext(img.filename)[1].lower()
+        mime_type = {'.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+                     '.gif': 'image/gif', '.webp': 'image/webp'}.get(ext, 'image/jpeg')
+
+        # Cache full + view + thumbnail
+        cache_image(image_id, content, mime_type)
+
+        # Return view-sized image
+        view = _make_view_image(_to_jpeg(content, mime_type))
+        return Response(
+            content=view,
+            media_type="image/jpeg",
+            headers={
+                "Cache-Control": "public, max-age=604800",
+                "X-Cache": "VIEW-MISS",
+            }
+        )
     finally:
         db.close()
 
