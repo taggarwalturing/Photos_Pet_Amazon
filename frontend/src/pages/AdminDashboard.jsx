@@ -197,22 +197,25 @@ function UsersTab() {
     );
   };
 
-  const saveImageCount = async (userId, count) => {
-    try {
-      await api.put(`/admin/users/${userId}`, { assigned_image_count: count });
-      load();
-    } catch (err) {
-      alert(err.response?.data?.detail || 'Error updating count');
-    }
-  };
+  const handleAssignForUser = async (userId) => {
+    const rawVal = editingImageCount[userId];
+    const count = rawVal !== undefined ? (parseInt(rawVal) || 0) : null;
 
-  const handleAssignImages = async () => {
-    if (!confirm('This will reassign all images in sequential order based on each annotator\'s count. Existing assignments will be cleared. Continue?')) return;
     setAssigning(true);
     try {
+      // Save the count first if it was edited
+      if (count !== null) {
+        await api.put(`/admin/users/${userId}`, { assigned_image_count: count });
+      }
+      // Then run the full sequential assignment for all annotators
       const res = await api.post('/admin/assign-images');
       const data = res.data;
-      alert(`✅ Assignment complete!\n\nTotal images: ${data.total_images}\nAssigned: ${data.total_assigned}\nUnassigned: ${data.unassigned}\n\n${data.assignments.map(a => `${a.username}: ${a.assigned} images (${a.image_id_range})`).join('\n')}`);
+      const thisUser = data.assignments.find(a => a.annotator_id === userId);
+      const msg = thisUser
+        ? `✅ Assigned ${thisUser.assigned} images (${thisUser.image_id_range})`
+        : '✅ Assignment updated (0 images for this annotator)';
+      alert(msg);
+      setEditingImageCount(prev => { const copy = { ...prev }; delete copy[userId]; return copy; });
       load();
     } catch (err) {
       alert(err.response?.data?.detail || 'Assignment failed');
@@ -230,21 +233,12 @@ function UsersTab() {
           <h2 className="text-lg font-bold text-gray-900">Users & Assignments</h2>
           <p className="text-sm text-gray-500 mt-0.5">{users.filter(u => u.role === 'annotator').length} annotators, {users.filter(u => u.role === 'admin').length} admins</p>
         </div>
-        <div className="flex gap-2">
-          <button
-            onClick={handleAssignImages}
-            disabled={assigning}
-            className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white text-sm font-medium rounded-lg hover:from-emerald-600 hover:to-teal-600 transition shadow-sm cursor-pointer disabled:opacity-50"
-          >
-            {assigning ? '⏳ Assigning…' : '📋 Assign Images'}
-          </button>
-          <button
-            onClick={() => setShowCreate(!showCreate)}
-            className="px-4 py-2 bg-gradient-to-r from-indigo-500 to-purple-500 text-white text-sm font-medium rounded-lg hover:from-indigo-600 hover:to-purple-600 transition shadow-sm cursor-pointer"
-          >
-            + New Annotator
-          </button>
-        </div>
+        <button
+          onClick={() => setShowCreate(!showCreate)}
+          className="px-4 py-2 bg-gradient-to-r from-indigo-500 to-purple-500 text-white text-sm font-medium rounded-lg hover:from-indigo-600 hover:to-purple-600 transition shadow-sm cursor-pointer"
+        >
+          + New Annotator
+        </button>
       </div>
 
       {/* Create form */}
@@ -379,20 +373,24 @@ function UsersTab() {
                   {u.role === 'annotator' ? (
                     <div className="flex items-center gap-1.5">
                       <input
-                        type="number"
-                        min="0"
-                        value={editingImageCount[u.id] !== undefined ? editingImageCount[u.id] : (u.assigned_image_count || 0)}
-                        onChange={(e) => setEditingImageCount(prev => ({ ...prev, [u.id]: parseInt(e.target.value) || 0 }))}
-                        onBlur={(e) => {
-                          const newVal = parseInt(e.target.value) || 0;
-                          if (newVal !== (u.assigned_image_count || 0)) {
-                            saveImageCount(u.id, newVal);
-                          }
-                          setEditingImageCount(prev => { const copy = { ...prev }; delete copy[u.id]; return copy; });
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9]*"
+                        value={editingImageCount[u.id] !== undefined ? editingImageCount[u.id] : String(u.assigned_image_count || 0)}
+                        onChange={(e) => {
+                          const val = e.target.value.replace(/[^0-9]/g, '');
+                          setEditingImageCount(prev => ({ ...prev, [u.id]: val }));
                         }}
-                        onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAssignForUser(u.id); } }}
                         className="w-20 px-2 py-1 text-sm border border-gray-300 rounded-lg text-center focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
                       />
+                      <button
+                        onClick={() => handleAssignForUser(u.id)}
+                        disabled={assigning}
+                        className="px-2.5 py-1 text-xs font-semibold bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition cursor-pointer disabled:opacity-50 whitespace-nowrap"
+                      >
+                        {assigning ? '…' : 'Assign'}
+                      </button>
                     </div>
                   ) : '—'}
                 </td>
