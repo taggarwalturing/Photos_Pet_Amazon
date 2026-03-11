@@ -205,12 +205,7 @@ function UsersTab() {
     try {
       // Call per-annotator assignment endpoint (only affects this annotator)
       const queryCount = count !== null ? `?count=${count}` : '';
-      const res = await api.post(`/admin/assign-images/${userId}${queryCount}`);
-      const data = res.data;
-      let detail = '';
-      if (data.added > 0) detail = ` (+${data.added} new)`;
-      else if (data.removed > 0) detail = ` (−${data.removed} removed)`;
-      alert(`✅ ${data.username}: ${data.assigned} images assigned${detail} — range ${data.image_id_range}`);
+      await api.post(`/admin/assign-images/${userId}${queryCount}`);
       setEditingImageCount(prev => { const copy = { ...prev }; delete copy[userId]; return copy; });
       load();
     } catch (err) {
