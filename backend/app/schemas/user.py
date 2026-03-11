@@ -1,3 +1,4 @@
+"""User schemas — simplified for 3-table design."""
 from pydantic import BaseModel, field_validator
 from typing import Optional
 from datetime import datetime
@@ -30,21 +31,14 @@ class UserUpdate(BaseModel):
 class UserResponse(BaseModel):
     id: int
     username: str
-    full_name: Optional[str]
+    full_name: Optional[str] = None
     role: str
     is_active: bool
     created_at: datetime
-    assigned_category_ids: list[int] = []
-    # Progress stats
-    assigned_image_count: int = 0
-    completed_annotations: int = 0
-    total_annotations_needed: int = 0  # assigned_images * assigned_categories
-    improper_marked_count: int = 0
-    today_image_count: int = 0  # distinct images annotated today
+    # Computed stats (filled by the endpoint, not the ORM)
+    total_images: int = 0             # total images in system
+    completed_annotations: int = 0    # images this user has annotated
+    today_image_count: int = 0        # distinct images annotated today
 
     class Config:
         from_attributes = True
-
-
-class AssignCategoriesRequest(BaseModel):
-    category_ids: list[int]

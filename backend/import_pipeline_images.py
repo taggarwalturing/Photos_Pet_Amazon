@@ -233,11 +233,14 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
         img_gcs_folder = gcs_folder_map.get(filename, "clean")
 
         # Build gs:// URL based on GCS folder map
+        gcs_input_uri = None
         if use_gcs and source_fid:
             gcs_obj_path = build_gcs_path(source_fid, filename, img_gcs_folder)
             gs_uri = f"gs://{bucket_name}/{gcs_obj_path}"
             url = gs_uri
             image_path = gs_uri
+            # Always record the original input path
+            gcs_input_uri = f"gs://{bucket_name}/input/{source_fid}/{filename}"
         else:
             url = f"file://{img_file}"
             image_path = str(img_file)
@@ -248,33 +251,30 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
             db.execute(text('''
                 UPDATE images 
                 SET 
-                    compliance_processed = TRUE,
+                    pipeline_status = 'completed',
                     compliance_status = :compliance_status,
                     human_faces_detected = :face_count,
                     is_using_processed = TRUE,
-                    processing_log = :processing_log,
-                    source_drive_folder_id = COALESCE(source_drive_folder_id, :source_drive_folder_id),
+                    source_folder_id = COALESCE(source_folder_id, :source_folder_id),
                     image_drive_id = COALESCE(image_drive_id, :image_drive_id),
                     original_filename = COALESCE(:original_filename, original_filename),
                     url = :url,
-                    original_url = :url,
                     processed_url = :url,
                     is_programmatically_blurred = :is_programmatically_blurred,
-                    image_path = :image_path,
-                    gcs_folder = :gcs_folder
+                    gcs_folder = :gcs_folder,
+                    gcs_input_path = COALESCE(:gcs_input_path, gcs_input_path)
                 WHERE filename = :filename
             '''), {
                 'filename': filename,
                 'compliance_status': compliance_status,
                 'face_count': face_count,
-                'processing_log': f"Action: {action}, Faces: {face_count}",
-                'source_drive_folder_id': source_fid,
+                'source_folder_id': source_fid,
                 'image_drive_id': drive_file_id,
                 'original_filename': original_drive_name,
                 'url': url,
                 'is_programmatically_blurred': is_prog_blurred,
-                'image_path': image_path,
                 'gcs_folder': img_gcs_folder,
+                'gcs_input_path': gcs_input_uri,
             })
             counts['updated'] += 1
         else:
@@ -282,42 +282,46 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
             orig_format = "HEIC" if heic_original else None
             orig_name_for_db = original_drive_name or heic_original
 
+            from pathlib import PurePosixPath
+            image_id_stem = PurePosixPath(filename).stem
+
             db.execute(text('''
                 INSERT INTO images (
-                    filename, original_filename, original_format,
-                    url, compliance_processed, compliance_status,
-                    original_url, processed_url, is_improper,
+                    image_id,
+                    filename, original_filename,
+                    url, pipeline_status, compliance_status,
+                    processed_url, is_improper,
                     human_faces_detected, is_using_processed,
-                    processing_log, source_drive_folder_id,
+                    source_folder_id,
                     image_drive_id, manually_blurred,
                     is_programmatically_blurred, is_manually_modified,
-                    is_duplicate, parent_image, image_path,
-                    gcs_folder
+                    is_duplicate,
+                    gcs_folder, gcs_input_path
                 )
                 VALUES (
-                    :filename, :original_filename, :original_format,
-                    :url, TRUE, :compliance_status,
-                    :url, :url, FALSE,
+                    :image_id,
+                    :filename, :original_filename,
+                    :url, 'completed', :compliance_status,
+                    :url, FALSE,
                     :face_count, TRUE,
-                    :processing_log, :source_drive_folder_id,
+                    :source_folder_id,
                     :image_drive_id, FALSE,
                     :is_programmatically_blurred, FALSE,
-                    FALSE, NULL, :image_path,
-                    :gcs_folder
+                    FALSE,
+                    :gcs_folder, :gcs_input_path
                 )
             '''), {
+                'image_id': image_id_stem,
                 'filename': filename,
                 'original_filename': orig_name_for_db,
-                'original_format': orig_format,
                 'url': url,
                 'compliance_status': compliance_status,
                 'face_count': face_count,
-                'processing_log': f"Action: {action}, Faces: {face_count}",
-                'source_drive_folder_id': source_fid,
+                'source_folder_id': source_fid,
                 'image_drive_id': drive_file_id,
                 'is_programmatically_blurred': is_prog_blurred,
-                'image_path': image_path,
                 'gcs_folder': img_gcs_folder,
+                'gcs_input_path': gcs_input_uri,
             })
             counts['new'] += 1
             existing_filenames.add(filename)
@@ -357,38 +361,40 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                     dup_url = f"file://{raw_path}"
                     dup_image_path = str(raw_path)
 
+                dup_image_id_stem = PurePosixPath(dup_filename).stem
+
                 db.execute(text('''
                     INSERT INTO images (
-                        filename, original_filename, original_format,
-                        url, compliance_processed, compliance_status,
-                        original_url, processed_url, is_improper,
+                        image_id,
+                        filename, original_filename,
+                        url, pipeline_status, compliance_status,
+                        processed_url, is_improper,
                         human_faces_detected, is_using_processed,
-                        processing_log, source_drive_folder_id,
+                        source_folder_id,
                         image_drive_id, manually_blurred,
                         is_programmatically_blurred, is_manually_modified,
-                        is_duplicate, parent_image, image_path,
+                        is_duplicate,
                         gcs_folder
                     )
                     VALUES (
-                        :filename, :original_filename, :original_format,
-                        :url, FALSE, 'duplicate',
-                        :url, NULL, FALSE,
+                        :image_id,
+                        :filename, :original_filename,
+                        :url, 'pending', 'duplicate',
+                        NULL, FALSE,
                         0, FALSE,
-                        'Marked as duplicate', :source_drive_folder_id,
+                        :source_folder_id,
                         :image_drive_id, FALSE,
                         FALSE, FALSE,
-                        TRUE, :parent_image, :image_path,
+                        TRUE,
                         'input'
                     )
                 '''), {
+                    'image_id': dup_image_id_stem,
                     'filename': dup_filename,
                     'original_filename': orig_name_for_dup,
-                    'original_format': orig_format,
                     'url': dup_url,
-                    'source_drive_folder_id': source_fid,
+                    'source_folder_id': source_fid,
                     'image_drive_id': dup_drive_id,
-                    'parent_image': parent_filename,
-                    'image_path': dup_image_path,
                 })
                 dup_count += 1
                 existing_filenames.add(dup_filename)

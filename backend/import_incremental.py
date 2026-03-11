@@ -258,33 +258,36 @@ class IncrementalPipelineImporter:
                 url = f"file://{relative_path}"
                 
                 # Insert into database
+                from pathlib import PurePosixPath
+                image_id_stem = PurePosixPath(filename).stem
+
                 db.execute(text('''
                     INSERT INTO images (
+                        image_id,
                         filename, 
                         url, 
-                        compliance_processed,
+                        pipeline_status,
                         compliance_status,
-                        original_url,
                         processed_url,
                         is_improper,
                         human_faces_detected,
                         is_using_processed
                     )
                     VALUES (
+                        :image_id,
                         :filename, 
                         :url, 
-                        TRUE,
+                        'completed',
                         'processed',
-                        :original_url,
                         :processed_url,
                         FALSE,
                         0,
                         TRUE
                     )
                 '''), {
+                    'image_id': image_id_stem,
                     'filename': filename,
                     'url': url,
-                    'original_url': relative_path,
                     'processed_url': relative_path
                 })
                 

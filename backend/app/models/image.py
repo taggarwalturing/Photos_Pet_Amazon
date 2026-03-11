@@ -1,6 +1,10 @@
-from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, ForeignKey, Index, JSON
+"""Consolidated Image model — single table for images, annotations, and review."""
+from datetime import datetime, timezone
+from sqlalchemy import (
+    Column, Integer, String, Boolean, DateTime, Text, JSON,
+    ForeignKey, Index, func,
+)
 from sqlalchemy.orm import relationship
-from sqlalchemy.sql import func
 from app.database import Base
 
 
@@ -8,87 +12,101 @@ class Image(Base):
     __tablename__ = "images"
 
     id = Column(Integer, primary_key=True, index=True)
-    filename = Column(String(255), nullable=False)
-    original_filename = Column(String(255), nullable=True)  # Original filename before conversion (e.g. IMG.HEIC → IMG.jpg)
-    original_format = Column(String(20), nullable=True)     # Original file format (e.g. "HEIC", "PNG") if converted
-    url = Column(String(1024), nullable=False)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    
-    # Improper image tracking
-    is_improper = Column(Boolean, default=False, nullable=False, index=True)
-    improper_reason = Column(Text, nullable=True)
-    marked_improper_by = Column(Integer, ForeignKey("users.id"), nullable=True)
-    marked_improper_at = Column(DateTime(timezone=True), nullable=True)
-    
-    # Biometric compliance tracking
-    compliance_processed = Column(Boolean, default=False, nullable=False, index=True)
-    compliance_status = Column(String(50), nullable=True, index=True)
-    human_faces_detected = Column(Integer, default=0, nullable=False)
-    processing_log = Column(Text, nullable=True)
-    
-    # AI-generated image detection
-    is_ai_generated = Column(Boolean, nullable=True, default=False)
-    ai_detection_confidence = Column(Integer, nullable=True)
+    image_id = Column(String(500), index=True)              # filename stem without extension
+    filename = Column(String(500), nullable=False)          # hex_id.jpeg
+    url = Column(String(1000))
+    source_folder_id = Column(String(200), index=True)      # GCS folder ID
+
+    # ── GCS paths ──
+    gcs_input_path = Column(String(500))
+    gcs_annotated_path = Column(String(500))
+    gcs_folder = Column(String(50), default="input")        # input / clean / blur
+
+    # ── Deduplication ──
+    is_duplicate = Column(Boolean, default=False, index=True)
+    parent_image_id = Column(Integer, ForeignKey("images.id"), nullable=True)
+
+    # ── Pipeline ──
+    pipeline_status = Column(String(50), default="pending")
+    compliance_status = Column(String(50))
+    human_faces_detected = Column(Integer, default=0)
+
+    # ── AI detection ──
+    is_ai_generated = Column(Boolean, default=False)
+    ai_detection_confidence = Column(Integer)
     marked_ai_by = Column(Integer, ForeignKey("users.id"), nullable=True)
-    marked_ai_at = Column(DateTime(timezone=True), nullable=True)
-    
-    # Human visibility tracking
+    marked_ai_at = Column(DateTime)
+
+    # ── Human visibility ──
     human_visible = Column(Boolean, nullable=True)
     human_visible_marked_by = Column(Integer, ForeignKey("users.id"), nullable=True)
-    human_visible_marked_at = Column(DateTime(timezone=True), nullable=True)
-    
-    # Dual URL storage for version control
-    original_url = Column(Text, nullable=True)
-    processed_url = Column(Text, nullable=True)
-    is_using_processed = Column(Boolean, default=True, nullable=False)
-    processing_method = Column(String(50), nullable=True)
-    
-    # Manual blur tracking by annotators
-    manually_blurred = Column(Boolean, default=False, nullable=False)
-    blur_regions = Column(JSON, nullable=True)
+    human_visible_marked_at = Column(DateTime)
+
+    # ── Blur / modification tracking ──
+    is_programmatically_blurred = Column(Boolean, default=False)
+    is_manually_modified = Column(Boolean, default=False)
+    is_using_processed = Column(Boolean, default=True)
+    manually_blurred = Column(Boolean, default=False)
     manually_blurred_by = Column(Integer, ForeignKey("users.id"), nullable=True)
-    manually_blurred_at = Column(DateTime(timezone=True), nullable=True)
-    annotated_blur_url = Column(Text, nullable=True)
+    manually_blurred_at = Column(DateTime)
+    is_blurred_annotator = Column(Boolean, default=False)
+    is_restore_annotator = Column(Boolean, default=False)
+    blur_regions = Column(JSON)                              # [{x,y,width,height}, ...]
+    processed_url = Column(String(1000))
+    processing_method = Column(String(50))
 
-    # Google Drive source tracking
-    source_drive_folder_id = Column(String(255), nullable=True, index=True)
-    image_drive_id = Column(String(255), nullable=True, index=True)  # Unique Google Drive hex ID — primary display identifier
+    # ── Annotation (consolidated — replaces Annotation + AnnotationSelection tables) ──
+    annotation_status = Column(String(50), default="pending")  # pending / in_progress / completed
+    annotations = Column(JSON)                               # {"cat_key": {"selected_option_ids": [...]}, ...}
+    annotated_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    annotated_at = Column(DateTime)
 
-    # Key status flags (user-requested clean columns)
-    is_manually_modified = Column(Boolean, default=False, nullable=False)  # True if modified by reviewer or annotator (blur/restore)
-    is_programmatically_blurred = Column(Boolean, default=False, nullable=False)  # True if blurred by pipeline (biometric compliance)
-    is_duplicate = Column(Boolean, default=False, nullable=False)  # True if image is a content duplicate
-    parent_image = Column(String(255), nullable=True)  # Filename of parent image if this is a duplicate
-    image_path = Column(Text, nullable=True)  # Current image file path on disk
+    # ── Annotation history (append-only audit log) ──
+    # Each entry: {"ts": ISO timestamp, "by": user_id, "role": "annotator"|"reviewer"|"ai",
+    #              "action": "annotate"|"edit"|"rework", "annotations": {...snapshot...}}
+    annotation_history = Column(JSON, default=list)
 
-    # Annotator blur/restore tracking
-    is_blurred_annotator = Column(Boolean, default=False, nullable=False)
-    is_restore_annotator = Column(Boolean, default=False, nullable=False)
-    restored_by_annotator_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    restored_at_annotator = Column(DateTime(timezone=True), nullable=True)
+    # ── Review (image-level — replaces per-annotation review) ──
+    review_status = Column(String(50))                       # null / pending / approved / rework_requested / rework_completed
+    review_note = Column(Text)
+    reviewed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    reviewed_at = Column(DateTime)
 
-    # Deliverable image tracking (populated after reviewer approves all annotations)
-    deliverable_image_path = Column(Text, nullable=True)
+    # ── Improper ──
+    is_improper = Column(Boolean, default=False)
+    improper_reason = Column(Text)
+    marked_improper_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    marked_improper_at = Column(DateTime)
 
-    # GCS storage stage: input | clean | blur
-    gcs_folder = Column(String(20), nullable=True, default="input")
+    # ── Locking ──
+    locked_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    locked_at = Column(DateTime)
 
-    # Arbiter classifier AI-predicted labels (pre-filled for annotators)
-    arbiter_labels = Column(JSON, nullable=True)
-    arbiter_classified_at = Column(DateTime(timezone=True), nullable=True)
+    # ── Deliverable ──
+    deliverable_image_path = Column(String(500))
 
-    # Relationships
-    annotations = relationship("Annotation", back_populates="image")
-    final_labels = relationship("FinalLabel", back_populates="image", uselist=False)
-    improper_marker = relationship("User", foreign_keys=[marked_improper_by])
-    ai_marker = relationship("User", foreign_keys=[marked_ai_by])
-    human_visible_marker = relationship("User", foreign_keys=[human_visible_marked_by])
-    edit_requests = relationship("EditRequest", back_populates="image")
-    manual_blur_user = relationship("User", foreign_keys=[manually_blurred_by])
-    restore_user = relationship("User", foreign_keys=[restored_by_annotator_id])
-    
-    # Composite indexes for common query patterns
+    # ── Arbiter labels (pre-filled from classifier) ──
+    arbiter_labels = Column(JSON)                            # {"lighting": {"final": "well_lit", ...}, ...}
+
+    # ── Legacy / mapping columns (kept for pipeline import) ──
+    original_filename = Column(String(500))
+    image_drive_id = Column(String(200))
+
+    # ── Timestamps ──
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
+                        onupdate=lambda: datetime.now(timezone.utc))
+
+    # ── Relationships ──
+    parent_image = relationship("Image", remote_side=[id], foreign_keys=[parent_image_id])
+    annotator = relationship("User", foreign_keys=[annotated_by], lazy="joined")
+    reviewer_user = relationship("User", foreign_keys=[reviewed_by], lazy="select")
+
+    # ── Indexes ──
     __table_args__ = (
-        Index('idx_compliance_status', 'compliance_processed', 'compliance_status'),
-        Index('idx_improper_created', 'is_improper', 'created_at'),
+        Index("ix_images_annotation_status", "annotation_status"),
+        Index("ix_images_review_status", "review_status"),
+        Index("ix_images_annotated_by", "annotated_by"),
+        Index("ix_images_source_folder", "source_folder_id"),
+        Index("ix_images_gcs_folder", "gcs_folder"),
     )

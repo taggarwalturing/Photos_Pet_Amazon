@@ -181,10 +181,10 @@ export default function PhotoRegistryTab() {
              clean → annotated/{folder_id}/clean/{file}
              blur  → annotated/{folder_id}/blur/{file}  */
   const getGcsPath = (row) => {
-    if (!row.source_drive_folder_id || !row.filename) return null;
+    if (!row.source_folder_id || !row.filename) return null;
     const stage = row.gcs_folder || 'input';
-    if (stage === 'input') return `input/${row.source_drive_folder_id}/${row.filename}`;
-    return `annotated/${row.source_drive_folder_id}/${stage}/${row.filename}`;
+    if (stage === 'input') return `input/${row.source_folder_id}/${row.filename}`;
+    return `annotated/${row.source_folder_id}/${stage}/${row.filename}`;
   };
 
   return (
@@ -442,12 +442,12 @@ export default function PhotoRegistryTab() {
 
                       {/* Folder ID */}
                       <td className="px-4 py-2">
-                        {row.source_drive_folder_id ? (
+                        {row.source_folder_id ? (
                           <span
                             className="text-[10px] font-mono text-purple-600 truncate block"
-                            title={row.source_drive_folder_id}
+                            title={row.source_folder_id}
                           >
-                            {row.source_drive_folder_id.slice(0, 10)}…
+                            {row.source_folder_id.slice(0, 10)}…
                           </span>
                         ) : (
                           <span className="text-gray-300 text-xs">—</span>

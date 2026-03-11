@@ -3,7 +3,6 @@ import { useAuth } from './context/AuthContext';
 import LoginPage from './pages/LoginPage';
 import AdminDashboard from './pages/AdminDashboard';
 import AnnotatorHome from './pages/AnnotatorHome';
-import AnnotationPage from './pages/AnnotationPage';
 import ImageAnnotationPage from './pages/ImageAnnotationPage';
 import PublicBlurPage from './pages/PublicBlurPage';
 
@@ -53,13 +52,10 @@ export default function App() {
             </ProtectedRoute>
           }
         />
+        {/* Category-first workflow removed — redirect to annotator home */}
         <Route
           path="/annotator/category/:categoryId"
-          element={
-            <ProtectedRoute role="annotator">
-              <AnnotationPage />
-            </ProtectedRoute>
-          }
+          element={<Navigate to="/annotator" />}
         />
         <Route
           path="/annotator/image/:imageId"

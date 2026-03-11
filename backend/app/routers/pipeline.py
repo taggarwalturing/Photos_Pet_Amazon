@@ -208,11 +208,10 @@ def get_pipeline_errors(
     
     # Get images with processing errors
     failed_images = db.execute(text("""
-        SELECT id, filename, compliance_status, processing_log, human_faces_detected
+        SELECT id, filename, compliance_status, pipeline_status, human_faces_detected
         FROM images
         WHERE compliance_status IN ('failed', 'error', 'needs_reprocess')
-        OR processing_log LIKE '%error%'
-        OR processing_log LIKE '%failed%'
+        OR pipeline_status IN ('failed', 'error')
         ORDER BY id DESC
     """)).fetchall()
     
@@ -223,7 +222,7 @@ def get_pipeline_errors(
                 "image_id": img[0],
                 "filename": img[1],
                 "status": img[2],
-                "log": img[3],
+                "log": img[3] or "",
                 "faces_detected": img[4]
             }
             for img in failed_images
@@ -257,9 +256,8 @@ async def reprocess_failed_images(
     
     # Reset their processing status
     for image in images:
-        image.compliance_processed = False
+        image.pipeline_status = "pending"
         image.compliance_status = "pending_reprocess"
-        image.processing_log = f"Reprocess requested by {admin.username} at {datetime.now()}"
     
     db.commit()
     
@@ -286,9 +284,9 @@ def get_pipeline_summary(
     stats = db.execute(text("""
         SELECT 
             COUNT(*) as total,
-            SUM(CASE WHEN compliance_processed = TRUE THEN 1 ELSE 0 END) as processed,
+            SUM(CASE WHEN pipeline_status = 'completed' THEN 1 ELSE 0 END) as processed,
             SUM(CASE WHEN compliance_status = 'clean' THEN 1 ELSE 0 END) as clean,
-            SUM(CASE WHEN compliance_status = 'processed' THEN 1 ELSE 0 END) as blurred,
+            SUM(CASE WHEN compliance_status IN ('processed', 'blurred', 'obfuscated') THEN 1 ELSE 0 END) as blurred,
             SUM(CASE WHEN compliance_status IN ('failed', 'error') THEN 1 ELSE 0 END) as failed,
             SUM(CASE WHEN human_faces_detected > 0 THEN 1 ELSE 0 END) as with_faces
         FROM images
@@ -429,12 +427,12 @@ def get_pipeline_stats(
     stats = db.execute(text("""
         SELECT 
             COUNT(*) as total,
-            SUM(CASE WHEN compliance_processed = TRUE THEN 1 ELSE 0 END) as processed,
-            SUM(CASE WHEN compliance_processed = FALSE OR compliance_processed IS NULL THEN 1 ELSE 0 END) as pending,
+            SUM(CASE WHEN pipeline_status = 'completed' THEN 1 ELSE 0 END) as processed,
+            SUM(CASE WHEN pipeline_status != 'completed' OR pipeline_status IS NULL THEN 1 ELSE 0 END) as pending,
             SUM(CASE WHEN compliance_status IN ('failed', 'error') THEN 1 ELSE 0 END) as failed,
             SUM(CASE WHEN human_faces_detected > 0 OR compliance_status IN ('blurred', 'processed', 'obfuscated') THEN 1 ELSE 0 END) as with_faces,
             SUM(CASE WHEN (human_faces_detected = 0 OR human_faces_detected IS NULL) AND compliance_status = 'clean' THEN 1 ELSE 0 END) as without_faces,
-            SUM(CASE WHEN compliance_status LIKE '%screenshot%' OR processing_log LIKE '%screenshot%' THEN 1 ELSE 0 END) as screenshots
+            SUM(CASE WHEN compliance_status LIKE '%screenshot%' THEN 1 ELSE 0 END) as screenshots
         FROM images
     """)).fetchone()
     
@@ -532,18 +530,18 @@ def _update_drive_folder_stats(folder_ids: List[str] = None):
             # Count images in DB for this folder
             from sqlalchemy import text
             row = db.execute(
-                text("SELECT COUNT(*) FROM images WHERE source_drive_folder_id = :fid"),
+                text("SELECT COUNT(*) FROM images WHERE source_folder_id = :fid"),
                 {"fid": fid}
             ).scalar()
             folder_record.downloaded_count = row or 0
 
             # Count blurred / clean from DB
             blurred = db.execute(
-                text("SELECT COUNT(*) FROM images WHERE source_drive_folder_id = :fid AND compliance_status = 'blurred'"),
+                text("SELECT COUNT(*) FROM images WHERE source_folder_id = :fid AND compliance_status = 'blurred'"),
                 {"fid": fid}
             ).scalar()
             clean = db.execute(
-                text("SELECT COUNT(*) FROM images WHERE source_drive_folder_id = :fid AND compliance_status = 'clean'"),
+                text("SELECT COUNT(*) FROM images WHERE source_folder_id = :fid AND compliance_status = 'clean'"),
                 {"fid": fid}
             ).scalar()
             folder_record.blurred_count = blurred or 0
@@ -562,7 +560,7 @@ def _update_drive_folder_stats(folder_ids: List[str] = None):
             # If still not set, derive from DB counts
             if (folder_record.unique_count or 0) == 0 and (folder_record.downloaded_count or 0) > 0:
                 dup_in_db = db.execute(
-                    text("SELECT COUNT(*) FROM images WHERE source_drive_folder_id = :fid AND is_duplicate = TRUE"),
+                    text("SELECT COUNT(*) FROM images WHERE source_folder_id = :fid AND is_duplicate = TRUE"),
                     {"fid": fid}
                 ).scalar() or 0
                 folder_record.unique_count = (folder_record.downloaded_count or 0) - dup_in_db
@@ -1132,7 +1130,7 @@ def reprocess_images_background(image_ids: List[int], db: Session):
         # in the next pipeline run
         
         for image in images:
-            image.processing_log = f"Queued for reprocessing at {datetime.now()}"
+            image.pipeline_status = "pending"
         
         db.commit()
         
@@ -1407,7 +1405,7 @@ def list_drive_folders(
     folder_image_stats = {}
     rows = db.execute(text("""
         SELECT
-            source_drive_folder_id,
+            source_folder_id,
             COUNT(*) AS total,
             SUM(CASE WHEN compliance_status IN ('blurred','processed','obfuscated') THEN 1 ELSE 0 END) AS blurred,
             SUM(CASE WHEN compliance_status = 'clean' THEN 1 ELSE 0 END) AS clean,
@@ -1415,8 +1413,8 @@ def list_drive_folders(
             SUM(CASE WHEN is_improper = TRUE THEN 1 ELSE 0 END) AS improper,
             SUM(CASE WHEN manually_blurred = TRUE THEN 1 ELSE 0 END) AS manually_blurred
         FROM images
-        WHERE source_drive_folder_id IS NOT NULL
-        GROUP BY source_drive_folder_id
+        WHERE source_folder_id IS NOT NULL
+        GROUP BY source_folder_id
     """)).fetchall()
     for r in rows:
         folder_image_stats[r[0]] = {
@@ -1455,7 +1453,7 @@ def list_drive_folders(
 
     # Also count images with no folder_id
     no_folder_count = db.query(Image).filter(
-        Image.source_drive_folder_id.is_(None)
+        Image.source_folder_id.is_(None)
     ).count()
 
     return {
@@ -1669,7 +1667,7 @@ def get_folder_stats_table(
     # Per-folder image stats from DB
     rows = db.execute(text("""
         SELECT
-            COALESCE(source_drive_folder_id, '__unassigned__') AS fid,
+            COALESCE(source_folder_id, '__unassigned__') AS fid,
             COUNT(*) AS total,
             SUM(CASE WHEN compliance_status IN ('blurred','processed','obfuscated') THEN 1 ELSE 0 END) AS blurred,
             SUM(CASE WHEN compliance_status = 'clean' THEN 1 ELSE 0 END) AS clean,
@@ -1679,19 +1677,18 @@ def get_folder_stats_table(
             SUM(CASE WHEN human_faces_detected > 0 THEN 1 ELSE 0 END) AS with_faces,
             SUM(CASE WHEN arbiter_labels IS NOT NULL THEN 1 ELSE 0 END) AS ai_classified
         FROM images
-        GROUP BY COALESCE(source_drive_folder_id, '__unassigned__')
+        GROUP BY COALESCE(source_folder_id, '__unassigned__')
     """)).fetchall()
 
-    # Annotation progress per folder
+    # Annotation progress per folder (image-level: annotation_status + review_status)
     annotation_rows = db.execute(text("""
         SELECT
-            COALESCE(i.source_drive_folder_id, '__unassigned__') AS fid,
-            COUNT(DISTINCT a.image_id) AS annotated_images,
-            COUNT(CASE WHEN a.status = 'completed' THEN 1 END) AS completed_annotations,
-            COUNT(CASE WHEN a.review_status = 'approved' THEN 1 END) AS approved_annotations
-        FROM images i
-        LEFT JOIN annotations a ON a.image_id = i.id
-        GROUP BY COALESCE(i.source_drive_folder_id, '__unassigned__')
+            COALESCE(source_folder_id, '__unassigned__') AS fid,
+            COUNT(CASE WHEN annotated_by IS NOT NULL THEN 1 END) AS annotated_images,
+            COUNT(CASE WHEN annotation_status = 'completed' THEN 1 END) AS completed_annotations,
+            COUNT(CASE WHEN review_status = 'approved' THEN 1 END) AS approved_annotations
+        FROM images
+        GROUP BY COALESCE(source_folder_id, '__unassigned__')
     """)).fetchall()
     ann_map = {r[0]: {"annotated_images": r[1], "completed": r[2], "approved": r[3]} for r in annotation_rows}
 

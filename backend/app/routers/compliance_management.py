@@ -16,8 +16,7 @@ from app.database import get_db
 from app.dependencies import require_admin
 from app.models.user import User
 from app.models.image import Image
-from app.models.annotation import Annotation
-from app.utils.deliverable import update_biometric_if_delivered
+from app.utils.deliverable import update_deliverable_if_delivered
 
 
 def _read_backend_env() -> dict:
@@ -60,26 +59,14 @@ def revert_to_original(
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
     
-    if not image.original_url:
-        raise HTTPException(
-            status_code=400,
-            detail="No original version available for this image"
-        )
-    
-    # Switch to original
-    image.url = image.original_url
+    # Switch to original (unblurred) version
     image.is_using_processed = False
     image.compliance_status = "reverted"
-    
-    # Log the action
-    log_entry = f"\n[REVERTED by {admin.username}] Reason: {payload.reason or 'N/A'}"
-    image.processing_log = (image.processing_log or "") + log_entry
-    
     image.is_manually_modified = True
     db.commit()
 
     # If image was already delivered, re-copy with latest version
-    update_biometric_if_delivered(image.id, db)
+    update_deliverable_if_delivered(image.id, db)
     
     return {
         "success": True,
@@ -115,15 +102,11 @@ async def reprocess_with_openai(
         image.compliance_status = "reprocessed_openai"
         image.processing_method = "openai"
         image.human_faces_detected = result['faces_detected']
-        
-        log_entry = f"\n[REPROCESSED with OpenAI by {admin.username}] Faces: {result['faces_detected']}, Reason: {payload.reason or 'N/A'}"
-        image.processing_log = (image.processing_log or "") + log_entry
-        
         image.is_manually_modified = True
         db.commit()
 
         # If image was already delivered, re-copy with latest version
-        update_biometric_if_delivered(image.id, db)
+        update_deliverable_if_delivered(image.id, db)
         
         return {
             "success": True,
@@ -158,13 +141,12 @@ def get_image_versions(
         "image_id": image_id,
         "filename": image.filename,
         "current_url": image.url,
-        "original_url": image.original_url,
         "processed_url": image.processed_url,
         "is_using_processed": image.is_using_processed,
         "processing_method": image.processing_method,
         "compliance_status": image.compliance_status,
         "human_faces_detected": image.human_faces_detected,
-        "processing_log": image.processing_log
+        "gcs_folder": image.gcs_folder,
     }
 
 
@@ -191,8 +173,8 @@ async def detect_and_blur_with_openai(image: Image) -> dict:
     if not openai_api_key:
         raise Exception("OPENAI_API_KEY not configured")
     
-    # Download the original image from Google Drive
-    original_url = image.original_url or image.url
+    # Download the original image
+    original_url = image.url
     gdrive_match = re.search(r'id=([a-zA-Z0-9_-]+)', original_url)
     if not gdrive_match:
         raise Exception("Invalid image URL - must be Google Drive URL")

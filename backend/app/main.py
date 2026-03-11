@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Query as WSQuery
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from sqlalchemy import text, inspect
@@ -13,6 +13,8 @@ from app.database import engine, Base, SessionLocal, get_db
 from app.routers import auth, admin, annotator, compliance, compliance_management, pipeline, public_blur, annotator_blur, arbiter
 from app.seed import seed_database
 from app.models.image import Image
+from app.ws_manager import lock_manager
+from app.services.auth import decode_access_token
 
 # Google Drive API imports
 from google.oauth2 import service_account
@@ -29,8 +31,8 @@ except ImportError:
     HEIF_SUPPORT = False
 
 # Import all models so Base knows about them
-from app.models import user, image, category, option, annotator_category, annotation, edit_request, notification, drive_folder, final_label  # noqa
-from app.models import settings as settings_model  # noqa - rename to avoid conflict with config.settings
+from app.models import user, image, drive_folder  # noqa
+from app.models import arbiter_prediction  # noqa
 
 # Google Drive service account setup from settings
 SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
@@ -83,113 +85,93 @@ def get_drive_service():
 # Create tables
 Base.metadata.create_all(bind=engine)
 
-# Add missing columns to existing tables (lightweight migration)
+# ── Lightweight migration: add missing columns to existing tables ──
 def _migrate():
+    """
+    Ensure the database schema matches the current models.
+    Base.metadata.create_all() handles new tables, but existing tables
+    may need new columns added.
+    """
     inspector = inspect(engine)
-    if "annotations" in inspector.get_table_names():
-        existing = {col["name"] for col in inspector.get_columns("annotations")}
-        with engine.begin() as conn:
-            if "review_status" not in existing:
-                conn.execute(text("ALTER TABLE annotations ADD COLUMN review_status VARCHAR(20)"))
-            if "review_note" not in existing:
-                conn.execute(text("ALTER TABLE annotations ADD COLUMN review_note TEXT"))
-            if "reviewed_by" not in existing:
-                conn.execute(text("ALTER TABLE annotations ADD COLUMN reviewed_by INTEGER REFERENCES users(id)"))
-            if "reviewed_at" not in existing:
-                conn.execute(text("ALTER TABLE annotations ADD COLUMN reviewed_at TIMESTAMPTZ"))
-            if "time_spent_seconds" not in existing:
-                conn.execute(text("ALTER TABLE annotations ADD COLUMN time_spent_seconds INTEGER DEFAULT 0 NOT NULL"))
-            if "is_rework" not in existing:
-                conn.execute(text("ALTER TABLE annotations ADD COLUMN is_rework BOOLEAN DEFAULT FALSE NOT NULL"))
-            if "rework_time_seconds" not in existing:
-                conn.execute(text("ALTER TABLE annotations ADD COLUMN rework_time_seconds INTEGER DEFAULT 0 NOT NULL"))
-        print("[MIGRATE] Checked/added review columns to annotations table")
-    # Add improper columns to images table
+
+    # ── Images table: add any columns that are in the model but missing from DB ──
     if "images" in inspector.get_table_names():
         existing_img = {col["name"] for col in inspector.get_columns("images")}
+        new_columns = {
+            # Column name → SQL definition
+            "image_id": "VARCHAR(500)",
+            "gcs_input_path": "VARCHAR(500)",
+            "gcs_annotated_path": "VARCHAR(500)",
+            "gcs_folder": "VARCHAR(50) DEFAULT 'input'",
+            "is_duplicate": "BOOLEAN DEFAULT FALSE",
+            "parent_image_id": "INTEGER REFERENCES images(id)",
+            "pipeline_status": "VARCHAR(50) DEFAULT 'pending'",
+            "compliance_status": "VARCHAR(50)",
+            "human_faces_detected": "INTEGER DEFAULT 0",
+            "is_ai_generated": "BOOLEAN DEFAULT FALSE",
+            "ai_detection_confidence": "INTEGER",
+            "marked_ai_by": "INTEGER REFERENCES users(id)",
+            "marked_ai_at": "TIMESTAMPTZ",
+            "human_visible": "BOOLEAN",
+            "human_visible_marked_by": "INTEGER REFERENCES users(id)",
+            "human_visible_marked_at": "TIMESTAMPTZ",
+            "is_programmatically_blurred": "BOOLEAN DEFAULT FALSE",
+            "is_manually_modified": "BOOLEAN DEFAULT FALSE",
+            "is_using_processed": "BOOLEAN DEFAULT TRUE",
+            "manually_blurred": "BOOLEAN DEFAULT FALSE",
+            "manually_blurred_by": "INTEGER REFERENCES users(id)",
+            "manually_blurred_at": "TIMESTAMPTZ",
+            "is_blurred_annotator": "BOOLEAN DEFAULT FALSE",
+            "is_restore_annotator": "BOOLEAN DEFAULT FALSE",
+            "blur_regions": "JSON",
+            "processed_url": "VARCHAR(1000)",
+            "processing_method": "VARCHAR(50)",
+            "annotation_status": "VARCHAR(50) DEFAULT 'pending'",
+            "annotations": "JSON",
+            "annotated_by": "INTEGER REFERENCES users(id)",
+            "annotated_at": "TIMESTAMPTZ",
+            "review_status": "VARCHAR(50)",
+            "review_note": "TEXT",
+            "reviewed_by": "INTEGER REFERENCES users(id)",
+            "reviewed_at": "TIMESTAMPTZ",
+            "is_improper": "BOOLEAN DEFAULT FALSE",
+            "improper_reason": "TEXT",
+            "marked_improper_by": "INTEGER REFERENCES users(id)",
+            "marked_improper_at": "TIMESTAMPTZ",
+            "locked_by": "INTEGER REFERENCES users(id)",
+            "locked_at": "TIMESTAMPTZ",
+            "deliverable_image_path": "VARCHAR(500)",
+            "arbiter_labels": "JSON",
+            "annotation_history": "JSON DEFAULT '[]'::json",
+            "original_filename": "VARCHAR(500)",
+            "image_drive_id": "VARCHAR(200)",
+            "source_folder_id": "VARCHAR(200)",
+        }
         with engine.begin() as conn:
-            if "is_improper" not in existing_img:
-                conn.execute(text("ALTER TABLE images ADD COLUMN is_improper BOOLEAN DEFAULT FALSE NOT NULL"))
-            if "improper_reason" not in existing_img:
-                conn.execute(text("ALTER TABLE images ADD COLUMN improper_reason TEXT"))
-            if "marked_improper_by" not in existing_img:
-                conn.execute(text("ALTER TABLE images ADD COLUMN marked_improper_by INTEGER REFERENCES users(id)"))
-            if "marked_improper_at" not in existing_img:
-                conn.execute(text("ALTER TABLE images ADD COLUMN marked_improper_at TIMESTAMPTZ"))
-            # Add AI-generated detection columns
-            if "is_ai_generated" not in existing_img:
-                conn.execute(text("ALTER TABLE images ADD COLUMN is_ai_generated BOOLEAN"))
-            if "ai_detection_confidence" not in existing_img:
-                conn.execute(text("ALTER TABLE images ADD COLUMN ai_detection_confidence INTEGER"))
-            if "marked_ai_by" not in existing_img:
-                conn.execute(text("ALTER TABLE images ADD COLUMN marked_ai_by INTEGER REFERENCES users(id)"))
-            if "marked_ai_at" not in existing_img:
-                conn.execute(text("ALTER TABLE images ADD COLUMN marked_ai_at TIMESTAMPTZ"))
-            # Add arbiter classifier columns
-            if "arbiter_labels" not in existing_img:
-                conn.execute(text("ALTER TABLE images ADD COLUMN arbiter_labels JSON"))
-            if "arbiter_classified_at" not in existing_img:
-                conn.execute(text("ALTER TABLE images ADD COLUMN arbiter_classified_at TIMESTAMPTZ"))
-            # Add source Drive folder tracking
-            if "source_drive_folder_id" not in existing_img:
-                conn.execute(text("ALTER TABLE images ADD COLUMN source_drive_folder_id VARCHAR(255)"))
-                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_source_drive_folder_id ON images(source_drive_folder_id)"))
-            # Add Google Drive file ID tracking
-            if "image_drive_id" not in existing_img:
-                conn.execute(text("ALTER TABLE images ADD COLUMN image_drive_id VARCHAR(255)"))
-                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_image_drive_id ON images(image_drive_id)"))
-            # Add annotator blur/restore tracking columns
-            if "is_blurred_annotator" not in existing_img:
-                conn.execute(text("ALTER TABLE images ADD COLUMN is_blurred_annotator BOOLEAN DEFAULT FALSE NOT NULL"))
-            if "is_restore_annotator" not in existing_img:
-                conn.execute(text("ALTER TABLE images ADD COLUMN is_restore_annotator BOOLEAN DEFAULT FALSE NOT NULL"))
-            if "restored_by_annotator_id" not in existing_img:
-                conn.execute(text("ALTER TABLE images ADD COLUMN restored_by_annotator_id INTEGER REFERENCES users(id)"))
-            if "restored_at_annotator" not in existing_img:
-                conn.execute(text("ALTER TABLE images ADD COLUMN restored_at_annotator TIMESTAMP WITH TIME ZONE"))
-            # Add deliverable image tracking columns
-            if "deliverable_image_path" not in existing_img:
-                conn.execute(text("ALTER TABLE images ADD COLUMN deliverable_image_path TEXT"))
-            # Add clean status columns (user-requested)
-            if "is_manually_modified" not in existing_img:
-                conn.execute(text("ALTER TABLE images ADD COLUMN is_manually_modified BOOLEAN DEFAULT FALSE NOT NULL"))
-            if "is_programmatically_blurred" not in existing_img:
-                conn.execute(text("ALTER TABLE images ADD COLUMN is_programmatically_blurred BOOLEAN DEFAULT FALSE NOT NULL"))
-            if "is_duplicate" not in existing_img:
-                conn.execute(text("ALTER TABLE images ADD COLUMN is_duplicate BOOLEAN DEFAULT FALSE NOT NULL"))
-            if "parent_image" not in existing_img:
-                conn.execute(text("ALTER TABLE images ADD COLUMN parent_image VARCHAR(255)"))
-            if "image_path" not in existing_img:
-                conn.execute(text("ALTER TABLE images ADD COLUMN image_path TEXT"))
-            if "gcs_folder" not in existing_img:
-                conn.execute(text("ALTER TABLE images ADD COLUMN gcs_folder VARCHAR(20) DEFAULT 'input'"))
-            # Drop legacy is_modified column (replaced by is_manually_modified)
-            if "is_modified" in existing_img:
-                conn.execute(text("ALTER TABLE images DROP COLUMN is_modified"))
-                print("[MIGRATE] Dropped legacy is_modified column from images")
-        print("[MIGRATE] Checked/added improper, AI-generated, arbiter, deliverable, and status columns to images table")
+            for col_name, col_def in new_columns.items():
+                if col_name not in existing_img:
+                    try:
+                        conn.execute(text(f"ALTER TABLE images ADD COLUMN {col_name} {col_def}"))
+                    except Exception as e:
+                        print(f"[MIGRATE] Warning: could not add {col_name}: {e}")
+            # Rename legacy columns if they exist
+            if "source_folder_id" in existing_img and "source_folder_id" not in existing_img:
+                try:
+                    conn.execute(text("ALTER TABLE images RENAME COLUMN source_folder_id TO source_folder_id"))
+                except Exception:
+                    pass
+        print("[MIGRATE] Checked images table columns")
 
-    # Drop dead annotator_image_assignments table (all annotators access all images now)
-    if "annotator_image_assignments" in inspector.get_table_names():
-        with engine.begin() as conn:
-            conn.execute(text("DROP TABLE annotator_image_assignments"))
-        print("[MIGRATE] Dropped dead table annotator_image_assignments")
-
-    # ── Add performance indexes ─────────────────────────────────────
+    # ── Performance indexes ──
     with engine.begin() as conn:
-        # Filename lookups (photo registry, dedup checks)
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_images_image_id ON images(image_id)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_images_filename ON images(filename)"))
-        # Deliverable filter queries
-        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_images_deliverable ON images(deliverable_image_path) WHERE deliverable_image_path IS NOT NULL"))
-        # Annotation composite index (most common join pattern)
-        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_annotations_image_category ON annotations(image_id, category_id)"))
-        # Annotator lookup + date for daily stats
-        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_annotations_annotator_updated ON annotations(annotator_id, updated_at)"))
-        # Review status filtering
-        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_annotations_review_status ON annotations(review_status) WHERE review_status IS NOT NULL"))
-        # Image compliance status
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_images_compliance ON images(compliance_status)"))
-        # Manually blurred filter
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_images_source_folder ON images(source_folder_id)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_images_annotation_status ON images(annotation_status)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_images_review_status ON images(review_status) WHERE review_status IS NOT NULL"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_images_annotated_by ON images(annotated_by)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_images_deliverable ON images(deliverable_image_path) WHERE deliverable_image_path IS NOT NULL"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_images_manually_blurred ON images(manually_blurred) WHERE manually_blurred = TRUE"))
     print("[MIGRATE] Ensured performance indexes exist")
 
@@ -247,6 +229,38 @@ app.include_router(arbiter.router, prefix="/api")
 @app.get("/api/health")
 def health():
     return {"status": "ok"}
+
+
+# ── WebSocket for real-time lock broadcasts ──────────────────────
+@app.websocket("/ws/locks")
+async def ws_locks(websocket: WebSocket, token: str = WSQuery(None)):
+    """
+    Annotators connect here to receive real-time lock events.
+    Auth via ?token=<jwt> query param (WebSocket can't use headers).
+    """
+    if not token:
+        await websocket.close(code=4001, reason="Missing token")
+        return
+
+    payload = decode_access_token(token)
+    if not payload:
+        await websocket.close(code=4001, reason="Invalid token")
+        return
+
+    user_id = int(payload.get("sub", 0))
+    if not user_id:
+        await websocket.close(code=4001, reason="Invalid token payload")
+        return
+
+    await lock_manager.connect(websocket, user_id)
+    try:
+        # Keep connection alive — just wait for client messages (pings)
+        while True:
+            await websocket.receive_text()  # client can send pings; we just keep alive
+    except WebSocketDisconnect:
+        pass
+    finally:
+        await lock_manager.disconnect(websocket, user_id)
 
 
 # ── Image Proxy Endpoint ─────────────────────────────────────────
@@ -373,7 +387,7 @@ def proxy_image(image_id: int):
                     try:
                         from app.utils.gcs import download_to_bytes, gcs_path as build_gcs_path, blob_exists as gcs_blob_exists
                         gcs_bucket = os.getenv("GCS_BUCKET_NAME")
-                        fid = img.source_drive_folder_id
+                        fid = img.source_folder_id
                         if gcs_bucket and fid:
                             # Try the DB-tracked stage first, then fallback stages
                             stages = [img.gcs_folder or "input"]
@@ -587,11 +601,11 @@ def get_signed_url(image_id: int, folder: str = None):
             
             _, original_blob_path = parse_gs_uri(url)
             
-            if folder and folder in ("input", "annotated") and img.source_drive_folder_id:
-                blob_path = build_gcs_path(img.source_drive_folder_id, img.filename, folder)
+            if folder and folder in ("input", "annotated") and img.source_folder_id:
+                blob_path = build_gcs_path(img.source_folder_id, img.filename, folder)
             else:
                 stage = img.gcs_folder or "input"
-                blob_path = build_gcs_path(img.source_drive_folder_id or "", img.filename, stage)
+                blob_path = build_gcs_path(img.source_folder_id or "", img.filename, stage)
             
             try:
                 signed = sign(blob_path, expiration_seconds=3600)

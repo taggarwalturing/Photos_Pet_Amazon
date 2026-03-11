@@ -123,10 +123,14 @@ class AutoImageProcessor:
                 url = f"https://drive.google.com/uc?export=view&id={file_id}"
                 
                 # Insert into database
+                from pathlib import PurePosixPath
+                image_id_stem = PurePosixPath(filename).stem
+
                 db.execute(text('''
-                    INSERT INTO images (filename, url, compliance_processed)
-                    VALUES (:filename, :url, FALSE)
+                    INSERT INTO images (image_id, filename, url, pipeline_status)
+                    VALUES (:image_id, :filename, :url, 'pending')
                 '''), {
+                    'image_id': image_id_stem,
                     'filename': filename,
                     'url': url
                 })
@@ -185,19 +189,16 @@ class AutoImageProcessor:
                 
                 db.execute(text('''
                     UPDATE images 
-                    SET original_url = :original_url,
-                        processed_url = :processed_url,
+                    SET processed_url = :processed_url,
                         url = :url,
                         is_using_processed = FALSE,
-                        compliance_processed = TRUE,
+                        pipeline_status = 'completed',
                         compliance_status = 'skipped',
                         human_faces_detected = 0,
-                        processing_method = 'auto-skip',
-                        processing_log = 'Skipped: Screenshot/WhatsApp image'
+                        processing_method = 'auto-skip'
                     WHERE id = :id
                 '''), {
                     'url': local_path,
-                    'original_url': url,
                     'processed_url': local_path,
                     'id': img_id
                 })
@@ -265,18 +266,15 @@ class AutoImageProcessor:
                 db.execute(text('''
                     UPDATE images 
                     SET url = :url,
-                        original_url = :original_url,
                         processed_url = :processed_url,
                         is_using_processed = FALSE,
-                        compliance_processed = TRUE,
+                        pipeline_status = 'completed',
                         compliance_status = 'timeout',
                         human_faces_detected = 0,
-                        processing_method = 'timeout-skip',
-                        processing_log = 'Pipeline timeout after 600s, saved as clean'
+                        processing_method = 'timeout-skip'
                     WHERE id = :id
                 '''), {
                     'url': local_clean_url,
-                    'original_url': local_clean_url,
                     'processed_url': local_clean_url,
                     'id': img_id
                 })
@@ -311,17 +309,15 @@ class AutoImageProcessor:
                 db.execute(text('''
                     UPDATE images 
                     SET url = :url,
-                        original_url = :original_url,
                         processed_url = :processed_url,
                         is_using_processed = TRUE,
-                        compliance_processed = TRUE,
+                        pipeline_status = 'completed',
                         compliance_status = 'processed',
                         human_faces_detected = 1,
                         processing_method = 'opencv'
                     WHERE id = :id
                 '''), {
                     'url': local_blurred_url,
-                    'original_url': local_original_url,
                     'processed_url': local_blurred_url,
                     'id': img_id
                 })
@@ -348,17 +344,15 @@ class AutoImageProcessor:
                 db.execute(text('''
                     UPDATE images 
                     SET url = :url,
-                        original_url = :original_url,
                         processed_url = :processed_url,
                         is_using_processed = FALSE,
-                        compliance_processed = TRUE,
+                        pipeline_status = 'completed',
                         compliance_status = 'clean',
                         human_faces_detected = 0,
                         processing_method = 'opencv'
                     WHERE id = :id
                 '''), {
                     'url': local_clean_url,
-                    'original_url': local_clean_url,
                     'processed_url': local_clean_url,
                     'id': img_id
                 })
@@ -386,7 +380,7 @@ class AutoImageProcessor:
         result = db.execute(text('''
             SELECT id, filename, url 
             FROM images 
-            WHERE compliance_processed = FALSE
+            WHERE pipeline_status = 'pending' OR pipeline_status IS NULL
             ORDER BY id
         '''))
         images = result.fetchall()

@@ -4,85 +4,18 @@ import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
 import CategoryGuideModal from '../components/CategoryGuideModal';
 import SignedImage from '../components/SignedImage';
-import { getProxyUrl } from '../hooks/useSignedUrl';
-
-const PAGE_SIZE = 20;
-
-const getImageUrl = (image) => {
-  if (!image) return '';
-  return getProxyUrl(image.id);
-};
-
-function Pagination({ currentPage, totalPages, onPageChange }) {
-  if (totalPages <= 1) return null;
-
-  const getPages = () => {
-    const pages = [];
-    const maxVisible = 5;
-    let start = Math.max(1, currentPage - Math.floor(maxVisible / 2));
-    let end = Math.min(totalPages, start + maxVisible - 1);
-    if (end - start + 1 < maxVisible) start = Math.max(1, end - maxVisible + 1);
-    if (start > 1) { pages.push(1); if (start > 2) pages.push('...'); }
-    for (let i = start; i <= end; i++) pages.push(i);
-    if (end < totalPages) { if (end < totalPages - 1) pages.push('...'); pages.push(totalPages); }
-    return pages;
-  };
-
-  return (
-    <div className="flex items-center justify-center gap-1">
-      <button
-        onClick={() => onPageChange(currentPage - 1)}
-        disabled={currentPage === 1}
-        className="px-2.5 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-      >
-        &larr; Prev
-      </button>
-      {getPages().map((p, i) =>
-        p === '...' ? (
-          <span key={`ellipsis-${i}`} className="px-2 text-gray-400 text-sm">...</span>
-        ) : (
-          <button
-            key={p}
-            onClick={() => onPageChange(p)}
-            className={`w-8 h-8 text-sm rounded-lg cursor-pointer transition ${
-              p === currentPage
-                ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white font-medium shadow-sm'
-                : 'text-gray-600 hover:bg-gray-100'
-            }`}
-          >
-            {p}
-          </button>
-        )
-      )}
-      <button
-        onClick={() => onPageChange(currentPage + 1)}
-        disabled={currentPage === totalPages}
-        className="px-2.5 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
-      >
-        Next &rarr;
-      </button>
-    </div>
-  );
-}
 
 export default function AnnotatorHome() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [searchParams, setSearchParams] = useSearchParams();
-  const [page, setPageState] = useState(() => parseInt(searchParams.get('page')) || 1);
   const [filter, setFilterState] = useState(() => searchParams.get('filter') || 'all');
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  // Sync page & filter to URL search params so they persist across navigation
-  const setPage = (p) => {
-    setPageState(p);
-    setSearchParams((prev) => { prev.set('page', String(p)); prev.set('filter', filter); return prev; }, { replace: true });
-  };
   const setFilter = (f) => {
     setFilterState(f);
-    setPageState(1);
-    setSearchParams((prev) => { prev.set('page', '1'); prev.set('filter', f); return prev; }, { replace: true });
+    setSearchParams((prev) => { prev.set('filter', f); return prev; }, { replace: true });
   };
 
   // Guide modal state
@@ -93,62 +26,22 @@ export default function AnnotatorHome() {
   const [unreadCount, setUnreadCount] = useState(0);
   const [showNotifications, setShowNotifications] = useState(false);
 
-  // Load notifications on mount
-  useEffect(() => {
-    loadNotifications();
-    // Poll for new notifications every 30 seconds
-    const interval = setInterval(loadUnreadCount, 30000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const loadNotifications = async () => {
-    try {
-      const res = await api.get('/annotator/notifications');
-      setNotifications(res.data);
-      setUnreadCount(res.data.filter(n => !n.is_read).length);
-    } catch (err) {
-      console.error('Failed to load notifications', err);
-    }
-  };
-
-  const loadUnreadCount = async () => {
-    try {
-      const res = await api.get('/annotator/notifications/unread-count');
-      setUnreadCount(res.data.count);
-    } catch (err) {
-      console.error('Failed to load unread count', err);
-    }
-  };
-
-  const markAsRead = async (id) => {
-    try {
-      await api.put(`/annotator/notifications/${id}/read`);
-      setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
-      setUnreadCount(prev => Math.max(0, prev - 1));
-    } catch (err) {
-      console.error('Failed to mark notification as read', err);
-    }
-  };
-
-  const markAllAsRead = async () => {
-    try {
-      await api.put('/annotator/notifications/read-all');
-      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
-      setUnreadCount(0);
-    } catch (err) {
-      console.error('Failed to mark all as read', err);
-    }
-  };
+  // Notifications are not currently supported in the simplified backend
+  const loadNotifications = () => {};
+  const loadUnreadCount = () => {};
+  const markAsRead = () => {};
+  const markAllAsRead = () => {};
 
   const pollRef = useRef(null);
+  const wsRef = useRef(null);
+  const loadImagesRef = useRef(null);
   const [checkingLock, setCheckingLock] = useState(null); // image_id being checked
 
   const loadImages = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
       const params = new URLSearchParams();
-      params.set('page', page);
-      params.set('page_size', PAGE_SIZE);
+      params.set('page_size', '0'); // fetch all images — no pagination
       if (filter !== 'all') params.set('filter_status', filter);
       
       const res = await api.get(`/annotator/images?${params.toString()}`);
@@ -158,17 +51,95 @@ export default function AnnotatorHome() {
     } finally {
       if (!silent) setLoading(false);
     }
-  }, [page, filter]);
+  }, [filter]);
+
+  // Keep loadImages ref in sync for use inside WebSocket handler
+  useEffect(() => { loadImagesRef.current = loadImages; }, [loadImages]);
 
   useEffect(() => {
     loadImages();
   }, [loadImages]);
 
-  // Auto-poll every 10 seconds to catch newly locked images in real-time
+  // ── WebSocket for INSTANT lock updates ──────────────────────────
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
+    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const wsUrl = `${proto}://${window.location.host}/ws/locks?token=${token}`;
+
+    let ws;
+    let reconnectTimer;
+    let pingTimer;
+
+    const connect = () => {
+      ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        // Send periodic pings to keep the connection alive (every 20s)
+        if (pingTimer) clearInterval(pingTimer);
+        pingTimer = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send('ping');
+          }
+        }, 20000);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === 'lock') {
+            // Instantly update the specific image to show locked status
+            setData(prev => {
+              if (!prev || !prev.images) return prev;
+              const updated = prev.images.map(img => {
+                if (img.id !== msg.image_id) return img;
+                return {
+                  ...img,
+                  locked_by_other: true,
+                  lock_type: msg.lock_type, // "in_progress" or "completed"
+                  held_by: msg.held_by || '',
+                  overall_status: 'locked',
+                };
+              });
+              return { ...prev, images: updated };
+            });
+          } else if (msg.type === 'unlock') {
+            // Image released — do a full silent refresh to restore correct status
+            if (loadImagesRef.current) loadImagesRef.current(true);
+          }
+        } catch {}
+      };
+
+      ws.onclose = () => {
+        if (pingTimer) clearInterval(pingTimer);
+        // Auto-reconnect after 2s
+        reconnectTimer = setTimeout(connect, 2000);
+      };
+
+      ws.onerror = () => {
+        ws.close();
+      };
+    };
+
+    connect();
+
+    return () => {
+      clearTimeout(reconnectTimer);
+      if (pingTimer) clearInterval(pingTimer);
+      if (wsRef.current) {
+        wsRef.current.onclose = null; // prevent reconnect on intentional close
+        wsRef.current.close();
+      }
+    };
+  }, []);
+
+  // Fallback poll every 15s for any missed updates (WS handles real-time)
   useEffect(() => {
     pollRef.current = setInterval(() => {
-      loadImages(true); // silent refresh — no loading spinner
-    }, 10000);
+      loadImages(true);
+    }, 15000);
     return () => clearInterval(pollRef.current);
   }, [loadImages]);
 
@@ -182,9 +153,11 @@ export default function AnnotatorHome() {
     try {
       const res = await api.get(`/annotator/images/${imgId}/lock-status`);
       if (res.data.locked_by_other) {
-        // Image was just taken — refresh list and show alert
         loadImages(true);
-        alert('This image was just taken by another annotator. The list has been refreshed.');
+        const msg = res.data.lock_type === 'in_progress'
+          ? `This image is currently being annotated by ${res.data.held_by || 'another annotator'}. The list has been refreshed.`
+          : 'This image has already been annotated by another annotator. The list has been refreshed.';
+        alert(msg);
         return;
       }
       navigate(`/annotator/image/${imgId}`);
@@ -195,8 +168,6 @@ export default function AnnotatorHome() {
       setCheckingLock(null);
     }
   };
-
-  const totalPages = data ? Math.ceil(data.total / PAGE_SIZE) : 1;
 
   const totalCompleted = data?.images?.filter(img => img.overall_status === 'completed').length || 0;
   const totalLocked = data?.images?.filter(img => img.locked_by_other).length || 0;
@@ -328,7 +299,7 @@ export default function AnnotatorHome() {
             <div className="w-10 h-10 border-3 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mx-auto mb-4" />
             <p className="text-gray-500 text-sm">Loading images...</p>
           </div>
-        ) : !data || data.assigned_categories.length === 0 ? (
+        ) : !data || (data.assigned_categories || data.categories || []).length === 0 ? (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-16 text-center animate-fade-in">
             <div className="w-16 h-16 mx-auto mb-5 bg-gradient-to-br from-indigo-100 to-purple-100 rounded-2xl flex items-center justify-center">
               <svg className="w-8 h-8 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" /></svg>
@@ -373,7 +344,7 @@ export default function AnnotatorHome() {
               <div>
                 <h2 className="text-lg font-bold text-gray-800">Your Images</h2>
                 <p className="text-sm text-gray-500">
-                  {data.total} images &middot; {data.assigned_categories.length} categories assigned
+                  {data.total} images &middot; {(data.assigned_categories || data.categories || []).length} categories assigned
                 </p>
                 </div>
                 <button
@@ -406,9 +377,9 @@ export default function AnnotatorHome() {
             <div className="bg-gradient-to-r from-indigo-50/80 via-purple-50/50 to-pink-50/30 rounded-xl border border-indigo-100 p-4 mb-6 animate-fade-in">
               <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Your Assigned Categories</p>
               <div className="flex flex-wrap gap-2">
-                {data.assigned_categories.map((cat) => (
+                {(data.assigned_categories || data.categories || []).map((cat) => (
                   <span
-                  key={cat.id}
+                  key={cat.id || cat.key}
                     className="px-3 py-1.5 bg-white/80 text-indigo-700 text-sm font-medium rounded-lg border border-indigo-200/60 shadow-sm"
                 >
                     {cat.name}
@@ -434,11 +405,13 @@ export default function AnnotatorHome() {
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 stagger-children">
                 {data.images.map((img) => {
                   const isLockedByOther = img.locked_by_other === true;
+                  const lockType = img.lock_type; // "completed" | "in_progress" | null
+                  const heldBy = img.held_by || '';
                   const isComplete = img.overall_status === 'completed';
                   const isPartial = img.overall_status === 'partial';
                   const isImproper = img.is_improper;
                   const hasRework = img.has_rework;
-                  const isHumanValidated = img.is_human_validated;  // True if locked by self
+                  const isHumanValidated = img.annotation_status === 'completed' && img.review_status === 'approved';
                   const categoryLabels = img.category_labels || {};
                   
                   return (
@@ -452,8 +425,10 @@ export default function AnnotatorHome() {
                       className={`group relative rounded-xl overflow-hidden shadow-md text-left animate-slide-up transition-all duration-300 ${
                         checkingLock === img.id
                           ? 'ring-2 ring-indigo-400 opacity-80 cursor-wait'
-                          : isLockedByOther
+                          : lockType === 'completed'
                           ? 'ring-2 ring-gray-400 opacity-60 cursor-not-allowed'
+                          : lockType === 'in_progress'
+                          ? 'ring-2 ring-yellow-400 opacity-70 cursor-not-allowed'
                           : hasRework 
                           ? 'ring-3 ring-orange-400 hover:shadow-xl cursor-pointer' 
                           : isHumanValidated
@@ -477,9 +452,13 @@ export default function AnnotatorHome() {
                         
                         {/* Status badge - top left */}
                         <div className="absolute top-3 left-3">
-                          {isLockedByOther ? (
+                          {lockType === 'completed' ? (
                             <span className="px-2.5 py-1 bg-gray-600 text-white text-xs font-bold rounded-lg shadow-lg flex items-center gap-1">
                               🔒 Taken
+                            </span>
+                          ) : lockType === 'in_progress' ? (
+                            <span className="px-2.5 py-1 bg-yellow-500 text-white text-xs font-bold rounded-lg shadow-lg flex items-center gap-1 animate-pulse" title={heldBy ? `Being annotated by ${heldBy}` : 'Being annotated by another user'}>
+                              ⏳ In Progress
                             </span>
                           ) : isImproper ? (
                             <span className="px-2.5 py-1 bg-red-500 text-white text-xs font-bold rounded-lg shadow-lg">
@@ -513,9 +492,9 @@ export default function AnnotatorHome() {
                         
                         {/* Filename - top right */}
                         <div className="absolute top-3 right-3 max-w-[65%] flex flex-col items-end gap-0.5">
-                          {img.image_drive_id && (
-                            <span className="px-2 py-0.5 bg-blue-600/70 text-white text-[9px] font-mono rounded-md backdrop-blur-sm truncate block max-w-full" title={img.image_drive_id}>
-                              {img.image_drive_id.slice(0, 16)}…
+                          {img.source_folder_id && (
+                            <span className="px-2 py-0.5 bg-blue-600/70 text-white text-[9px] font-mono rounded-md backdrop-blur-sm truncate block max-w-full" title={`Folder: ${img.source_folder_id}`}>
+                              {img.source_folder_id.slice(0, 16)}…
                             </span>
                           )}
                           <span className="px-2 py-1 bg-black/50 text-white text-[10px] font-medium rounded-lg backdrop-blur-sm truncate block" title={img.filename}>
@@ -526,17 +505,18 @@ export default function AnnotatorHome() {
                         {/* Labels overlay - bottom */}
                         <div className="absolute bottom-0 left-0 right-0 p-3">
                           <div className="flex flex-wrap gap-1.5">
-                            {data.assigned_categories.map((cat) => {
-                              const labels = categoryLabels[String(cat.id)] || [];
-                              const labelSource = (img.category_label_source || {})[String(cat.id)];
-                              const status = img.category_status[String(cat.id)];
+                            {(data.assigned_categories || data.categories || []).map((cat) => {
+                              const catKey = cat.key || String(cat.id);
+                              const labels = categoryLabels[catKey] || [];
+                              const labelSource = (img.category_label_source || {})[catKey];
+                              const status = (img.category_status || {})[catKey];
                               const needsRework = status === 'in_progress' && hasRework;
                               const isAiLabel = labelSource === 'ai';
                               
                               if (labels.length === 0) {
                                 return (
                                   <span 
-                                    key={cat.id}
+                                    key={catKey}
                                     className="px-2 py-1 bg-gray-900/60 text-gray-400 text-[10px] rounded-md backdrop-blur-sm border border-gray-600/50"
                                     title={`${cat.name}: Not set`}
                                   >
@@ -547,7 +527,7 @@ export default function AnnotatorHome() {
                               
                               return labels.map((label, i) => (
                                 <span 
-                                  key={`${cat.id}-${i}`}
+                                  key={`${catKey}-${i}`}
                                   className={`px-2 py-1 text-[11px] font-medium rounded-md backdrop-blur-sm border ${
                                     needsRework
                                       ? 'bg-orange-500/80 text-white border-orange-400'
@@ -581,15 +561,6 @@ export default function AnnotatorHome() {
           </div>
             )}
 
-            {/* Pagination */}
-            {totalPages > 1 && (
-              <div className="mt-6 flex items-center justify-between animate-fade-in">
-                <span className="text-sm text-gray-500">
-                  Showing {((page - 1) * PAGE_SIZE) + 1}–{Math.min(page * PAGE_SIZE, data.total)} of {data.total}
-                </span>
-                <Pagination currentPage={page} totalPages={totalPages} onPageChange={setPage} />
-              </div>
-            )}
           </>
         )}
       </main>

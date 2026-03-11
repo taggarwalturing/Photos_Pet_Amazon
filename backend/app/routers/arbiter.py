@@ -31,9 +31,9 @@ from app.database import get_db, SessionLocal
 from app.dependencies import require_admin
 from app.models.user import User
 from app.models.image import Image as ImageModel
-from app.models.annotation import Annotation, AnnotationSelection
-from app.models.category import Category
-from app.models.option import Option
+from app.models.arbiter_prediction import ArbiterPrediction
+from app.utils import categories as categories_util
+from app.utils.categories import enrich_arbiter_labels
 
 router = APIRouter(prefix="/admin/arbiter", tags=["Arbiter Classifier"])
 
@@ -82,7 +82,7 @@ def _get_all_final_images() -> list:
             images.append(local_path)
             continue
         # Download from GCS
-        folder_id = img.source_drive_folder_id or ""
+        folder_id = img.source_folder_id or ""
         gcs_folder = img.gcs_folder or "clean"
         # Try annotated sub-stage first, then input
         downloaded = False
@@ -114,7 +114,7 @@ def _get_per_folder_image_counts() -> dict:
     db = SessionLocal()
     try:
         db_images = db.query(
-            ImageModel.source_drive_folder_id,
+            ImageModel.source_folder_id,
             ImageModel.filename,
         ).filter(
             ImageModel.is_duplicate == False,  # noqa: E712
@@ -694,8 +694,19 @@ ARBITER_CAT_TO_DB_CAT = {
 }
 
 
+def _filename_to_image_id(filename: str) -> str:
+    """Strip extension to get the portable image identifier."""
+    import os
+    return os.path.splitext(filename)[0]
+
+
 def _save_predictions_to_db(results_batch):
-    """Save arbiter predictions to Image.arbiter_labels in the database."""
+    """
+    Save arbiter predictions to:
+      1. Image.arbiter_labels  — used live by the annotation UI
+      2. arbiter_predictions   — portable table for local→production transfer
+         (image_id = filename without extension, not a numeric FK)
+    """
     try:
         db = SessionLocal()
         now = datetime.now()
@@ -705,9 +716,47 @@ def _save_predictions_to_db(results_batch):
             if not filename or not predictions:
                 continue
             image = db.query(ImageModel).filter(ImageModel.filename == filename).first()
-            if image:
-                image.arbiter_labels = predictions
-                image.arbiter_classified_at = now
+            if not image:
+                continue
+
+            # 1. Update the live column on the image (with human-readable labels)
+            image.arbiter_labels = enrich_arbiter_labels(predictions)
+
+            # 2. Upsert into arbiter_predictions table
+            img_id = _filename_to_image_id(filename)
+
+            # Build reasoning dict from per-category prediction details
+            reasoning = {}
+            for cat_key, pred_data in predictions.items():
+                if isinstance(pred_data, dict):
+                    reasoning[cat_key] = {
+                        k: v for k, v in pred_data.items()
+                        if k not in ("final", "status")
+                    }
+
+            existing = (
+                db.query(ArbiterPrediction)
+                .filter(ArbiterPrediction.image_id == img_id)
+                .first()
+            )
+            if existing:
+                existing.predictions = predictions
+                existing.reasoning = reasoning
+                existing.model_used = "gemini+openai+o3"
+                existing.status = "completed"
+                existing.error_message = None
+                existing.updated_at = now
+            else:
+                db.add(ArbiterPrediction(
+                    image_id=img_id,
+                    predictions=predictions,
+                    reasoning=reasoning,
+                    model_used="gemini+openai+o3",
+                    status="completed",
+                    created_at=now,
+                    updated_at=now,
+                ))
+
         db.commit()
         db.close()
     except Exception as e:
@@ -1075,9 +1124,9 @@ def import_labels_to_db(
     if not results:
         raise HTTPException(status_code=400, detail="Results file is empty.")
 
-    now = datetime.now()
     updated = 0
     not_found = []
+    now = datetime.now()
 
     for result in results:
         filename = result.get("image")
@@ -1087,8 +1136,41 @@ def import_labels_to_db(
 
         image = db.query(ImageModel).filter(ImageModel.filename == filename).first()
         if image:
-            image.arbiter_labels = predictions
-            image.arbiter_classified_at = now
+            image.arbiter_labels = enrich_arbiter_labels(predictions)
+
+            # Also upsert into arbiter_predictions table
+            img_id = _filename_to_image_id(filename)
+            reasoning = {}
+            for cat_key, pred_data in predictions.items():
+                if isinstance(pred_data, dict):
+                    reasoning[cat_key] = {
+                        k: v for k, v in pred_data.items()
+                        if k not in ("final", "status")
+                    }
+
+            existing = (
+                db.query(ArbiterPrediction)
+                .filter(ArbiterPrediction.image_id == img_id)
+                .first()
+            )
+            if existing:
+                existing.predictions = predictions
+                existing.reasoning = reasoning
+                existing.model_used = "gemini+openai+o3"
+                existing.status = "completed"
+                existing.error_message = None
+                existing.updated_at = now
+            else:
+                db.add(ArbiterPrediction(
+                    image_id=img_id,
+                    predictions=predictions,
+                    reasoning=reasoning,
+                    model_used="gemini+openai+o3",
+                    status="completed",
+                    created_at=now,
+                    updated_at=now,
+                ))
+
             updated += 1
         else:
             not_found.append(filename)
@@ -1350,33 +1432,19 @@ def get_prediction_tracking(
             },
         }
 
-    # Load categories with options
-    categories = db.query(Category).options(joinedload(Category.options)).order_by(Category.display_order).all()
-    cat_by_name = {c.name: c for c in categories}
+    # Load categories from static JSON
+    all_categories = categories_util.get_categories()
+    cat_key_to_name = {c["key"]: c["name"] for c in all_categories}
 
-    # Option ID → label lookup
-    option_label_by_id = {}
-    for c in categories:
-        for o in c.options:
-            option_label_by_id[o.id] = o.label
+    # Build option lookups from static JSON
+    option_label_by_key = {}  # (cat_key, opt_key) → label
+    for c in all_categories:
+        for o in c["options"]:
+            option_label_by_key[(c["key"], o["key"])] = o["label"]
 
-    # Get all completed human-validated annotations for these images
-    image_ids = [img.id for img in images]
-    annotations = (
-        db.query(Annotation)
-        .filter(
-            Annotation.image_id.in_(image_ids),
-            Annotation.status == "completed",
-            Annotation.human_validated == True,
-        )
-        .options(joinedload(Annotation.selections), joinedload(Annotation.annotator))
-        .all()
-    )
-
-    # Index: {image_id: {category_id: annotation}}
-    ann_by_image_cat = {}
-    for ann in annotations:
-        ann_by_image_cat.setdefault(ann.image_id, {})[ann.category_id] = ann
+    # Batch-load annotator usernames
+    annotator_ids = {img.annotated_by for img in images if img.annotated_by}
+    annotators = {u.id: u.username for u in db.query(User).filter(User.id.in_(annotator_ids)).all()} if annotator_ids else {}
 
     # Summary counters
     total_matched = 0
@@ -1387,7 +1455,7 @@ def get_prediction_tracking(
     rows = []
     for img in images:
         arbiter_labels = img.arbiter_labels or {}
-        img_annotations = ann_by_image_cat.get(img.id, {})
+        image_annotations = img.annotations or {}
 
         category_comparisons = []
         img_matched = 0
@@ -1395,30 +1463,32 @@ def get_prediction_tracking(
         img_pending = 0
 
         for arb_cat_key in CATEGORIES:
-            db_cat_name = ARBITER_CAT_TO_DB_CAT.get(arb_cat_key)
-            db_cat = cat_by_name.get(db_cat_name)
-            if not db_cat:
-                continue
+            cat_name = cat_key_to_name.get(arb_cat_key, arb_cat_key)
 
             ai_pred_raw = arbiter_labels.get(arb_cat_key)
-            # Predictions are stored as dicts: {"final": "well_lit", "status": "agree", ...}
+            # Use stored label directly if available, else resolve from key
             if isinstance(ai_pred_raw, dict):
-                ai_pred_short = ai_pred_raw.get("final", "None")
+                ai_pred_label = ai_pred_raw.get("label")
+                ai_pred_short = ai_pred_raw.get("final") or ai_pred_raw.get("key") or "None"
+                if not ai_pred_label:
+                    ai_pred_label = ARBITER_TO_OPTION_LABEL.get(ai_pred_short, ai_pred_short)
             else:
                 ai_pred_short = str(ai_pred_raw) if ai_pred_raw else None
-            ai_pred_label = ARBITER_TO_OPTION_LABEL.get(ai_pred_short, ai_pred_short) if ai_pred_short else None
+                ai_pred_label = ARBITER_TO_OPTION_LABEL.get(ai_pred_short, ai_pred_short) if ai_pred_short else None
 
-            # Get human annotation
-            ann = img_annotations.get(db_cat.id)
+            # Get human annotation from Image.annotations JSON
+            ann_data = image_annotations.get(arb_cat_key, {})
+            selected_option_ids = ann_data.get("selected_option_ids", [])
+
             human_label = None
-            annotator_name = None
+            annotator_name = annotators.get(img.annotated_by) if img.annotated_by else None
             annotation_status = "pending"
 
-            if ann:
-                sel_ids = [s.option_id for s in ann.selections]
-                if sel_ids:
-                    human_label = option_label_by_id.get(sel_ids[0])
-                annotator_name = ann.annotator.username if ann.annotator else None
+            if selected_option_ids:
+                # Resolve first selected option ID to its label
+                opt = categories_util.get_option_by_id(selected_option_ids[0])
+                if opt:
+                    human_label = opt["label"]
 
                 if human_label and ai_pred_label:
                     if human_label == ai_pred_label:
@@ -1449,7 +1519,7 @@ def get_prediction_tracking(
 
             category_comparisons.append({
                 "category_key": arb_cat_key,
-                "category_name": db_cat_name,
+                "category_name": cat_name,
                 "ai_prediction": ai_pred_label,
                 "ai_prediction_short": ai_pred_short,
                 "human_label": human_label,
@@ -1469,7 +1539,7 @@ def get_prediction_tracking(
             "image_id": img.id,
             "image_drive_id": img.image_drive_id,
             "filename": img.filename,
-            "classified_at": img.arbiter_classified_at.isoformat() if img.arbiter_classified_at else None,
+            "classified_at": img.updated_at.isoformat() if img.updated_at else None,
             "categories": category_comparisons,
             "matched_count": img_matched,
             "mismatched_count": img_mismatched,

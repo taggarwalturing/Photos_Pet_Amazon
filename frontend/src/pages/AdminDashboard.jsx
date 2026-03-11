@@ -343,20 +343,9 @@ function UsersTab() {
                 </td>
                 <td className="px-5 py-3 text-gray-600">
                   {u.role === 'annotator' ? (
-                    <div className="flex flex-wrap gap-1">
-                      {u.assigned_category_ids.length === 0 ? (
-                        <span className="text-gray-400">None</span>
-                      ) : (
-                        u.assigned_category_ids.map((catId) => {
-                          const cat = categories.find((c) => c.id === catId);
-                          return (
-                            <span key={catId} className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-xs rounded-full">
-                              {cat?.name || catId}
-                            </span>
-                          );
-                        })
-                      )}
-                    </div>
+                    <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-xs rounded-full">
+                      All Categories
+                    </span>
                   ) : '—'}
                 </td>
                   <td className="px-5 py-3">
@@ -415,16 +404,6 @@ function UsersTab() {
                 </td>
                 <td className="px-5 py-3">
                     <div className="flex gap-2 flex-wrap">
-                    {u.role === 'annotator' && (
-                        <>
-                      <button
-                        onClick={() => openAssignment(u)}
-                        className="text-indigo-600 hover:text-indigo-800 text-xs font-medium cursor-pointer"
-                      >
-                            Categories
-                          </button>
-                        </>
-                    )}
                     <button
                       onClick={() => toggleActive(u)}
                       className={`text-xs font-medium cursor-pointer ${u.is_active ? 'text-red-500 hover:text-red-700' : 'text-green-600 hover:text-green-800'}`}
@@ -440,59 +419,9 @@ function UsersTab() {
         </table>
       </div>
 
-      {/* Assignment modal */}
-      {editingAssignment && (
-        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md animate-scale-in">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">
-              Assign Categories
-            </h3>
-            <div className="space-y-2 max-h-80 overflow-y-auto">
-              {categories.map((cat) => {
-                const checked = assignedCats.includes(cat.id);
-                return (
-                  <label
-                    key={cat.id}
-                    className={`flex items-center gap-3 px-4 py-3 rounded-lg border-2 cursor-pointer transition ${
-                      checked ? 'border-indigo-500 bg-indigo-50' : 'border-gray-200 hover:border-gray-300'
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      onChange={() => toggleCat(cat.id)}
-                      className="sr-only"
-                    />
-                    <div className={`w-5 h-5 rounded flex items-center justify-center border-2 shrink-0 ${
-                      checked ? 'bg-indigo-500 border-indigo-500' : 'border-gray-300'
-                    }`}>
-                      {checked && (
-                        <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
-                        </svg>
-                      )}
-                    </div>
-                    <span className="text-sm font-medium text-gray-800">{cat.name}</span>
-                  </label>
-                );
-              })}
-            </div>
-            <div className="flex gap-3 mt-6">
-              <button
-                onClick={saveAssignment}
-                className="flex-1 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 cursor-pointer"
-              >
-                Save
-              </button>
-              <button
-                onClick={() => setEditingAssignment(null)}
-                className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-300 cursor-pointer"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
+      {/* Category assignment removed — all annotators see all categories in the new schema */}
+      {false && editingAssignment && (
+        <div></div>
       )}
 
       {/* Daily Annotation Stats */}
@@ -1393,9 +1322,9 @@ function CellEditPopover({ cell, onSave, onApprove, onClose }) {
       </label>
       <div className="flex gap-2">
         {hasChanges() ? (
-          <button onClick={() => onSave(cell.annotation_id, selections, isDuplicate)} className="flex-1 px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 cursor-pointer">Save & Approve</button>
+          <button onClick={() => onSave(cell.image_id, selections, isDuplicate)} className="flex-1 px-3 py-1.5 bg-green-600 text-white text-xs font-medium rounded-lg hover:bg-green-700 cursor-pointer">Save & Approve</button>
         ) : (
-          <button onClick={() => onApprove(cell.annotation_id)} className="flex-1 px-3 py-1.5 bg-green-500 text-white text-xs font-medium rounded-lg hover:bg-green-600 cursor-pointer">Approve</button>
+          <button onClick={() => onApprove(cell.image_id)} className="flex-1 px-3 py-1.5 bg-green-500 text-white text-xs font-medium rounded-lg hover:bg-green-600 cursor-pointer">Approve</button>
         )}
         <button onClick={onClose} className="px-3 py-1.5 bg-gray-200 text-gray-700 text-xs rounded-lg hover:bg-gray-300 cursor-pointer">Cancel</button>
       </div>
@@ -1477,27 +1406,13 @@ function ImageDetailModal({ row, categories, tableImages, onApprove, onSaveEdits
 
   const hasAnyChanges = categories.some((cat) => hasChangesForCat(cat.id));
 
-  const pendingAnnotations = categories
-    .filter((cat) => {
-      const cell = row.annotations[String(cat.id)];
-      return cell && cell.review_status !== 'approved';
-    })
-    .map((cat) => row.annotations[String(cat.id)]);
-
-  const allAnnotations = categories
-    .filter((cat) => {
-      const cell = row.annotations[String(cat.id)];
-      return cell && cell.annotation_id;
-    })
-    .map((cat) => row.annotations[String(cat.id)]);
+  // In the new schema, review is image-level, not per-category
+  const isPending = !row.review_status || row.review_status === 'pending' || row.review_status === 'rework_completed';
 
   const handleApproveAll = async () => {
     setSaving(true);
     try {
-      for (const cell of pendingAnnotations) {
-        if (hasChangesForCat(String(cell.annotation_id))) continue;
-        await onApprove(cell.annotation_id);
-      }
+      await onApprove(row.image_id);
     } finally {
       setSaving(false);
     }
@@ -1506,18 +1421,20 @@ function ImageDetailModal({ row, categories, tableImages, onApprove, onSaveEdits
   const handleSaveAll = async () => {
     setSaving(true);
     try {
+      // Build updated annotations if any edits were made
+      if (hasAnyChanges) {
+        const updatedAnnotations = {};
       for (const cat of categories) {
-        if (hasChangesForCat(cat.id)) {
-          const cell = row.annotations[String(cat.id)];
-          const e = edits[cat.id];
-          await onSaveEdits(cell.annotation_id, e.selections, e.isDuplicate);
+          const editData = getEditsForCat(cat.id);
+          if (editData) {
+            updatedAnnotations[cat.key || String(cat.id)] = {
+              selected_option_ids: editData.selections,
+            };
+          }
         }
-      }
-      for (const cell of pendingAnnotations) {
-        const catId = categories.find((c) => row.annotations[String(c.id)]?.annotation_id === cell.annotation_id)?.id;
-        if (catId && !hasChangesForCat(catId)) {
-          await onApprove(cell.annotation_id);
-        }
+        await onSaveEdits(row.image_id, updatedAnnotations, null);
+      } else {
+        await onApprove(row.image_id);
       }
     } finally {
       setSaving(false);
@@ -1601,8 +1518,8 @@ function ImageDetailModal({ row, categories, tableImages, onApprove, onSaveEdits
         <div className="w-[65%] bg-gray-900 flex flex-col min-h-0">
           <div className="flex items-center justify-between px-6 py-3 shrink-0">
             <div className="flex items-center gap-3 min-w-0">
-              {row.image_drive_id && (
-                <span className="text-blue-300 text-[10px] font-mono shrink-0" title={row.image_drive_id}>{row.image_drive_id.slice(0, 20)}…</span>
+              {row.gcs_folder && (
+                <span className="text-blue-300 text-[10px] font-mono shrink-0" title={`Folder: ${row.gcs_folder}`}>{row.gcs_folder.slice(0, 20)}</span>
               )}
               <span className="text-white/80 text-sm font-medium truncate">{row.image_filename}</span>
               {row.reviewed_by_username && (
@@ -1755,25 +1672,25 @@ function ImageDetailModal({ row, categories, tableImages, onApprove, onSaveEdits
                 <div key={cat.id} className={`rounded-lg border p-2.5 ${changed ? 'border-indigo-300 bg-indigo-50/30' : 'border-gray-200'}`}>
                   <div className="flex items-center gap-1.5 mb-1.5">
                     <h4 className="text-[11px] font-semibold text-gray-800 truncate">{cat.name}</h4>
-                    {cell.review_status === 'approved' ? (
+                    {row.review_status === 'approved' ? (
                       <span className="px-1.5 py-0.5 bg-green-100 text-green-700 text-[9px] font-medium rounded-full shrink-0">✓</span>
-                    ) : cell.review_status === 'rework_requested' ? (
+                    ) : row.review_status === 'rework_requested' ? (
                       <span className="px-1.5 py-0.5 bg-orange-100 text-orange-700 text-[9px] font-medium rounded-full shrink-0">🔄</span>
-                    ) : cell.review_status === 'rework_completed' ? (
+                    ) : row.review_status === 'rework_completed' ? (
                       <span className="px-1.5 py-0.5 bg-purple-100 text-purple-700 text-[9px] font-medium rounded-full shrink-0">✅</span>
                     ) : (
                       <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 text-[9px] font-medium rounded-full shrink-0">⏳</span>
                     )}
-                    <span className="text-[9px] text-gray-400 ml-auto shrink-0">{cell.annotator_username}</span>
+                    <span className="text-[9px] text-gray-400 ml-auto shrink-0">{row.annotated_by_username}</span>
                   </div>
-                  {cell.reviewed_by_username && (
+                  {row.reviewed_by_username && (
                     <div className="flex items-center gap-1 mb-1 px-1">
                       <span className="w-1 h-1 rounded-full bg-green-400 shrink-0" />
                       <span className="text-[9px] text-green-600">
-                        Reviewed by <span className="font-semibold">{cell.reviewed_by_username}</span>
-                        {cell.reviewed_at && (
+                        Reviewed by <span className="font-semibold">{row.reviewed_by_username}</span>
+                        {row.reviewed_at && (
                           <span className="text-green-400 ml-1">
-                            · {new Date(cell.reviewed_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                            · {new Date(row.reviewed_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
                           </span>
                         )}
                     </span>
@@ -1813,17 +1730,17 @@ function ImageDetailModal({ row, categories, tableImages, onApprove, onSaveEdits
               >
                 {saving ? 'Saving...' : 'Save & Approve All'}
               </button>
-            ) : pendingAnnotations.length > 0 ? (
+            ) : isPending ? (
               <>
               <button
                 onClick={handleApproveAll}
                 disabled={saving}
                   className="flex-1 px-3 py-2 bg-green-500 text-white text-xs font-medium rounded-lg hover:bg-green-600 disabled:opacity-50 cursor-pointer"
               >
-                  {saving ? 'Approving...' : `Approve All (${pendingAnnotations.length})`}
+                  {saving ? 'Approving...' : 'Approve'}
               </button>
                 <button
-                  onClick={() => onRework(pendingAnnotations[0]?.annotation_id)}
+                  onClick={() => onRework(row.image_id)}
                   disabled={saving}
                   className="px-3 py-2 border border-amber-300 text-amber-600 text-xs font-medium rounded-lg hover:bg-amber-50 disabled:opacity-50 cursor-pointer"
                 >
@@ -1832,16 +1749,14 @@ function ImageDetailModal({ row, categories, tableImages, onApprove, onSaveEdits
               </>
             ) : (
               <>
-                <span className="flex-1 text-center text-xs text-green-600 font-medium">✓ All approved</span>
-                {allAnnotations.length > 0 && (
+                <span className="flex-1 text-center text-xs text-green-600 font-medium">✓ Approved</span>
                   <button
-                    onClick={() => onRework(allAnnotations[0]?.annotation_id)}
+                  onClick={() => onRework(row.image_id)}
                     disabled={saving}
-                    className="px-3 py-2 border border-amber-300 text-amber-600 text-xs font-medium rounded-lg hover:bg-amber-50 disabled:opacity-50 cursor-pointer"
+                  className="px-3 py-2 border border-amber-300 text-amber-600 text-xs font-medium rounded-lg hover:bg-amber-50 disabled:opacity-50 cursor-pointer"
                   >
-                    Rework
+                  Rework
                   </button>
-                )}
               </>
             )}
           </div>
@@ -1990,23 +1905,25 @@ function ReviewTab() {
   }, [tableData]);
 
   // ── Shared actions ──
-  const handleApprove = async (annotationId) => {
+  // In the new schema, review is image-level. The "annotationId" param is
+  // actually the image_id for all callers from the review table view.
+  const handleApprove = async (imageId) => {
     try {
-      await api.put(`/admin/review/${annotationId}/approve`, {});
+      await api.put(`/admin/review/image/${imageId}/approve`, {});
     } catch (err) {
       alert(err.response?.data?.detail || 'Failed');
     }
   };
 
-  const handleApproveAndRefresh = async (annotationId) => {
-    await handleApprove(annotationId);
+  const handleApproveAndRefresh = async (imageId) => {
+    await handleApprove(imageId);
     refreshData();
   };
 
-  const handleSaveEdits = async (annotationId, selectedIds, isDuplicate) => {
+  const handleSaveEdits = async (imageId, selectedIds, isDuplicate) => {
     try {
-      await api.put(`/admin/review/${annotationId}/update`, {
-        selected_option_ids: selectedIds,
+      await api.put(`/admin/review/image/${imageId}/update`, {
+        annotations: selectedIds,  // image-level annotations dict
         is_duplicate: isDuplicate,
       });
     } catch (err) {
@@ -2014,8 +1931,8 @@ function ReviewTab() {
     }
   };
 
-  const handleSaveEditsAndRefresh = async (annotationId, selectedIds, isDuplicate) => {
-    await handleSaveEdits(annotationId, selectedIds, isDuplicate);
+  const handleSaveEditsAndRefresh = async (imageId, selectedIds, isDuplicate) => {
+    await handleSaveEdits(imageId, selectedIds, isDuplicate);
     setEditingCell(null);
     cancelEditing();
     refreshData();
@@ -2027,8 +1944,8 @@ function ReviewTab() {
   const [reworkReason, setReworkReason] = useState('');
   const [sendingRework, setSendingRework] = useState(false);
 
-  const openReworkModal = (annotationId) => {
-    setReworkAnnotationId(annotationId);
+  const openReworkModal = (imageId) => {
+    setReworkAnnotationId(imageId);
     setReworkReason('');
     setShowReworkModal(true);
   };
@@ -2040,7 +1957,7 @@ function ReviewTab() {
     }
     setSendingRework(true);
     try {
-      await api.post(`/admin/annotations/${reworkAnnotationId}/rework`, { reason: reworkReason });
+      await api.post(`/admin/images/${reworkAnnotationId}/rework`, { reason: reworkReason });
       setShowReworkModal(false);
       setReworkAnnotationId(null);
       setReworkReason('');
@@ -2060,11 +1977,9 @@ function ReviewTab() {
       for (const imgId of selectedRows) {
         const row = tableData.images.find((r) => r.image_id === imgId);
         if (!row) continue;
-        for (const cat of tableData.categories) {
-          const cell = row.annotations[String(cat.id)];
-          if (cell && !cell.review_status) {
-            promises.push(api.put(`/admin/review/${cell.annotation_id}/approve`, {}));
-          }
+        // Image-level approve — only if not already approved
+        if (!row.review_status || row.review_status === 'pending' || row.review_status === 'rework_completed') {
+          promises.push(api.put(`/admin/review/image/${imgId}/approve`, {}));
         }
       }
       await Promise.all(promises);
@@ -2167,12 +2082,9 @@ function ReviewTab() {
         }
         if (e.key === 'a' || e.key === 'A') {
           e.preventDefault();
-          // Approve all pending for this image
-          const pending = tableData.categories
-            .map((cat) => modalRow.annotations[String(cat.id)])
-            .filter((cell) => cell && !cell.review_status);
-          if (pending.length > 0) {
-            Promise.all(pending.map((cell) => handleApprove(cell.annotation_id))).then(() => refreshData());
+          // Approve this image (image-level review)
+          if (!modalRow.review_status || modalRow.review_status === 'pending' || modalRow.review_status === 'rework_completed') {
+            handleApprove(modalRow.image_id).then(() => refreshData());
           }
           return;
         }
@@ -2291,21 +2203,12 @@ function ReviewTab() {
             <>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
                 {tableData.images.map((row) => {
-                  // Count pending annotations for this image
-                  const pendingCount = tableData.categories.filter((cat) => {
-                    const cell = row.annotations[String(cat.id)];
-                    return cell && !cell.review_status;
-                  }).length;
-                  const approvedCount = tableData.categories.filter((cat) => {
-                    const cell = row.annotations[String(cat.id)];
-                    return cell && cell.review_status === 'approved';
-                  }).length;
+                  // Count annotated categories for this image
                   const totalAnnotated = tableData.categories.filter((cat) => row.annotations[String(cat.id)]).length;
-                  const allApproved = approvedCount === totalAnnotated && totalAnnotated > 0;
-                  const hasRework = tableData.categories.some((cat) => {
-                    const cell = row.annotations[String(cat.id)];
-                    return cell && (cell.review_status === 'rework_requested' || cell.review_status === 'rework_completed');
-                  });
+                  // Review is image-level, not per-cell
+                  const allApproved = row.review_status === 'approved' && totalAnnotated > 0;
+                  const hasRework = row.review_status === 'rework_requested' || row.review_status === 'rework_completed';
+                  const isPending = (!row.review_status || row.review_status === 'pending' || row.review_status === 'rework_completed') && totalAnnotated > 0;
 
                         return (
                     <div
@@ -2336,15 +2239,11 @@ function ReviewTab() {
                             <span className="px-2.5 py-1 bg-orange-500 text-white text-xs font-bold rounded-lg shadow-lg">
                               🔄 Rework
                             </span>
-                          ) : pendingCount > 0 ? (
+                          ) : isPending ? (
                             <span className="px-2.5 py-1 bg-amber-500 text-white text-xs font-bold rounded-lg shadow-lg">
-                              ⏳ {pendingCount} Pending
+                              ⏳ Pending
                             </span>
-                          ) : (
-                            <span className="px-2.5 py-1 bg-gray-800/80 text-white text-xs font-medium rounded-lg shadow-lg backdrop-blur-sm">
-                              {approvedCount}/{totalAnnotated}
-                            </span>
-                          )}
+                          ) : null}
                           {row.deliverable_image_path && (
                             <span className={`px-2 py-1 text-white text-xs font-bold rounded-lg shadow-lg ${row.deliverable_image_path.includes('/blurred/') ? 'bg-amber-600' : 'bg-teal-500'}`} title={`Delivered: ${row.deliverable_image_path}`}>
                               {row.deliverable_image_path.includes('/blurred/') ? '🔒' : '✅'}
@@ -2414,14 +2313,11 @@ function ReviewTab() {
                         {/* Hover overlay with action buttons */}
                         <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center gap-3">
                           {/* Approve All button */}
-                          {pendingCount > 0 && (
+                          {isPending && (
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                const pending = tableData.categories
-                                  .map((cat) => row.annotations[String(cat.id)])
-                                  .filter((cell) => cell && !cell.review_status);
-                                Promise.all(pending.map((cell) => handleApprove(cell.annotation_id))).then(() => refreshData());
+                                handleApprove(row.image_id).then(() => refreshData());
                               }}
                               className="flex flex-col items-center gap-1.5 px-4 py-3 bg-green-500 hover:bg-green-600 text-white rounded-xl shadow-lg transform scale-90 group-hover:scale-100 transition-all duration-200 cursor-pointer"
                               title="Approve all pending annotations"
@@ -2436,10 +2332,7 @@ function ReviewTab() {
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              const firstAnnotation = tableData.categories
-                                .map((cat) => row.annotations[String(cat.id)])
-                                .find((cell) => cell);
-                              if (firstAnnotation) openReworkModal(firstAnnotation.annotation_id);
+                              openReworkModal(row.image_id);
                             }}
                             className="flex flex-col items-center gap-1.5 px-4 py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-xl shadow-lg transform scale-90 group-hover:scale-100 transition-all duration-200 cursor-pointer"
                             title="Send for rework"
@@ -2471,22 +2364,15 @@ function ReviewTab() {
                       <div className="bg-white px-3 py-2 space-y-1">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2 min-w-0">
-                            {(() => {
-                              const annotators = new Set();
-                              tableData.categories.forEach((cat) => {
-                                const cell = row.annotations[String(cat.id)];
-                                if (cell) annotators.add(cell.annotator_username);
-                              });
-                              return [...annotators].map((name) => (
-                                <span key={name} className="flex items-center gap-1 text-xs text-gray-600">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
-                                  {name}
-                                </span>
-                              ));
-                            })()}
+                            {row.annotated_by_username && (
+                              <span className="flex items-center gap-1 text-xs text-gray-600">
+                                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400" />
+                                {row.annotated_by_username}
+                              </span>
+                            )}
                           </div>
                           <span className="text-[10px] text-gray-400">
-                            {approvedCount}/{totalAnnotated} approved
+                            {allApproved ? '✓ Approved' : hasRework ? '🔄 Rework' : isPending ? 'Pending review' : ''}
                           </span>
                         </div>
                         {row.reviewed_by_username && (
@@ -2713,22 +2599,16 @@ function ReviewTab() {
           row={modalRow}
           categories={tableData.categories}
           tableImages={tableData.images}
-          onApprove={async (annId) => {
-            await handleApprove(annId);
+          onApprove={async (imageId) => {
+            await handleApprove(imageId);
             // Optimistically update modalRow to show approved status immediately
             if (modalRow) {
-              const updatedAnnotations = { ...modalRow.annotations };
-              for (const catId of Object.keys(updatedAnnotations)) {
-                if (updatedAnnotations[catId]?.annotation_id === annId) {
-                  updatedAnnotations[catId] = { ...updatedAnnotations[catId], review_status: 'approved' };
-                }
-              }
-              setModalRow({ ...modalRow, annotations: updatedAnnotations });
+              setModalRow({ ...modalRow, review_status: 'approved' });
             }
             refreshData();
           }}
-          onSaveEdits={async (annId, sels, dup) => { await handleSaveEdits(annId, sels, dup); refreshData(); }}
-          onRework={(annId) => { setModalRow(null); openReworkModal(annId); }}
+          onSaveEdits={async (imageId, sels, dup) => { await handleSaveEdits(imageId, sels, dup); refreshData(); }}
+          onRework={(imageId) => { setModalRow(null); openReworkModal(imageId); }}
           onClose={() => setModalRow(null)}
           onNavigate={(newRow) => setModalRow(newRow)}
         />

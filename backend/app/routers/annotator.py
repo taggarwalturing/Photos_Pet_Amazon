@@ -1,389 +1,293 @@
+"""
+Annotator router — simplified for 3-table schema.
+
+Tables used : users, images, arbiter_predictions
+Categories  : static JSON file (categories.json)
+"""
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import and_
+from sqlalchemy.orm import Session
 from typing import Optional
 from datetime import datetime, timezone
-from app.database import get_db
-from app.dependencies import require_annotator
-from app.models.user import User
-from app.models.image import Image
-from app.models.category import Category
-from app.models.option import Option
-from app.models.annotation import Annotation, AnnotationSelection
-from app.models.annotator_category import AnnotatorCategory
-from app.models.settings import SystemSettings
-from app.models.notification import Notification
-from app.schemas.category import CategoryWithProgress
-from app.schemas.annotation import AnnotationSave, AnnotationResponse, AnnotationTask
-from app.utils.blur import blur_image_regions
-from app.utils.deliverable import update_biometric_if_delivered
+from threading import Lock as ThreadLock
+from pydantic import BaseModel
 import os
 
-
-# Mapping: DB category name → arbiter category key
-_DB_CAT_TO_ARBITER = {
-    "Lighting Variation": "lighting",
-    "Angle & Perspective Variation": "viewpoint",
-    "Environmental Context Variation": "environment",
-    "Occlusion & Partial Visibility": "occlusion",
-    "Activity & Motion": "activity",
-    "Multi-Pet Disambiguation": "multipet",
-}
-
-# Mapping: arbiter short label → option label text in the database
-_ARBITER_LABEL_TO_OPTION = {
-    "dusk_dawn": "Dusk-dawn lighting",
-    "harsh_sunlight": "Harsh outdoor sunlight with shadows",
-    "low_light": "Low light conditions",
-    "well_lit": "Well-lit conditions (typical)",
-    "front_eye_level": "Front-facing at eye level (typical)",
-    "ground_level": "Ground-level view",
-    "no_head": "No head showing",
-    "head_only": "Partial view (head only)",
-    "top_down": "Top-down view",
-    "car_carrier": "In car-carrier",
-    "indoor": "Indoor setting (typical)",
-    "outdoor_dirt": "Outdoor dirt road",
-    "snow": "Snow environment",
-    "vet_clinic": "Vet clinic",
-    "yard_complex": "Yard with a complex background",
-    "behind_furniture": "Behind furniture (face only)",
-    "full_body": "Full-body, unobstructed (typical)",
-    "under_blanket": "Partially hidden under a blanket",
-    "peeking_box": "Peeking out of box-carrier",
-    "toy_obscuring": "Toy obscuring part of body",
-    "eating_drinking": "Eating-drinking",
-    "jumping": "Jumping to catch toy",
-    "playing": "Playing with another pet",
-    "running": "Running with motion blur",
-    "sitting_posed": "Sitting still-posed (typical)",
-    "sleeping": "Sleeping-curled up",
-    "pet_with_lookalike": "Pet with breed lookalike",
-    "single_pet": "Single pet (typical)",
-    "three_same": "Three pets of same breed",
-    "two_similar": "Two similar-looking pets together",
-    "None": "None of the Above",
-}
+from app.database import get_db
+from app.dependencies import require_annotator, get_current_user
+from app.models.user import User
+from app.models.image import Image
+from app.utils.categories import (
+    get_categories,
+    get_option_by_id,
+    arbiter_label_to_option_label,
+    enrich_annotations_with_labels,
+)
+from app.utils.blur import blur_image_regions
 
 
-def _check_original_exists(image: Image) -> bool:
-    """Check if the original (unblurred) image file actually exists on disk with content."""
-    backend_dir = os.path.join(os.path.dirname(__file__), "..", "..")
-    
-    # Check original_url
-    if image.original_url:
-        orig_path = image.original_url.replace("file://", "")
-        full_path = os.path.join(backend_dir, orig_path)
-        if os.path.exists(full_path) and os.path.getsize(full_path) > 0:
+# ── In-memory soft-lock store ──────────────────────────────────────
+# Tracks which annotator currently has an image open.
+# Soft locks auto-expire after SOFT_LOCK_TTL seconds if not refreshed.
+SOFT_LOCK_TTL = 30  # seconds — heartbeat should fire every 10s
+_soft_locks: dict[int, dict] = {}  # image_id → {"user_id": int, "username": str, "ts": datetime}
+_soft_lock_mu = ThreadLock()
+
+
+def _acquire_soft_lock(image_id: int, user_id: int, username: str) -> bool:
+    """Try to acquire a soft lock. Returns True if acquired or already held by this user."""
+    now = datetime.now(timezone.utc)
+    with _soft_lock_mu:
+        existing = _soft_locks.get(image_id)
+        if existing and existing["user_id"] != user_id:
+            age = (now - existing["ts"]).total_seconds()
+            if age < SOFT_LOCK_TTL:
+                return False  # still held by someone else
+        _soft_locks[image_id] = {"user_id": user_id, "username": username, "ts": now}
+        return True
+
+
+def _release_soft_lock(image_id: int, user_id: int):
+    """Release a soft lock if held by this user."""
+    with _soft_lock_mu:
+        existing = _soft_locks.get(image_id)
+        if existing and existing["user_id"] == user_id:
+            del _soft_locks[image_id]
+
+
+def _refresh_soft_lock(image_id: int, user_id: int) -> bool:
+    """Refresh timestamp on a soft lock. Returns False if not held by this user."""
+    now = datetime.now(timezone.utc)
+    with _soft_lock_mu:
+        existing = _soft_locks.get(image_id)
+        if existing and existing["user_id"] == user_id:
+            existing["ts"] = now
             return True
-
-    # Check pipeline workspace folders for the filename
-    from app.utils import get_pipeline_workspace
-    workspace = str(get_pipeline_workspace())
-    for sub in ["deliverable", "01_downloaded_from_drive"]:
-        fpath = os.path.join(workspace, sub, image.filename)
-        if os.path.exists(fpath) and os.path.getsize(fpath) > 0:
-            return True
-
-    return False
+        return False
 
 
-def _get_available_image_ids(db: Session, user_id: int) -> set[int]:
+def _get_soft_lock_holder(image_id: int, exclude_user_id: int) -> Optional[dict]:
+    """Return soft-lock holder info if held by someone other than exclude_user_id."""
+    now = datetime.now(timezone.utc)
+    with _soft_lock_mu:
+        existing = _soft_locks.get(image_id)
+        if existing and existing["user_id"] != exclude_user_id:
+            age = (now - existing["ts"]).total_seconds()
+            if age < SOFT_LOCK_TTL:
+                return existing
+            else:
+                del _soft_locks[image_id]
+    return None
+
+
+def _get_all_soft_locks(exclude_user_id: int) -> dict[int, dict]:
+    """Return all active soft locks held by users other than exclude_user_id."""
+    now = datetime.now(timezone.utc)
+    result = {}
+    stale = []
+    with _soft_lock_mu:
+        for img_id, info in _soft_locks.items():
+            age = (now - info["ts"]).total_seconds()
+            if age >= SOFT_LOCK_TTL:
+                stale.append(img_id)
+            elif info["user_id"] != exclude_user_id:
+                result[img_id] = info
+        for img_id in stale:
+            del _soft_locks[img_id]
+    return result
+
+
+# ── Helpers ────────────────────────────────────────────────────────
+
+def _build_option_id_to_label() -> dict[int, str]:
+    """Build a mapping from option ID → label text across all categories."""
+    result = {}
+    for cat in get_categories():
+        for opt in cat.get("options", []):
+            result[opt["id"]] = opt["label"]
+    return result
+
+
+def _is_hard_locked(image: Image, user_id: int) -> bool:
     """
-    Get the set of image IDs available to this user.
-
-    All annotators can access ALL images — they choose which to annotate.
+    Check if an image is hard-locked by a different annotator.
+    Once an image has been annotated by someone, it's permanently locked
+    for all OTHER annotators — regardless of review_status or rework.
     """
-    return set(row.id for row in db.query(Image.id).all())
+    return (
+        image.annotated_by is not None
+        and image.annotated_by != user_id
+    )
 
 
 router = APIRouter(prefix="/annotator", tags=["Annotator"])
 
 
-def _get_setting(db: Session, key: str, default: str) -> str:
-    """Get a setting value or return default if not found."""
-    setting = db.query(SystemSettings).filter(SystemSettings.key == key).first()
-    return setting.value if setting else default
+# ── Categories (static JSON) ──────────────────────────────────────
+
+@router.get("/categories")
+def list_categories(user: User = Depends(require_annotator)):
+    """Return all categories with options from static JSON."""
+    return {"categories": get_categories()}
 
 
-def _get_max_annotation_time(db: Session) -> int:
-    """Get max annotation time in seconds (default 20)."""
-    return int(_get_setting(db, "max_annotation_time_seconds", "20"))
-
-
-def _build_queue(db: Session, user_id: int, category_id: int) -> list[Image]:
-    """
-    Build the annotator's image queue for a category.
-
-    Uses the assignment table when available:
-    - Strict mode (assignments exist): only assigned images appear in the queue.
-    - Legacy mode (no assignments): annotation-based availability.
-
-    Within the user's available images, the queue contains:
-    1. Images this annotator has already touched (any status) — so they can go back
-    2. Images NOT yet completed by ANY annotator for this category — the remaining work
-
-    Ordered by image.id for consistency.
-    """
-    # Get the set of image IDs this user is allowed to work on
-    available_ids = _get_available_image_ids(db, user_id)
-
-    all_images = (
-        db.query(Image)
-        .filter(Image.id.in_(available_ids))
-        .order_by(Image.id)
-        .all()
-    )
-
-    # IDs of images this annotator has already annotated for this category
-    my_annotation_image_ids = set(
-        row.image_id
-        for row in db.query(Annotation.image_id).filter(
-            Annotation.annotator_id == user_id,
-            Annotation.category_id == category_id,
-        ).all()
-    )
-
-    # IDs of images completed by ANY annotator for this category
-    completed_by_anyone_ids = set(
-        row.image_id
-        for row in db.query(Annotation.image_id).filter(
-            Annotation.category_id == category_id,
-            Annotation.status == "completed",
-        ).all()
-    )
-
-    queue = []
-    for img in all_images:
-        if img.id in my_annotation_image_ids:
-            # Annotator touched this — always include (for back navigation)
-            queue.append(img)
-        elif img.id not in completed_by_anyone_ids:
-            # Not completed by anyone — still available
-            queue.append(img)
-        # else: completed by someone else, not touched by me — skip
-
-    return queue
-
-
-# ── Time Tracking Endpoint ─────────────────────────────────────────
-
-@router.patch("/images/{image_id}/time")
-def save_time_spent(
-    image_id: int,
-    payload: dict,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_annotator),
-):
-    """
-    Deprecated — time tracking per image is no longer used.
-    Kept for backward compatibility (returns ok without doing anything).
-    """
-    return {"ok": True}
-
-
-# ── Image-First Workflow Endpoints ─────────────────────────────────
+# ── Image Listing ────────────────────────────────────────────────
 
 @router.get("/images")
 def list_images_for_annotator(
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(0, ge=0, le=10000),  # 0 = return all
     filter_status: Optional[str] = Query(None),  # all, pending, completed
     db: Session = Depends(get_db),
     user: User = Depends(require_annotator),
 ):
     """
-    List images with annotation status across assigned categories.
-    Optimized: pre-loads all annotations + selections in batch (N+1 → 3 queries).
+    List images with annotation status for the annotator.
+    Categories come from static JSON; annotations from Image.annotations JSON.
     """
-    from collections import defaultdict
+    categories = get_categories()
+    option_id_to_label = _build_option_id_to_label()
 
-    # Get assigned category IDs
-    assigned_cat_ids = [
-        ac.category_id
-        for ac in db.query(AnnotatorCategory)
-        .filter(AnnotatorCategory.user_id == user.id)
-        .all()
-    ]
-
-    # Total image count (used for UI)
-    total_image_count = db.query(Image.id).count()
-
-    if not assigned_cat_ids:
-        return {
-            "images": [],
-            "total": 0,
-            "page": page,
-            "page_size": page_size,
-            "assigned_categories": [],
-            "assigned_image_count": total_image_count,
-        }
-
-    # Get ALL images (ordered by ID)
-    all_images = db.query(Image).order_by(Image.id).all()
-
-    # ── BATCH LOAD: all annotations for these images × categories (1 query) ──
-    all_annotations = (
-        db.query(Annotation)
-        .filter(Annotation.category_id.in_(assigned_cat_ids))
-        .options(joinedload(Annotation.selections))
+    # Get all non-duplicate, non-improper images (ordered by ID)
+    all_images = (
+        db.query(Image)
+        .filter(Image.is_duplicate == False)  # noqa: E712
+        .order_by(Image.id)
         .all()
     )
+    
+    # Get all active soft locks
+    active_soft_locks = _get_all_soft_locks(exclude_user_id=user.id)
 
-    # Index annotations by (image_id, annotator_id) and by (image_id, completed)
-    my_anns_by_image = defaultdict(list)       # image_id → [Annotation by this user]
-    completed_by_image = defaultdict(set)       # image_id → set of completed category_ids
-    completed_anns_by_image = defaultdict(list) # image_id → [completed Annotations by anyone]
-    # Track which images are locked by another annotator (human-validated)
-    locked_by_other: dict[int, int] = {}        # image_id → other annotator_id
-    for ann in all_annotations:
-        if ann.annotator_id == user.id:
-            my_anns_by_image[ann.image_id].append(ann)
-        else:
-            # Another annotator — if they human-validated, this image is locked
-            if ann.human_validated:
-                locked_by_other[ann.image_id] = ann.annotator_id
-        if ann.status == "completed":
-            completed_by_image[ann.image_id].add(ann.category_id)
-            completed_anns_by_image[ann.image_id].append(ann)
-
-    # ── BATCH LOAD: all options (1 query — small table, ~36 rows) ──
-    all_options = db.query(Option).all()
-    option_label_map = {o.id: o.label for o in all_options}
-
-    # Pre-load categories for AI label resolution
-    categories_for_ai = (
-        db.query(Category)
-        .filter(Category.id.in_(assigned_cat_ids))
-        .options(joinedload(Category.options))
-        .all()
-    )
-    cat_by_id = {c.id: c for c in categories_for_ai}
-
-    # Build image data with annotation status per category (NO per-image queries)
     images_data = []
     for img in all_images:
-        my_annotations = my_anns_by_image.get(img.id, [])
-        completed_cat_ids_for_img = completed_by_image.get(img.id, set())
-        completed_anns = completed_anns_by_image.get(img.id, [])
-
+        annotations = img.annotations or {}
         arbiter_labels = img.arbiter_labels or {}
 
+        # Determine per-category status and labels
         category_status = {}
         category_labels = {}
         category_label_source = {}
-        for cat_id in assigned_cat_ids:
-            my_ann = next((a for a in my_annotations if a.category_id == cat_id), None)
-            has_human_selection = False
-            if my_ann:
-                category_status[str(cat_id)] = my_ann.status
-                # Resolve labels from pre-loaded selections
-                selected_labels = [option_label_map.get(s.option_id, "") for s in my_ann.selections]
-                if selected_labels and any(selected_labels):
-                    category_labels[str(cat_id)] = [l for l in selected_labels if l]
-                    category_label_source[str(cat_id)] = "human"
-                    has_human_selection = True
-                else:
-                    category_labels[str(cat_id)] = []
-            elif cat_id in completed_cat_ids_for_img:
-                category_status[str(cat_id)] = "completed_by_other"
-                completed_ann = next((a for a in completed_anns if a.category_id == cat_id), None)
-                if completed_ann:
-                    selected_labels = [option_label_map.get(s.option_id, "") for s in completed_ann.selections]
-                    if selected_labels and any(selected_labels):
-                        category_labels[str(cat_id)] = [l for l in selected_labels if l]
-                        category_label_source[str(cat_id)] = "human"
-                        has_human_selection = True
-                    else:
-                        category_labels[str(cat_id)] = []
-                else:
-                    category_labels[str(cat_id)] = []
+
+        for cat in categories:
+            cat_key = cat["key"]
+            cat_ann = annotations.get(cat_key, {})
+            selected_ids = cat_ann.get("selected_option_ids", [])
+
+            if selected_ids:
+                # Human annotation exists
+                category_status[cat_key] = "completed"
+                category_labels[cat_key] = [
+                    option_id_to_label.get(oid, f"option_{oid}") for oid in selected_ids
+                ]
+                category_label_source[cat_key] = "human"
             else:
-                category_status[str(cat_id)] = "pending"
-                category_labels[str(cat_id)] = []
-
-            # Fill with AI label if no human selection exists
-            if not has_human_selection and arbiter_labels:
-                cat_obj = cat_by_id.get(cat_id)
-                if cat_obj:
-                    arb_key = _DB_CAT_TO_ARBITER.get(cat_obj.name)
-                    if arb_key and arb_key in arbiter_labels:
-                        pred_data = arbiter_labels[arb_key]
-                        pred = pred_data.get("final", pred_data) if isinstance(pred_data, dict) else str(pred_data) if pred_data else None
+                category_status[cat_key] = "pending"
+                # Try AI prediction from arbiter_labels
+                if cat_key in arbiter_labels:
+                    pred_data = arbiter_labels[cat_key]
+                    # Use stored label directly if available
+                    opt_label = pred_data.get("label") if isinstance(pred_data, dict) else None
+                    if not opt_label:
+                        pred = (
+                            pred_data.get("final") or pred_data.get("key")
+                            if isinstance(pred_data, dict)
+                            else str(pred_data) if pred_data else None
+                        )
                         if pred:
-                            option_label = _ARBITER_LABEL_TO_OPTION.get(pred)
-                            if option_label:
-                                category_labels[str(cat_id)] = [option_label]
-                                category_label_source[str(cat_id)] = "ai"
+                            opt_label = arbiter_label_to_option_label(pred)
+                    if opt_label:
+                        category_labels[cat_key] = [opt_label]
+                        category_label_source[cat_key] = "ai"
+                        continue
+                category_labels[cat_key] = []
 
-        # Determine overall status
+        # Overall annotation status
         statuses = list(category_status.values())
-        if all(s in ("completed", "completed_by_other") for s in statuses):
+        if img.annotation_status == "completed" or all(s == "completed" for s in statuses):
             overall_status = "completed"
-        elif any(s == "completed" or s == "completed_by_other" for s in statuses):
+        elif any(s == "completed" for s in statuses):
             overall_status = "partial"
         else:
             overall_status = "pending"
-
+        
         # Apply filter
         if filter_status == "pending" and overall_status != "pending":
             continue
         if filter_status == "completed" and overall_status != "completed":
             continue
+        
+        # Hard lock — another annotator already submitted annotations
+        is_hard = _is_hard_locked(img, user.id)
 
-        has_rework = any(a.review_status == "rework_requested" for a in my_annotations)
-        is_human_validated = any(a.human_validated for a in my_annotations)
+        # Soft lock — another annotator currently has image open
+        soft_holder = active_soft_locks.get(img.id)
+        is_soft = soft_holder is not None
 
-        is_locked = img.id in locked_by_other
+        lock_type = None
+        held_by = ""
+        if is_hard:
+            lock_type = "completed"
+        elif is_soft:
+            lock_type = "in_progress"
+            held_by = soft_holder.get("username", "")
 
+        is_locked = is_hard or is_soft
+        # Rework is only relevant to the original annotator
+        has_rework = (
+            img.review_status == "rework_requested"
+            and img.annotated_by == user.id
+        )
+        
+        # For other annotators: mask review details — they just see "completed"
+        is_owner = (img.annotated_by == user.id)
+        visible_review_status = img.review_status if is_owner else (
+            "completed" if img.annotated_by else img.review_status
+        )
+        visible_annotation_status = img.annotation_status or "pending"
+        if is_hard and not is_owner:
+            visible_annotation_status = "completed"
+        
         images_data.append({
             "id": img.id,
-            "image_drive_id": img.image_drive_id,
             "filename": img.filename,
-            "original_filename": img.original_filename,
             "url": img.url,
+            "source_folder_id": img.source_folder_id,
+            "annotation_status": visible_annotation_status,
+            "review_status": visible_review_status,
             "category_status": category_status,
             "category_labels": category_labels,
             "category_label_source": category_label_source,
             "overall_status": "locked" if is_locked else overall_status,
-            "completed_count": sum(1 for s in statuses if s in ("completed", "completed_by_other")),
-            "total_categories": len(assigned_cat_ids),
-            "is_improper": img.is_improper,
+            "completed_count": sum(1 for s in statuses if s == "completed"),
+            "total_categories": len(categories),
+            "is_improper": img.is_improper or False,
             "improper_reason": img.improper_reason,
             "has_rework": has_rework,
-            "is_human_validated": is_human_validated,
-            "has_ai_labels": bool(img.arbiter_labels),
+            "has_ai_labels": bool(arbiter_labels),
             "locked_by_other": is_locked,
+            "lock_type": lock_type,       # "completed" | "in_progress" | null
+            "held_by": held_by,           # username of soft-lock holder
         })
-
-    # Paginate in Python (status filter requires app-level aggregation)
+    
+    # Paginate
     total = len(images_data)
-    start = (page - 1) * page_size
-    paginated = images_data[start : start + page_size]
-
-    # Get assigned categories with options (reuse already loaded data)
-    categories = sorted(categories_for_ai, key=lambda c: c.display_order)
-
+    if page_size == 0:
+        paginated = images_data
+    else:
+        start = (page - 1) * page_size
+        paginated = images_data[start : start + page_size]
+    
     return {
         "images": paginated,
         "total": total,
         "page": page,
         "page_size": page_size,
-        "assigned_categories": [
-            {
-                "id": c.id,
-                "name": c.name,
-                "display_order": c.display_order,
-                "options": [
-                    {"id": o.id, "label": o.label, "is_typical": o.is_typical}
-                    for o in sorted(c.options, key=lambda x: x.display_order)
-                ],
-            }
-            for c in categories
-        ],
-        "assigned_image_count": total_image_count,
+        "categories": categories,
+        "assigned_categories": categories,  # alias for frontend compat
     }
 
+
+# ── Lock Endpoints ────────────────────────────────────────────────
 
 @router.get("/images/{image_id}/lock-status")
 def check_image_lock_status(
@@ -391,28 +295,92 @@ def check_image_lock_status(
     db: Session = Depends(get_db),
     user: User = Depends(require_annotator),
 ):
-    """
-    Lightweight endpoint to check if an image is locked by another annotator.
-    Used for real-time pre-checks before opening an image for annotation.
-    """
-    exists = db.query(Image.id).filter(Image.id == image_id).first()
-    if not exists:
+    """Lightweight check: is this image locked by another annotator?"""
+    image = db.query(Image).filter(Image.id == image_id).first()
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+    
+    # Hard lock
+    if _is_hard_locked(image, user.id):
+        return {"image_id": image_id, "locked_by_other": True, "lock_type": "completed"}
+
+    # Soft lock
+    holder = _get_soft_lock_holder(image_id, exclude_user_id=user.id)
+    if holder:
+        return {
+            "image_id": image_id,
+            "locked_by_other": True,
+            "lock_type": "in_progress",
+            "held_by": holder.get("username", ""),
+        }
+
+    return {"image_id": image_id, "locked_by_other": False, "lock_type": None}
+
+
+@router.post("/images/{image_id}/acquire-lock")
+async def acquire_image_lock(
+    image_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_annotator),
+):
+    """Acquire a soft lock when annotator opens an image. Broadcasts via WS."""
+    from app.ws_manager import lock_manager
+
+    image = db.query(Image).filter(Image.id == image_id).first()
+    if not image:
         raise HTTPException(status_code=404, detail="Image not found")
 
-    other = (
-        db.query(Annotation.annotator_id)
-        .filter(
-            Annotation.image_id == image_id,
-            Annotation.annotator_id != user.id,
-            Annotation.human_validated == True,
-        )
-        .first()
-    )
-    return {
-        "image_id": image_id,
-        "locked_by_other": other is not None,
-    }
+    if _is_hard_locked(image, user.id):
+        raise HTTPException(status_code=409, detail="Image already annotated by another annotator")
 
+    acquired = _acquire_soft_lock(image_id, user.id, user.username)
+    if not acquired:
+        holder = _get_soft_lock_holder(image_id, exclude_user_id=user.id)
+        held_by = holder.get("username", "another annotator") if holder else "another annotator"
+        raise HTTPException(
+            status_code=409,
+            detail=f"Image is currently being worked on by {held_by}",
+        )
+
+    await lock_manager.broadcast(
+        {"type": "lock", "image_id": image_id, "lock_type": "in_progress", "held_by": user.username},
+        exclude_user_id=user.id,
+    )
+
+    return {"ok": True, "image_id": image_id, "lock_type": "soft"}
+
+
+@router.post("/images/{image_id}/release-lock")
+async def release_image_lock(
+    image_id: int,
+    user: User = Depends(require_annotator),
+):
+    """Release a soft lock when annotator navigates away without saving."""
+    from app.ws_manager import lock_manager
+
+    _release_soft_lock(image_id, user.id)
+    await lock_manager.broadcast(
+        {"type": "unlock", "image_id": image_id},
+        exclude_user_id=user.id,
+    )
+    return {"ok": True}
+
+
+@router.post("/images/{image_id}/heartbeat")
+def heartbeat_image_lock(
+    image_id: int,
+    user: User = Depends(require_annotator),
+):
+    """Keep a soft lock alive. Frontend should call every ~10s."""
+    refreshed = _refresh_soft_lock(image_id, user.id)
+    if not refreshed:
+        acquired = _acquire_soft_lock(image_id, user.id, user.username)
+        if not acquired:
+            return {"ok": False, "message": "Lock lost — image taken by another annotator"}
+    return {"ok": True}
+
+
+# ── Single Image for Annotation ───────────────────────────────────
 
 @router.get("/images/{image_id}")
 def get_image_for_annotation(
@@ -421,753 +389,254 @@ def get_image_for_annotation(
     user: User = Depends(require_annotator),
 ):
     """
-    Get a single image with all assigned categories and current annotations.
-    For the image-first annotation workflow.
-    Always allows viewing - returns is_locked and can_edit flags for UI control.
+    Get a single image with all categories and current annotations.
+    Categories come from static JSON; AI suggestions from Image.arbiter_labels.
     """
     image = db.query(Image).filter(Image.id == image_id).first()
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
-    
-    # Get assigned categories
-    assigned_cat_ids = [
-        ac.category_id
-        for ac in db.query(AnnotatorCategory)
-        .filter(AnnotatorCategory.user_id == user.id)
-        .all()
-    ]
-    
-    if not assigned_cat_ids:
-        raise HTTPException(status_code=403, detail="No categories assigned to you")
-    
-    categories = (
-        db.query(Category)
-        .filter(Category.id.in_(assigned_cat_ids))
-        .options(joinedload(Category.options))
-        .order_by(Category.display_order)
-        .all()
-    )
-    
-    # Get existing annotations for this image
-    my_annotations = (
-        db.query(Annotation)
-        .filter(
-            Annotation.image_id == image_id,
-            Annotation.annotator_id == user.id,
-        )
-        .all()
-    )
-    annotations_by_cat = {a.category_id: a for a in my_annotations}
-    
-    # Check what's completed by others
-    completed_by_others = (
-        db.query(Annotation)
-        .filter(
-            Annotation.image_id == image_id,
-            Annotation.status == "completed",
-            Annotation.annotator_id != user.id,
-        )
-        .all()
-    )
-    completed_by_others_cat_ids = {a.category_id for a in completed_by_others}
-    
-    # Build option label → option id lookup for AI suggestion mapping
-    # arbiter_labels format: {"lighting": {"final": "well_lit", "status": "agree", ...}, ...}
+
+    categories = get_categories()
+    existing_annotations = image.annotations or {}
     arbiter_labels = image.arbiter_labels or {}
-    
-    # Build category data with annotations
+
+    # Build categories data with current annotations and AI suggestions
     categories_data = []
     for cat in categories:
-        my_ann = annotations_by_cat.get(cat.id)
+        cat_key = cat["key"]
+        cat_ann = existing_annotations.get(cat_key, {})
+        selected_ids = cat_ann.get("selected_option_ids", [])
         
         annotation_data = None
-        if my_ann:
-            sel_ids = [s.option_id for s in my_ann.selections]
+        if selected_ids:
             annotation_data = {
-                "id": my_ann.id,
-                "status": my_ann.status,
-                "is_duplicate": my_ann.is_duplicate,
-                "selected_option_ids": sel_ids,
-                "time_spent_seconds": my_ann.time_spent_seconds,
-                "rework_time_seconds": my_ann.rework_time_seconds or 0,
-                "is_rework": my_ann.is_rework or False,
-                "review_status": my_ann.review_status,
+                "status": "completed",
+                "selected_option_ids": selected_ids,
             }
 
-        # Resolve AI suggestion from arbiter labels
+        # AI suggestion from arbiter labels
         ai_suggestion = None
-        arbiter_cat_key = _DB_CAT_TO_ARBITER.get(cat.name)
-        if arbiter_cat_key and arbiter_cat_key in arbiter_labels:
-            arbiter_pred_data = arbiter_labels[arbiter_cat_key]
-            # Predictions are stored as dicts: {"final": "well_lit", "status": "agree", ...}
-            # Extract the final prediction string
-            if isinstance(arbiter_pred_data, dict):
-                arbiter_pred = arbiter_pred_data.get("final", "None")
-            else:
-                arbiter_pred = str(arbiter_pred_data) if arbiter_pred_data else "None"
-            option_label = _ARBITER_LABEL_TO_OPTION.get(arbiter_pred)
-            if option_label:
-                # Find matching option id
-                for o in cat.options:
-                    if o.label == option_label:
+        if cat_key in arbiter_labels:
+            pred_data = arbiter_labels[cat_key]
+            # Use stored label directly if available
+            opt_label = pred_data.get("label") if isinstance(pred_data, dict) else None
+            pred_key = None
+            if not opt_label:
+                pred_key = (
+                    pred_data.get("final") or pred_data.get("key")
+                    if isinstance(pred_data, dict)
+                    else str(pred_data) if pred_data else None
+                )
+                if pred_key:
+                    opt_label = arbiter_label_to_option_label(pred_key)
+            if opt_label:
+                # Find the matching option ID
+                for opt in cat.get("options", []):
+                    if opt["label"] == opt_label:
                         ai_suggestion = {
-                            "option_id": o.id,
-                            "label": o.label,
-                            "arbiter_label": arbiter_pred,
+                            "option_id": opt["id"],
+                            "label": opt["label"],
+                            "arbiter_key": pred_key or (pred_data.get("final") or pred_data.get("key") if isinstance(pred_data, dict) else pred_data),
                         }
                         break
-        
+
         categories_data.append({
-            "id": cat.id,
-            "name": cat.name,
-            "display_order": cat.display_order,
-            "options": [
-                {"id": o.id, "label": o.label, "is_typical": o.is_typical}
-                for o in sorted(cat.options, key=lambda x: x.display_order)
-            ],
+            "id": cat["id"],
+            "name": cat["name"],
+            "key": cat_key,
+            "display_order": cat["display_order"],
+            "options": cat["options"],
             "annotation": annotation_data,
-            "completed_by_other": cat.id in completed_by_others_cat_ids and not my_ann,
             "ai_suggestion": ai_suggestion,
         })
-    
-    # Get prev/next image IDs for navigation (all images available)
-    all_image_ids_sorted = sorted(row.id for row in db.query(Image.id).all())
-    current_idx = all_image_ids_sorted.index(image_id) if image_id in all_image_ids_sorted else 0
-    prev_id = all_image_ids_sorted[current_idx - 1] if current_idx > 0 else None
-    next_id = all_image_ids_sorted[current_idx + 1] if current_idx < len(all_image_ids_sorted) - 1 else None
-    
-    # Check edit lock status
-    # Only lock if annotations have been human-validated (not just model predictions)
-    from app.models.edit_request import EditRequest
-    human_validated_count = len([a for a in my_annotations if a.human_validated])
-    is_locked = human_validated_count > 0
-    
-    # Check if any annotation is sent for rework - if so, allow editing without permission
-    has_rework_request = any(
-        a.review_status == "rework_requested" for a in my_annotations
-    )
-    
-    pending_edit_request = None
-    approved_edit_request = None
+
+    # Navigation (non-duplicate images)
+    all_image_ids = [
+        row.id for row in
+        db.query(Image.id)
+        .filter(Image.is_duplicate == False)  # noqa: E712
+        .order_by(Image.id)
+        .all()
+    ]
+    current_idx = all_image_ids.index(image_id) if image_id in all_image_ids else 0
+    prev_id = all_image_ids[current_idx - 1] if current_idx > 0 else None
+    next_id = all_image_ids[current_idx + 1] if current_idx < len(all_image_ids) - 1 else None
+
+    # Lock / rework status
+    is_hard = _is_hard_locked(image, user.id)
+    is_owner = (image.annotated_by == user.id)
+    has_rework = image.review_status == "rework_requested"
+    is_own_rework = has_rework and is_owner
+
     can_edit = True
-    is_rework = has_rework_request
-    
-    if is_locked and not has_rework_request:
-        # Only check edit request if not sent for rework
-        # Check for approved edit request
-        approved_request = (
-            db.query(EditRequest)
-            .filter(
-                EditRequest.user_id == user.id,
-                EditRequest.image_id == image_id,
-                EditRequest.status == "approved",
-            )
-            .first()
-        )
-        if approved_request:
-            can_edit = True
-            approved_edit_request = approved_request.id
-        else:
-            can_edit = False
-            # Check for pending request
-            pending_request = (
-                db.query(EditRequest)
-                .filter(
-                    EditRequest.user_id == user.id,
-                    EditRequest.image_id == image_id,
-                    EditRequest.status == "pending",
-                )
-                .first()
-            )
-            if pending_request:
-                pending_edit_request = pending_request.id
-    elif has_rework_request:
-        # Rework requested - always allow editing, mark as unlocked for UI
-        can_edit = True
-        is_locked = False
+    is_locked = False
+    if is_hard:
+        # Another annotator owns this image — permanently locked
+        can_edit = False
+        is_locked = True
+
+    is_blurred = (image.manually_blurred or False) or (
+        (image.is_using_processed is not False)
+        and image.compliance_status in ("blurred", "processed", "obfuscated")
+    )
     
     return {
         "id": image.id,
-        "image_drive_id": image.image_drive_id,  # Google Drive hex ID
         "filename": image.filename,
-        "original_filename": image.original_filename,  # Original name in Google Drive
         "url": image.url,
+        "source_folder_id": image.source_folder_id,
         "categories": categories_data,
         "prev_image_id": prev_id,
         "next_image_id": next_id,
         "current_index": current_idx,
-        "total_images": len(all_image_ids_sorted),
-        "is_improper": image.is_improper,
+        "total_images": len(all_image_ids),
+        "is_improper": image.is_improper or False,
         "improper_reason": image.improper_reason,
         "is_locked": is_locked,
         "can_edit": can_edit,
-        "pending_edit_request": pending_edit_request,
-        "approved_edit_request": approved_edit_request,
-        "is_rework": is_rework,  # True if sent back for rework by admin
-        "is_ai_generated": image.is_ai_generated,
+        "is_rework": is_own_rework,  # Only true for the original annotator
+        "is_ai_generated": image.is_ai_generated or False,
         "human_visible": image.human_visible,
         "manually_blurred": image.manually_blurred or False,
-        "is_blurred": (image.manually_blurred or False) or (
-            # Pipeline-blurred: only show as blurred if we're currently displaying the processed version
-            (image.is_using_processed is not False) and image.compliance_status in ('blurred', 'processed', 'obfuscated')
-        ),
+        "is_blurred": is_blurred,
         "is_using_processed": image.is_using_processed if image.is_using_processed is not None else True,
-        "compliance_status": image.compliance_status or None,
-        "has_original": _check_original_exists(image),
+        "compliance_status": image.compliance_status,
+        "has_original": bool(image.gcs_input_path),
+        "annotation_status": "completed" if (is_hard and not is_owner) else (image.annotation_status or "pending"),
+        "review_status": image.review_status if is_owner else None,  # Hide review details from non-owners
+        "annotated_by": image.annotated_by,
     }
 
 
+# ── Save Annotations ─────────────────────────────────────────────
+
 @router.put("/images/{image_id}/annotations")
-def save_image_annotations(
+async def save_image_annotations(
     image_id: int,
-    payload: dict,  # {category_id: {selected_option_ids: [], is_duplicate: bool}}
+    payload: dict,
     db: Session = Depends(get_db),
     user: User = Depends(require_annotator),
 ):
     """
-    Save annotations for multiple categories on a single image.
-    Payload format: {"annotations": {category_id: {selected_option_ids: [], is_duplicate: bool | null}}}
+    Save annotations for all categories on a single image.
+
+    Payload format::
+
+        {
+            "annotations": {
+                "lighting": {"selected_option_ids": [4]},
+                "viewpoint": {"selected_option_ids": [6]},
+                ...
+            },
+            "is_rework": false
+        }
     """
     image = db.query(Image).filter(Image.id == image_id).first()
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
     
-    # Block saving annotations for improper images
     if image.is_improper:
         raise HTTPException(status_code=400, detail="Cannot save annotations for improper images")
-
+    
     # ── CRITICAL: Only ONE annotator may annotate each image ──
-    other_annotator = (
-        db.query(Annotation.annotator_id)
-        .filter(
-            Annotation.image_id == image_id,
-            Annotation.annotator_id != user.id,
-            Annotation.human_validated == True,
+    if _is_hard_locked(image, user.id):
+        # Exception: allow if this is the original annotator's rework
+        is_own_rework = (
+            image.review_status == "rework_requested"
+            and image.annotated_by == user.id
         )
-        .first()
-    )
-    if other_annotator:
-        raise HTTPException(
-            status_code=409,
-            detail="This image has already been annotated by another annotator.",
-        )
+        if not is_own_rework:
+            raise HTTPException(
+                status_code=409,
+                detail="This image has already been annotated by another annotator.",
+            )
 
-    # Get assigned categories for edit lock check
-    assigned_cat_ids_list = [
-        ac.category_id
-        for ac in db.query(AnnotatorCategory)
-        .filter(AnnotatorCategory.user_id == user.id)
-        .all()
-    ]
-    
-    # Check if image has human-validated annotations (locked)
-    # Model predictions (human_validated=False) don't trigger the lock
-    human_validated_count = (
-        db.query(Annotation)
-        .filter(
-            Annotation.image_id == image_id,
-            Annotation.annotator_id == user.id,
-            Annotation.category_id.in_(assigned_cat_ids_list),
-            Annotation.human_validated == True,
-        )
-        .count()
-    )
-    
-    if human_validated_count > 0:
-        # Check if any annotation is sent for rework - if so, allow editing
-        has_rework_request = (
-            db.query(Annotation)
-            .filter(
-                Annotation.image_id == image_id,
-                Annotation.annotator_id == user.id,
-                Annotation.review_status == "rework_requested",
-            )
-            .count()
-        ) > 0
-        
-        if not has_rework_request:
-            # Not a rework - check for approved edit request
-            from app.models.edit_request import EditRequest
-            approved_request = (
-                db.query(EditRequest)
-                .filter(
-                    EditRequest.user_id == user.id,
-                    EditRequest.image_id == image_id,
-                    EditRequest.status == "approved",
-                )
-                .first()
-            )
-            if not approved_request:
+    # ── CRITICAL: Rework belongs to the original annotator only ──
+    if image.review_status == "rework_requested" and image.annotated_by != user.id:
                 raise HTTPException(
                     status_code=403,
-                    detail="This image is locked. Request edit permission from admin."
+            detail="This rework is assigned to a different annotator.",
                 )
-            # Consume the approved request after saving (mark it as used)
-            approved_request.status = "used"
     
-    # Get assigned categories
-    assigned_cat_ids = set(assigned_cat_ids_list)
-    
+    is_rework = payload.get("is_rework", False)
     annotations_data = payload.get("annotations", {})
-    is_rework_submission = payload.get("is_rework", False)
-    
-    # Validate that all assigned categories have at least one option selected
-    # Check for categories that are not completed by others
-    completed_by_others = set(
-        row.category_id
-        for row in db.query(Annotation.category_id).filter(
-            Annotation.image_id == image_id,
-            Annotation.annotator_id != user.id,
-            Annotation.category_id.in_(assigned_cat_ids),
-            Annotation.status == "completed",
-        ).all()
-    )
-    
-    missing_categories = []
-    for cat_id in assigned_cat_ids:
-        # Skip if already completed by another annotator
-        if cat_id in completed_by_others:
-            continue
-        
-        cat_id_str = str(cat_id)
-        ann_data = annotations_data.get(cat_id_str, {})
-        selected_ids = ann_data.get("selected_option_ids", [])
-        
-        if not selected_ids or len(selected_ids) == 0:
-            cat = db.query(Category).filter(Category.id == cat_id).first()
-            if cat:
-                missing_categories.append(cat.name)
-    
-    if missing_categories:
+
+    # Validate all categories have at least one option selected
+    categories = get_categories()
+    missing = []
+    for cat in categories:
+        cat_key = cat["key"]
+        cat_ann = annotations_data.get(cat_key, {})
+        selected_ids = cat_ann.get("selected_option_ids", [])
+        if not selected_ids:
+            missing.append(cat["name"])
+
+    if missing:
         raise HTTPException(
             status_code=400,
-            detail=f"Please select an option for each category. Missing: {', '.join(missing_categories)}"
+            detail=f"Please select an option for each category. Missing: {', '.join(missing)}",
         )
-    
-    saved = []
-    
-    for cat_id_str, ann_data in annotations_data.items():
-        cat_id = int(cat_id_str)
-        
-        if cat_id not in assigned_cat_ids:
-            continue  # Skip categories not assigned
-        
-        selected_option_ids = ann_data.get("selected_option_ids", [])
-        is_duplicate = ann_data.get("is_duplicate")
-        
-        # Upsert annotation
-        annotation = (
-            db.query(Annotation)
-            .filter(
-                Annotation.image_id == image_id,
-                Annotation.annotator_id == user.id,
-                Annotation.category_id == cat_id,
-            )
-            .first()
-        )
-        
-        if annotation:
-            # Check if this is a rework submission
-            was_rework = annotation.is_rework or annotation.review_status == "rework_requested"
-            
-            annotation.is_duplicate = is_duplicate
-            annotation.status = "completed"
-            annotation.human_validated = True  # Mark as validated by human
-            
-            if was_rework:
-                # Rework — just update status
-                annotation.review_status = "rework_completed"
-            
-            # Clear old selections
-            db.query(AnnotationSelection).filter(
-                AnnotationSelection.annotation_id == annotation.id
-            ).delete()
-        else:
-            annotation = Annotation(
-                image_id=image_id,
-                annotator_id=user.id,
-                category_id=cat_id,
-                is_duplicate=is_duplicate,
-                status="completed",
-                time_spent_seconds=0,
-                rework_time_seconds=0,
-                is_rework=is_rework_submission,
-                review_status="rework_completed" if is_rework_submission else None,
-                human_validated=True,  # Mark as validated by human
-            )
-            db.add(annotation)
-            db.flush()
-        
-        # Add selections
-        for option_id in selected_option_ids:
-            db.add(AnnotationSelection(annotation_id=annotation.id, option_id=option_id))
-        
-        saved.append(cat_id)
+
+    # Enrich annotations with human-readable labels
+    annotations_data = enrich_annotations_with_labels(annotations_data)
+
+    # ── Append to annotation_history before overwriting ──
+    now = datetime.now(timezone.utc)
+    history = list(image.annotation_history or [])
+    history.append({
+        "ts": now.isoformat(),
+        "by": user.id,
+        "username": user.username,
+        "role": "annotator",
+        "action": "rework" if is_rework else "annotate",
+        "annotations": annotations_data,
+    })
+    image.annotation_history = history
+
+    # Update image
+    image.annotations = annotations_data
+    image.annotated_by = user.id
+    image.annotated_at = now
+    image.annotation_status = "completed"
+
+    # Handle rework
+    if is_rework and image.review_status == "rework_requested":
+        image.review_status = "rework_completed"
+    elif image.review_status is None:
+        image.review_status = "pending"
+
+    # Optional flags
+    if payload.get("is_ai_generated") is not None:
+        image.is_ai_generated = payload["is_ai_generated"]
+        image.marked_ai_by = user.id
+        image.marked_ai_at = datetime.now(timezone.utc)
+    if payload.get("human_visible") is not None:
+        image.human_visible = payload["human_visible"]
+        image.human_visible_marked_by = user.id
+        image.human_visible_marked_at = datetime.now(timezone.utc)
+    if payload.get("is_duplicate") is not None:
+        image.is_duplicate = payload["is_duplicate"]
     
     db.commit()
     
-    return {"message": "Annotations saved", "saved_categories": saved}
+    # Release soft lock — hard lock is now in place
+    _release_soft_lock(image_id, user.id)
 
-
-# ── Category-First Workflow Endpoints (legacy) ─────────────────────
-
-@router.get("/categories", response_model=list[CategoryWithProgress])
-def my_categories(
-    db: Session = Depends(get_db),
-    user: User = Depends(require_annotator),
-):
-    """List categories assigned to the current annotator, with progress."""
-    assignments = (
-        db.query(AnnotatorCategory)
-        .filter(AnnotatorCategory.user_id == user.id)
-        .options(joinedload(AnnotatorCategory.category))
-        .all()
-    )
-    total_images = db.query(Image).count()
-    result = []
-    for a in assignments:
-        # Count images completed by ANYONE for this category
-        completed_by_anyone = (
-            db.query(Annotation.image_id)
-            .filter(
-                Annotation.category_id == a.category_id,
-                Annotation.status == "completed",
-            )
-            .distinct()
-            .count()
-        )
-        # Count images this annotator personally completed
-        my_completed = (
-            db.query(Annotation)
-            .filter(
-                Annotation.annotator_id == user.id,
-                Annotation.category_id == a.category_id,
-                Annotation.status == "completed",
-            )
-            .count()
-        )
-        my_skipped = (
-            db.query(Annotation)
-            .filter(
-                Annotation.annotator_id == user.id,
-                Annotation.category_id == a.category_id,
-                Annotation.status == "skipped",
-            )
-            .count()
-        )
-        # Remaining = total - completed by anyone
-        remaining = total_images - completed_by_anyone
-        result.append(CategoryWithProgress(
-            id=a.category.id,
-            name=a.category.name,
-            display_order=a.category.display_order,
-            total_images=total_images,
-            completed_images=completed_by_anyone,
-            skipped_images=my_skipped,
-        ))
-    result.sort(key=lambda c: c.display_order)
-    return result
-
-
-@router.get("/categories/{category_id}/queue-size")
-def get_queue_size(
-    category_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_annotator),
-):
-    """Get the size of this annotator's queue for a category."""
-    assignment = (
-        db.query(AnnotatorCategory)
-        .filter(
-            AnnotatorCategory.user_id == user.id,
-            AnnotatorCategory.category_id == category_id,
-        )
-        .first()
-    )
-    if not assignment:
-        raise HTTPException(status_code=403, detail="Category not assigned to you")
-    queue = _build_queue(db, user.id, category_id)
-    return {"queue_size": len(queue)}
-
-
-@router.get("/categories/{category_id}/resume-index")
-def resume_index(
-    category_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_annotator),
-):
-    """Return the queue index where the annotator should resume work."""
-    assignment = (
-        db.query(AnnotatorCategory)
-        .filter(
-            AnnotatorCategory.user_id == user.id,
-            AnnotatorCategory.category_id == category_id,
-        )
-        .first()
-    )
-    if not assignment:
-        raise HTTPException(status_code=403, detail="Category not assigned to you")
-
-    queue = _build_queue(db, user.id, category_id)
-    if not queue:
-        return {"index": 0, "queue_size": 0}
-
-    my_completed_ids = set(
-        row.image_id
-        for row in db.query(Annotation.image_id).filter(
-            Annotation.annotator_id == user.id,
-            Annotation.category_id == category_id,
-            Annotation.status == "completed",
-        ).all()
+    # Broadcast hard lock to all other annotators
+    from app.ws_manager import lock_manager
+    await lock_manager.broadcast(
+        {"type": "lock", "image_id": image_id, "lock_type": "completed", "held_by": user.username},
+        exclude_user_id=user.id,
     )
 
-    for i, img in enumerate(queue):
-        if img.id not in my_completed_ids:
-            return {"index": i, "queue_size": len(queue)}
-
-    return {"index": len(queue) - 1, "queue_size": len(queue)}
-
-
-@router.get("/categories/{category_id}/task/{queue_index}", response_model=AnnotationTask)
-def get_annotation_task(
-    category_id: int,
-    queue_index: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_annotator),
-):
-    """
-    Get a specific image (by queue index) for annotation in a given category.
-    The queue only contains images available to this annotator (shared queue model).
-    """
-    # Verify assignment
-    assignment = (
-        db.query(AnnotatorCategory)
-        .filter(
-            AnnotatorCategory.user_id == user.id,
-            AnnotatorCategory.category_id == category_id,
-        )
-        .first()
-    )
-    if not assignment:
-        raise HTTPException(status_code=403, detail="Category not assigned to you")
-
-    # Build queue
-    queue = _build_queue(db, user.id, category_id)
-    total = len(queue)
-
-    if total == 0:
-        raise HTTPException(status_code=404, detail="No images available — all completed")
-
-    if queue_index < 0 or queue_index >= total:
-        raise HTTPException(status_code=404, detail="Queue index out of range")
-
-    image = queue[queue_index]
-
-    # Get category with options
-    category = (
-        db.query(Category)
-        .options(joinedload(Category.options))
-        .filter(Category.id == category_id)
-        .first()
-    )
-
-    # Get existing annotation (this annotator's own)
-    annotation = (
-        db.query(Annotation)
-        .filter(
-            Annotation.image_id == image.id,
-            Annotation.annotator_id == user.id,
-            Annotation.category_id == category_id,
-        )
-        .first()
-    )
-
-    current = None
-    if annotation:
-        sel_ids = [s.option_id for s in annotation.selections]
-        current = AnnotationResponse(
-            id=annotation.id,
-            image_id=annotation.image_id,
-            annotator_id=annotation.annotator_id,
-            category_id=annotation.category_id,
-            is_duplicate=annotation.is_duplicate,
-            status=annotation.status,
-            review_status=annotation.review_status,
-            review_note=annotation.review_note,
-            selected_option_ids=sel_ids,
-            time_spent_seconds=annotation.time_spent_seconds,
-            created_at=annotation.created_at,
-            updated_at=annotation.updated_at,
-        )
-
-    return AnnotationTask(
-        image_id=image.id,
-        image_url=image.url,
-        image_filename=image.filename,
-        category_id=category.id,
-        category_name=category.name,
-        options=[
-            {"id": o.id, "label": o.label, "is_typical": o.is_typical}
-            for o in category.options
-        ],
-        current_annotation=current,
-        image_index=queue_index,
-        total_images=total,
-    )
-
-
-@router.put("/categories/{category_id}/images/{image_id}/annotate", response_model=AnnotationResponse)
-def save_annotation(
-    category_id: int,
-    image_id: int,
-    payload: AnnotationSave,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_annotator),
-):
-    """Save or update an annotation for a specific image + category."""
-    # Verify assignment
-    assignment = (
-        db.query(AnnotatorCategory)
-        .filter(
-            AnnotatorCategory.user_id == user.id,
-            AnnotatorCategory.category_id == category_id,
-        )
-        .first()
-    )
-    if not assignment:
-        raise HTTPException(status_code=403, detail="Category not assigned to you")
-
-    # Verify image exists
-    image = db.query(Image).filter(Image.id == image_id).first()
-    if not image:
-        raise HTTPException(status_code=404, detail="Image not found")
-
-    # Block saving annotations for improper images
-    if image.is_improper:
-        raise HTTPException(status_code=400, detail="Cannot save annotations for improper images")
-
-    # ── CRITICAL: Only ONE annotator may annotate each image ──
-    other_annotator = (
-        db.query(Annotation.annotator_id)
-        .filter(
-            Annotation.image_id == image_id,
-            Annotation.annotator_id != user.id,
-            Annotation.human_validated == True,
-        )
-        .first()
-    )
-    if other_annotator:
-        raise HTTPException(
-            status_code=409,
-            detail="This image has already been annotated by another annotator.",
-        )
-
-    # Upsert annotation
-    annotation = (
-        db.query(Annotation)
-        .filter(
-            Annotation.image_id == image_id,
-            Annotation.annotator_id == user.id,
-            Annotation.category_id == category_id,
-        )
-        .first()
-    )
-
-    if annotation:
-        # Guard: never downgrade a completed annotation to skipped
-        if annotation.status == "completed" and payload.status == "skipped":
-            # Return the existing annotation unchanged
-            option_ids = [
-                s.option_id
-                for s in db.query(AnnotationSelection)
-                .filter(AnnotationSelection.annotation_id == annotation.id)
-                .all()
-            ]
-            return AnnotationResponse(
-                id=annotation.id,
-                image_id=annotation.image_id,
-                annotator_id=annotation.annotator_id,
-                category_id=annotation.category_id,
-                is_duplicate=annotation.is_duplicate,
-                status=annotation.status,
-                review_status=annotation.review_status,
-                review_note=annotation.review_note,
-                reviewed_by=annotation.reviewed_by,
-                reviewed_at=annotation.reviewed_at,
-                selected_option_ids=option_ids,
-                time_spent_seconds=annotation.time_spent_seconds,
-                created_at=annotation.created_at,
-                updated_at=annotation.updated_at,
-            )
-
-        annotation.is_duplicate = payload.is_duplicate
-        annotation.status = payload.status
-        
-        # Update image AI-generated status if provided
-        if payload.is_ai_generated is not None:
-            image.is_ai_generated = payload.is_ai_generated
-            image.marked_ai_by = user.id
-            image.marked_ai_at = datetime.now(timezone.utc)
-        
-        # Update human visibility status if provided
-        if payload.human_visible is not None:
-            image.human_visible = payload.human_visible
-            image.human_visible_marked_by = user.id
-            image.human_visible_marked_at = datetime.now(timezone.utc)
-        
-        # Clear old selections
-        db.query(AnnotationSelection).filter(
-            AnnotationSelection.annotation_id == annotation.id
-        ).delete()
-    else:
-        annotation = Annotation(
-            image_id=image_id,
-            annotator_id=user.id,
-            category_id=category_id,
-            is_duplicate=payload.is_duplicate,
-            status=payload.status,
-            time_spent_seconds=0,
-        )
-        db.add(annotation)
-        db.flush()  # get annotation.id
-        
-        # Update image AI-generated status if provided
-        if payload.is_ai_generated is not None:
-            image.is_ai_generated = payload.is_ai_generated
-            image.marked_ai_by = user.id
-            image.marked_ai_at = datetime.now(timezone.utc)
-        
-        # Update human visibility status if provided
-        if payload.human_visible is not None:
-            image.human_visible = payload.human_visible
-            image.human_visible_marked_by = user.id
-            image.human_visible_marked_at = datetime.now(timezone.utc)
-
-    # Add selections
-    for option_id in payload.selected_option_ids:
-        db.add(AnnotationSelection(annotation_id=annotation.id, option_id=option_id))
-
-    db.commit()
-    db.refresh(annotation)
-
-    return AnnotationResponse(
-        id=annotation.id,
-        image_id=annotation.image_id,
-        annotator_id=annotation.annotator_id,
-        category_id=annotation.category_id,
-        is_duplicate=annotation.is_duplicate,
-        status=annotation.status,
-        selected_option_ids=[s.option_id for s in annotation.selections],
-        time_spent_seconds=annotation.time_spent_seconds,
-        created_at=annotation.created_at,
-        updated_at=annotation.updated_at,
-    )
+    return {
+        "message": "Annotations saved",
+        "image_id": image_id,
+        "annotation_status": image.annotation_status,
+    }
 
 
 # ── Mark Image as Improper ─────────────────────────────────────────
-
-from pydantic import BaseModel
-from datetime import datetime as dt_datetime
 
 class MarkImproperRequest(BaseModel):
     reason: str
@@ -1180,90 +649,18 @@ def mark_image_as_improper(
     db: Session = Depends(get_db),
     user: User = Depends(require_annotator),
 ):
-    """
-    Mark an image as improper. The image will be flagged for admin review
-    and no annotations can be saved for it.
-    """
+    """Mark an image as improper — flagged for admin review."""
     image = db.query(Image).filter(Image.id == image_id).first()
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
     
-    # Block saving annotations for improper images
     if image.is_improper:
-        raise HTTPException(status_code=400, detail="Cannot save annotations for improper images")
-    
-    # Get assigned categories for edit lock check
-    assigned_cat_ids_list = [
-        ac.category_id
-        for ac in db.query(AnnotatorCategory)
-        .filter(AnnotatorCategory.user_id == user.id)
-        .all()
-    ]
-    
-    # Check if image has human-validated annotations (locked)
-    # Model predictions (human_validated=False) don't trigger the lock
-    human_validated_count = (
-        db.query(Annotation)
-        .filter(
-            Annotation.image_id == image_id,
-            Annotation.annotator_id == user.id,
-            Annotation.category_id.in_(assigned_cat_ids_list),
-            Annotation.human_validated == True,
-        )
-        .count()
-    )
-    
-    if human_validated_count > 0:
-        # Check if any annotation is sent for rework - if so, allow editing
-        has_rework_request = (
-            db.query(Annotation)
-            .filter(
-                Annotation.image_id == image_id,
-                Annotation.annotator_id == user.id,
-                Annotation.review_status == "rework_requested",
-            )
-            .count()
-        ) > 0
-        
-        if not has_rework_request:
-            # Not a rework - check for approved edit request
-            from app.models.edit_request import EditRequest
-            approved_request = (
-                db.query(EditRequest)
-                .filter(
-                    EditRequest.user_id == user.id,
-                    EditRequest.image_id == image_id,
-                    EditRequest.status == "approved",
-                )
-                .first()
-            )
-            if not approved_request:
-                raise HTTPException(
-                    status_code=403,
-                    detail="This image is locked. Request edit permission from admin."
-                )
-            # Consume the approved request after saving (mark it as used)
-            approved_request.status = "used"
-    
-    # Mark as improper
+        raise HTTPException(status_code=400, detail="Image already marked as improper")
+
     image.is_improper = True
     image.improper_reason = payload.reason
     image.marked_improper_by = user.id
-    image.marked_improper_at = dt_datetime.utcnow()
-
-    # Clear any accumulated time — no timing for improper images
-    existing_anns = (
-        db.query(Annotation)
-        .filter(
-            Annotation.image_id == image_id,
-            Annotation.annotator_id == user.id,
-        )
-        .all()
-    )
-    for ann in existing_anns:
-        ann.time_spent_seconds = 0
-        ann.rework_time_seconds = 0
-    
+    image.marked_improper_at = datetime.now(timezone.utc)
     db.commit()
     
     return {
@@ -1273,314 +670,9 @@ def mark_image_as_improper(
     }
 
 
-# ── Edit Request Endpoints ─────────────────────────────────────────
-
-from app.models.edit_request import EditRequest
-
-class EditRequestCreate(BaseModel):
-    reason: str
-
-
-@router.post("/images/{image_id}/request-edit")
-def request_edit_permission(
-    image_id: int,
-    payload: EditRequestCreate,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_annotator),
-):
-    """
-    Request permission to edit annotations on a completed image.
-    """
-    image = db.query(Image).filter(Image.id == image_id).first()
-    if not image:
-        raise HTTPException(status_code=404, detail="Image not found")
-    
-
-    # Check if there's already a pending request
-    existing_request = (
-        db.query(EditRequest)
-        .filter(
-            EditRequest.user_id == user.id,
-            EditRequest.image_id == image_id,
-            EditRequest.status == "pending",
-        )
-        .first()
-    )
-    if existing_request:
-        raise HTTPException(status_code=400, detail="You already have a pending edit request for this image")
-    
-    # Create new request
-    edit_request = EditRequest(
-        user_id=user.id,
-        image_id=image_id,
-        reason=payload.reason,
-        status="pending",
-    )
-    db.add(edit_request)
-    db.commit()
-    
-    return {
-        "message": "Edit request submitted",
-        "request_id": edit_request.id,
-    }
-
-
-@router.get("/images/{image_id}/edit-status")
-def get_edit_status(
-    image_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_annotator),
-):
-    """
-    Check if the annotator can edit annotations on this image.
-    Returns: can_edit (bool), pending_request (bool), approved_request_id (int or null)
-    """
-    image = db.query(Image).filter(Image.id == image_id).first()
-    if not image:
-        raise HTTPException(status_code=404, detail="Image not found")
-    
-    # Get assigned categories for this user
-    assigned_cat_ids = [
-        ac.category_id
-        for ac in db.query(AnnotatorCategory)
-        .filter(AnnotatorCategory.user_id == user.id)
-        .all()
-    ]
-    
-    # Check if image has any completed annotations by this user
-    completed_annotations = (
-        db.query(Annotation)
-        .filter(
-            Annotation.image_id == image_id,
-            Annotation.annotator_id == user.id,
-            Annotation.category_id.in_(assigned_cat_ids),
-            Annotation.status == "completed",
-        )
-        .count()
-    )
-    
-    # If no completed annotations, can always edit
-    if completed_annotations == 0:
-        return {
-            "can_edit": True,
-            "is_locked": False,
-            "pending_request": False,
-            "approved_request_id": None,
-            "is_rework": False,
-        }
-    
-    # Check if any annotations are human-validated
-    human_validated_count = (
-        db.query(Annotation)
-        .filter(
-            Annotation.image_id == image_id,
-            Annotation.category_id.in_(assigned_cat_ids),
-            Annotation.annotator_id == user.id,
-            Annotation.human_validated == True,
-        )
-        .count()
-    )
-    
-    # If no human-validated annotations, can still edit (model predictions only)
-    if human_validated_count == 0:
-        return {
-            "can_edit": True,
-            "is_locked": False,
-            "pending_request": False,
-            "approved_request_id": None,
-            "is_rework": False,
-        }
-    
-    # Check if any annotation is sent for rework - if so, allow editing
-    has_rework_request = (
-        db.query(Annotation)
-        .filter(
-            Annotation.image_id == image_id,
-            Annotation.annotator_id == user.id,
-            Annotation.review_status == "rework_requested",
-        )
-        .count()
-    ) > 0
-    
-    if has_rework_request:
-        return {
-            "can_edit": True,
-            "is_locked": False,
-            "pending_request": False,
-            "approved_request_id": None,
-            "is_rework": True,
-        }
-    
-    # Check for approved edit request
-    approved_request = (
-        db.query(EditRequest)
-        .filter(
-            EditRequest.user_id == user.id,
-            EditRequest.image_id == image_id,
-            EditRequest.status == "approved",
-        )
-        .order_by(EditRequest.reviewed_at.desc())
-        .first()
-    )
-    
-    if approved_request:
-        return {
-            "can_edit": True,
-            "is_locked": False,
-            "pending_request": False,
-            "approved_request_id": approved_request.id,
-            "is_rework": False,
-        }
-    
-    # Check for pending request
-    pending_request = (
-        db.query(EditRequest)
-        .filter(
-            EditRequest.user_id == user.id,
-            EditRequest.image_id == image_id,
-            EditRequest.status == "pending",
-        )
-        .first()
-    )
-    
-    return {
-        "can_edit": False,
-        "is_locked": True,
-        "pending_request": pending_request is not None,
-        "pending_request_id": pending_request.id if pending_request else None,
-        "approved_request_id": None,
-        "is_rework": False,
-    }
-
-
-@router.get("/edit-requests")
-def list_my_edit_requests(
-    db: Session = Depends(get_db),
-    user: User = Depends(require_annotator),
-):
-    """List all edit requests made by this annotator."""
-    requests = (
-        db.query(EditRequest)
-        .filter(EditRequest.user_id == user.id)
-        .order_by(EditRequest.created_at.desc())
-        .all()
-    )
-    
-    result = []
-    for r in requests:
-        image = db.query(Image).filter(Image.id == r.image_id).first()
-        result.append({
-            "id": r.id,
-            "image_id": r.image_id,
-            "image_filename": image.filename if image else None,
-            "image_url": image.url if image else None,
-            "reason": r.reason,
-            "status": r.status,
-            "created_at": r.created_at,
-            "review_note": r.review_note,
-            "reviewed_at": r.reviewed_at,
-        })
-    
-    return result
-
-
-# ── Notifications ────────────────────────────────────────────────
-
-@router.get("/notifications")
-def list_notifications(
-    unread_only: bool = Query(False),
-    db: Session = Depends(get_db),
-    user: User = Depends(require_annotator),
-):
-    """List notifications for this annotator."""
-    query = db.query(Notification).filter(Notification.user_id == user.id)
-    
-    if unread_only:
-        query = query.filter(Notification.is_read == False)
-    
-    notifications = query.order_by(Notification.created_at.desc()).limit(50).all()
-    
-    return [
-        {
-            "id": n.id,
-            "type": n.type,
-            "title": n.title,
-            "message": n.message,
-            "image_id": n.image_id,
-            "is_read": n.is_read,
-            "created_at": n.created_at,
-        }
-        for n in notifications
-    ]
-
-
-@router.get("/notifications/unread-count")
-def get_unread_notification_count(
-    db: Session = Depends(get_db),
-    user: User = Depends(require_annotator),
-):
-    """Get count of unread notifications."""
-    count = (
-        db.query(Notification)
-        .filter(Notification.user_id == user.id, Notification.is_read == False)
-        .count()
-    )
-    return {"count": count}
-
-
-@router.put("/notifications/{notification_id}/read")
-def mark_notification_read(
-    notification_id: int,
-    db: Session = Depends(get_db),
-    user: User = Depends(require_annotator),
-):
-    """Mark a notification as read."""
-    notification = (
-        db.query(Notification)
-        .filter(Notification.id == notification_id, Notification.user_id == user.id)
-        .first()
-    )
-    if not notification:
-        raise HTTPException(status_code=404, detail="Notification not found")
-    
-    notification.is_read = True
-    db.commit()
-    return {"message": "Notification marked as read"}
-
-
-@router.put("/notifications/read-all")
-def mark_all_notifications_read(
-    db: Session = Depends(get_db),
-    user: User = Depends(require_annotator),
-):
-    """Mark all notifications as read."""
-    db.query(Notification).filter(
-        Notification.user_id == user.id,
-        Notification.is_read == False
-    ).update({"is_read": True})
-    db.commit()
-    return {"message": "All notifications marked as read"}
-
-
-# ── Settings (read-only for annotators) ──────────────────────────
-
-@router.get("/settings/time-limits")
-def get_time_limits(
-    db: Session = Depends(get_db),
-    _user: User = Depends(require_annotator),
-):
-    """Deprecated — time tracking is no longer used. Kept for backward compatibility."""
-    return {
-        "max_annotation_time_seconds": 0,
-    }
-
-
 # ── AI-Generated Image Detection ────────────────────────────────
 
-from pydantic import BaseModel as PydanticBaseModel
-from datetime import datetime as dt
-
-class AIDetectionRequest(PydanticBaseModel):
+class AIDetectionRequest(BaseModel):
     is_ai_generated: bool
     confidence: Optional[int] = None  # 0-100
 
@@ -1593,23 +685,20 @@ def mark_ai_generated(
     user: User = Depends(require_annotator),
 ):
     """Mark an image as AI-generated or real."""
-    
     image = db.query(Image).filter(Image.id == image_id).first()
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
     
-    # Update AI detection fields
     image.is_ai_generated = request.is_ai_generated
     image.ai_detection_confidence = request.confidence
     image.marked_ai_by = user.id
-    image.marked_ai_at = dt.now()
-    
+    image.marked_ai_at = datetime.now(timezone.utc)
     db.commit()
     
     return {
         "message": "AI detection status updated",
         "image_id": image_id,
-        "is_ai_generated": request.is_ai_generated
+        "is_ai_generated": request.is_ai_generated,
     }
 
 
@@ -1620,23 +709,22 @@ def get_ai_detection(
     user: User = Depends(require_annotator),
 ):
     """Get AI detection status for an image."""
-    
     image = db.query(Image).filter(Image.id == image_id).first()
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
     
-    return {
+        return {
         "image_id": image_id,
         "is_ai_generated": image.is_ai_generated,
         "ai_detection_confidence": image.ai_detection_confidence,
         "marked_ai_by": image.marked_ai_by,
-        "marked_ai_at": image.marked_ai_at.isoformat() if image.marked_ai_at else None
+        "marked_ai_at": image.marked_ai_at.isoformat() if image.marked_ai_at else None,
     }
 
 
 # ── Human Visibility Detection ────────────────────────────────────
 
-class HumanVisibilityRequest(PydanticBaseModel):
+class HumanVisibilityRequest(BaseModel):
     human_visible: bool
 
 
@@ -1648,15 +736,13 @@ def mark_human_visibility(
     user: User = Depends(require_annotator),
 ):
     """Mark whether a human is visible in the image."""
-    
     image = db.query(Image).filter(Image.id == image_id).first()
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
     
     image.human_visible = request.human_visible
     image.human_visible_marked_by = user.id
-    image.human_visible_marked_at = dt.now()
-    
+    image.human_visible_marked_at = datetime.now(timezone.utc)
     db.commit()
     
     return {
@@ -1673,7 +759,6 @@ def get_human_visibility(
     user: User = Depends(require_annotator),
 ):
     """Get human visibility status for an image."""
-    
     image = db.query(Image).filter(Image.id == image_id).first()
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
@@ -1682,17 +767,14 @@ def get_human_visibility(
         "image_id": image_id,
         "human_visible": image.human_visible,
         "human_visible_marked_by": image.human_visible_marked_by,
-        "human_visible_marked_at": image.human_visible_marked_at.isoformat() if image.human_visible_marked_at else None
+        "human_visible_marked_at": (
+            image.human_visible_marked_at.isoformat()
+            if image.human_visible_marked_at else None
+        ),
     }
 
 
 # ── Bounding Box Blur ────────────────────────────────────────────
-
-from pydantic import BaseModel
-import os
-import httpx as _httpx
-from datetime import datetime
-
 
 class BlurRegionSchema(BaseModel):
     x: float
@@ -1713,6 +795,9 @@ def blur_image_regions_endpoint(
     user: User = Depends(require_annotator),
 ):
     """Draw bounding-box blur regions on an image and save the blurred copy."""
+    from app.utils.deliverable import update_biometric_if_delivered
+    import httpx as _httpx
+
     image = db.query(Image).filter(Image.id == image_id).first()
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
@@ -1723,6 +808,7 @@ def blur_image_regions_endpoint(
     cache_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "image_cache")
     os.makedirs(cache_dir, exist_ok=True)
 
+    # Try to get image bytes from cache or proxy
     cached_path = os.path.join(cache_dir, f"{image_id}.jpg")
     if os.path.exists(cached_path):
         with open(cached_path, "rb") as f:
@@ -1743,27 +829,25 @@ def blur_image_regions_endpoint(
     blurred_path = os.path.join(cache_dir, blurred_filename)
     with open(blurred_path, "wb") as f:
         f.write(blurred_bytes)
-
     with open(cached_path, "wb") as f:
         f.write(blurred_bytes)
 
-    # Store blur regions as JSON in the image record
+    # Update DB
     image.blur_regions = regions
     image.manually_blurred = True
     image.manually_blurred_by = user.id
-    image.manually_blurred_at = datetime.utcnow()
+    image.manually_blurred_at = datetime.now(timezone.utc)
     image.processed_url = f"file://image_cache/{blurred_filename}"
     image.is_using_processed = True
     image.processing_method = "manual"
+    image.is_manually_modified = True
 
-    # Track annotator blur action
     if user.role == "annotator":
         image.is_blurred_annotator = True
-    image.is_manually_modified = True
 
     db.commit()
 
-    # If image was already delivered (all approved), re-move to blurred/ and update final_output
+    # If image was already delivered, re-copy with latest version
     update_biometric_if_delivered(image.id, db)
 
     return {
@@ -1783,14 +867,31 @@ def get_blur_regions(
     image = db.query(Image).filter(Image.id == image_id).first()
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
-    
+
     regions = image.blur_regions or []
     return [
-        {
-            "x": r.get("x", 0),
-            "y": r.get("y", 0),
-            "width": r.get("width", 0),
-            "height": r.get("height", 0),
-        }
+        {"x": r.get("x", 0), "y": r.get("y", 0), "width": r.get("width", 0), "height": r.get("height", 0)}
         for r in regions
     ]
+
+
+# ── Deprecated Endpoints (backward compatibility) ─────────────────
+
+@router.patch("/images/{image_id}/time")
+def save_time_spent(
+    image_id: int,
+    payload: dict,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_annotator),
+):
+    """Deprecated — time tracking per image is no longer used."""
+    return {"ok": True}
+
+
+@router.get("/settings/time-limits")
+def get_time_limits(
+    db: Session = Depends(get_db),
+    _user: User = Depends(require_annotator),
+):
+    """Deprecated — time tracking is no longer used."""
+    return {"max_annotation_time_seconds": 0}

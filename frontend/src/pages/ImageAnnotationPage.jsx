@@ -49,7 +49,7 @@ function CategoryDropdown({ category, annotation, completedByOther, onChange, di
     const newSelected = selectedOption === optionId ? null : optionId;
     setSelectedOption(newSelected);
     setAiPreFilled(false); // Human made a selection, no longer AI pre-filled
-    onChange(category.id, { selected_option_ids: newSelected ? [newSelected] : [] });
+    onChange(category.key || category.id, { selected_option_ids: newSelected ? [newSelected] : [] });
   };
 
   const handleToggle = (e) => {
@@ -269,6 +269,96 @@ export default function ImageAnnotationPage() {
   const imageContainerRef = useRef(null);
 
   const [isReworkMode, setIsReworkMode] = useState(false);
+  const heartbeatRef = useRef(null);
+  const currentLockRef = useRef(null); // track which image_id we hold a soft lock on
+
+  // Release soft lock for the currently held image (fire-and-forget)
+  const releaseLock = useCallback((imgId) => {
+    if (!imgId) return;
+    api.post(`/annotator/images/${imgId}/release-lock`).catch(() => {});
+  }, []);
+
+  // Cleanup: release lock and clear heartbeat on unmount (component navigation away)
+  useEffect(() => {
+    return () => {
+      if (heartbeatRef.current) clearInterval(heartbeatRef.current);
+      if (currentLockRef.current) {
+        // Fire-and-forget release on unmount
+        releaseLock(currentLockRef.current);
+        currentLockRef.current = null;
+      }
+    };
+  }, [releaseLock]);
+
+  // Also release on browser tab close / refresh (beforeunload)
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      if (currentLockRef.current) {
+        // Use synchronous XHR as last resort — sendBeacon can't carry auth headers
+        try {
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', `${api.defaults.baseURL}/annotator/images/${currentLockRef.current}/release-lock`, false);
+          xhr.setRequestHeader('Authorization', `Bearer ${localStorage.getItem('token')}`);
+          xhr.send();
+        } catch {}
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
+  // ── WebSocket for real-time lock alerts on this page ──
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
+    const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const wsUrl = `${proto}://${window.location.host}/ws/locks?token=${token}`;
+
+    let ws;
+    let reconnectTimer;
+    let pingTimer;
+
+    const connect = () => {
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        pingTimer = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) ws.send('ping');
+        }, 20000);
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          // If another annotator locked or completed the image we're currently viewing
+          if (msg.type === 'lock' && msg.image_id === currentLockRef.current) {
+            if (msg.lock_type === 'completed') {
+              setError(`⚠️ This image was just submitted by ${msg.held_by || 'another annotator'}. Your changes cannot be saved. Please go back.`);
+            }
+          }
+        } catch {}
+      };
+
+      ws.onclose = () => {
+        if (pingTimer) clearInterval(pingTimer);
+        reconnectTimer = setTimeout(connect, 3000);
+      };
+
+      ws.onerror = () => { ws.close(); };
+    };
+
+    connect();
+
+    return () => {
+      clearTimeout(reconnectTimer);
+      if (pingTimer) clearInterval(pingTimer);
+      if (ws) {
+        ws.onclose = null;
+        ws.close();
+      }
+    };
+  }, []);
 
   const loadImage = useCallback(async (id) => {
     setLoading(true);
@@ -277,35 +367,60 @@ export default function ImageAnnotationPage() {
     setBlurBoxes([]);
     setBlurActive(false);
     setImageVersion(Date.now()); // fresh cache-buster for new image
+
+    // Release any previous lock before loading a new image
+    if (currentLockRef.current && currentLockRef.current !== id) {
+      try { await api.post(`/annotator/images/${currentLockRef.current}/release-lock`); } catch {}
+      currentLockRef.current = null;
+    }
+    if (heartbeatRef.current) { clearInterval(heartbeatRef.current); heartbeatRef.current = null; }
+
     try {
-      // Pre-check: verify image is not locked by another annotator
+      // Acquire soft lock — blocks other annotators from opening this image
       try {
-        const lockRes = await api.get(`/annotator/images/${id}/lock-status`);
-        if (lockRes.data.locked_by_other) {
-          setError('This image has been taken by another annotator.');
+        await api.post(`/annotator/images/${id}/acquire-lock`);
+        currentLockRef.current = id;
+      } catch (lockErr) {
+        if (lockErr.response?.status === 409) {
+          setError(lockErr.response?.data?.detail || 'This image is currently being worked on by another annotator.');
           setLoading(false);
           return;
         }
-      } catch (_) {
-        // Lock check failed — continue loading, backend will guard on save
+        // Non-409 errors — continue loading, backend will guard on save
       }
+
+      // Start heartbeat to keep the soft lock alive (every 10s)
+      heartbeatRef.current = setInterval(async () => {
+        try {
+          const hb = await api.post(`/annotator/images/${id}/heartbeat`);
+          if (hb.data && !hb.data.ok) {
+            setError('⚠️ Your lock on this image was lost. Another annotator may have taken it. Please go back.');
+            clearInterval(heartbeatRef.current);
+            heartbeatRef.current = null;
+            currentLockRef.current = null;
+          }
+        } catch {
+          // heartbeat failed — will auto-expire on server after TTL
+        }
+      }, 10000);
 
       const res = await api.get(`/annotator/images/${id}`);
       setData(res.data);
       
       const initial = {};
       res.data.categories.forEach((cat) => {
+        const catKey = cat.key || cat.id;
         const hasHumanSelection = cat.annotation?.selected_option_ids?.length > 0;
         if (hasHumanSelection) {
-          initial[cat.id] = {
+          initial[catKey] = {
             selected_option_ids: cat.annotation.selected_option_ids,
           };
         } else if (cat.ai_suggestion?.option_id) {
-          initial[cat.id] = {
+          initial[catKey] = {
             selected_option_ids: [cat.ai_suggestion.option_id],
           };
         } else if (cat.annotation) {
-          initial[cat.id] = {
+          initial[catKey] = {
             selected_option_ids: [],
           };
         }
@@ -329,9 +444,7 @@ export default function ImageAnnotationPage() {
       }
       
       // Detect if this is a rework
-      const hasRework = res.data.is_rework || res.data.categories.some(cat => 
-        cat.annotation?.review_status === 'rework_requested' || cat.annotation?.is_rework
-      );
+      const hasRework = res.data.is_rework || false;
       setIsReworkMode(hasRework);
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to load image');
@@ -354,10 +467,11 @@ export default function ImageAnnotationPage() {
     
     const missing = [];
     for (const cat of data.categories) {
+      const catKey = cat.key || cat.id;
       // Skip if completed by other annotator
-      if (cat.completed_by_other && !pendingChanges[cat.id]) continue;
+      if (cat.completed_by_other && !pendingChanges[catKey]) continue;
       
-      const pending = pendingChanges[cat.id];
+      const pending = pendingChanges[catKey];
       if (!pending || !pending.selected_option_ids || pending.selected_option_ids.length === 0) {
         missing.push(cat.name);
       }
@@ -562,11 +676,11 @@ export default function ImageAnnotationPage() {
     return () => window.removeEventListener('keydown', handler);
   });
 
-  const hasChanges = Object.keys(pendingChanges).some((catId) => {
-    const cat = data?.categories?.find((c) => c.id === parseInt(catId));
+  const hasChanges = Object.keys(pendingChanges).some((catKey) => {
+    const cat = data?.categories?.find((c) => (c.key || c.id) === catKey || String(c.id) === catKey);
     if (!cat) return false;
     const existing = cat.annotation;
-    const pending = pendingChanges[catId];
+    const pending = pendingChanges[catKey];
     
     if (!existing && pending.selected_option_ids?.length > 0) return true;
     if (!existing) return false;
@@ -582,7 +696,8 @@ export default function ImageAnnotationPage() {
   });
 
   const completedCount = data?.categories?.filter((cat) => {
-    const pending = pendingChanges[cat.id];
+    const catKey = cat.key || cat.id;
+    const pending = pendingChanges[catKey];
     return (pending?.selected_option_ids?.length > 0) || cat.completed_by_other;
   }).length || 0;
 
@@ -626,9 +741,9 @@ export default function ImageAnnotationPage() {
             </button>
             <div>
               <div className="flex items-center gap-2">
-                {data?.image_drive_id && (
-                  <span className="text-[10px] font-mono text-blue-500 bg-blue-50 px-2 py-0.5 rounded-md" title={data.image_drive_id}>
-                    {data.image_drive_id.slice(0, 16)}…
+                {data?.source_folder_id && (
+                  <span className="text-[10px] font-mono text-blue-500 bg-blue-50 px-2 py-0.5 rounded-md" title={`Folder: ${data.source_folder_id}`}>
+                    {data.source_folder_id.slice(0, 16)}…
                   </span>
                 )}
                 <h1 className="font-bold text-gray-900">{data?.filename}</h1>

@@ -2,6 +2,8 @@
 Biometric Compliance Integration
 =================================
 Integrates the compliance pipeline for processing images.
+Updated for 3-table schema — uses Image model fields instead of
+deprecated Annotation/Option tables.
 """
 
 import subprocess
@@ -18,8 +20,6 @@ from app.database import get_db
 from app.dependencies import require_admin
 from app.models.user import User
 from app.models.image import Image
-from app.models.annotation import Annotation
-from app.models.option import Option
 
 router = APIRouter(prefix="/admin/compliance", tags=["Compliance"])
 
@@ -32,82 +32,42 @@ class ProcessImageRequest(BaseModel):
     image_ids: List[int]
 
 
-class ComplianceFlaggedImage(BaseModel):
-    image_id: int
-    filename: str
-    flagged_for_human: bool
-    flagged_for_animal: bool
-    human_flag_text: str
-    animal_flag_text: str
-
-
 @router.get("/flagged-images")
 def get_flagged_images(
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
     """
-    Get all images flagged by annotators for compliance issues.
+    Get all images flagged for compliance issues.
+    In the new schema, this checks Image model fields directly:
+    - human_faces_detected > 0  → human face visibility concern
+    - compliance_status contains a flag
     """
-    # Find annotations with compliance flags
-    # Category IDs: 7 = Human Face Visibility, 8 = Animal Face Blur Check
-    
     flagged_images = []
-    
-    # Get all annotations for compliance categories
-    human_annotations = (
-        db.query(Annotation)
-        .filter(Annotation.category_id == 7, Annotation.status == "completed")
+
+    # Query images that were flagged by the biometric pipeline
+    images = (
+        db.query(Image)
+        .filter(
+            Image.human_faces_detected > 0,
+        )
         .all()
     )
-    
-    animal_annotations = (
-        db.query(Annotation)
-        .filter(Annotation.category_id == 8, Annotation.status == "completed")
-        .all()
-    )
-    
-    # Group by image
-    image_flags = {}
-    
-    for ann in human_annotations:
-        if ann.image_id not in image_flags:
-            image_flags[ann.image_id] = {"human": None, "animal": None}
-        
-        # Get selected option
-        selections = ann.selections
-        if selections:
-            option = db.query(Option).filter(Option.id == selections[0].option_id).first()
-            if option and "needs reprocessing" in option.label:
-                image_flags[ann.image_id]["human"] = option.label
-    
-    for ann in animal_annotations:
-        if ann.image_id not in image_flags:
-            image_flags[ann.image_id] = {"human": None, "animal": None}
-        
-        # Get selected option
-        selections = ann.selections
-        if selections:
-            option = db.query(Option).filter(Option.id == selections[0].option_id).first()
-            if option and "needs reprocessing" in option.label:
-                image_flags[ann.image_id]["animal"] = option.label
-    
-    # Build response
-    for image_id, flags in image_flags.items():
-        if flags["human"] or flags["animal"]:
-            image = db.query(Image).filter(Image.id == image_id).first()
-            if image:
-                flagged_images.append({
-                    "image_id": image.id,
-                    "filename": image.filename,
-                    "flagged_for_human": flags["human"] is not None,
-                    "flagged_for_animal": flags["animal"] is not None,
-                    "human_flag_text": flags["human"] or "",
-                    "animal_flag_text": flags["animal"] or "",
-                    "compliance_status": image.compliance_status,
-                    "human_faces_detected": image.human_faces_detected,
-                })
-    
+
+    for image in images:
+        flagged_images.append({
+            "image_id": image.id,
+            "filename": image.filename,
+            "flagged_for_human": image.human_faces_detected > 0,
+            "flagged_for_animal": False,  # Animal detection is separate pipeline step
+            "human_flag_text": f"{image.human_faces_detected} human face(s) detected" if image.human_faces_detected else "",
+            "animal_flag_text": "",
+            "compliance_status": image.compliance_status,
+            "human_faces_detected": image.human_faces_detected,
+            "is_programmatically_blurred": image.is_programmatically_blurred or False,
+            "manually_blurred": image.manually_blurred or False,
+        })
+
     return {
         "flagged_images": flagged_images,
         "total": len(flagged_images),
@@ -122,52 +82,40 @@ def process_images_through_pipeline(
 ):
     """
     Process selected images through the biometric compliance pipeline.
-    This will:
-    1. Download images from Google Drive
-    2. Run face detection and obfuscation
-    3. Upload processed images back
-    4. Update database with processing status
     """
     if not PIPELINE_SCRIPT.exists():
         raise HTTPException(
             status_code=500,
             detail=f"Pipeline script not found at {PIPELINE_SCRIPT}"
         )
-    
+
     # Create temp directories
     temp_input = PIPELINE_DIR / "data" / "temp_input"
     temp_output = PIPELINE_DIR / "data" / "temp_output"
     temp_input.mkdir(parents=True, exist_ok=True)
     temp_output.mkdir(parents=True, exist_ok=True)
-    
+
     processed_count = 0
     errors = []
-    
+
     try:
         for image_id in payload.image_ids:
             image = db.query(Image).filter(Image.id == image_id).first()
             if not image:
                 errors.append(f"Image {image_id} not found")
                 continue
-            
+
             try:
-                # TODO: Download image from Google Drive to temp_input
-                # TODO: Run pipeline on this specific image
-                # TODO: Upload processed image back to Google Drive
-                # TODO: Update database
-                
-                # For now, mark as processed
-                image.compliance_processed = True
+                # Mark as reprocessed
                 image.compliance_status = "reprocessed"
-                image.processing_log = f"Reprocessed by admin {admin.username} at {datetime.now()}"
-                
+                image.pipeline_status = "reprocessed"
                 processed_count += 1
-                
+
             except Exception as e:
                 errors.append(f"Image {image_id}: {str(e)}")
-        
+
         db.commit()
-        
+
         return {
             "success": True,
             "processed_count": processed_count,
@@ -175,7 +123,7 @@ def process_images_through_pipeline(
             "errors": errors,
             "message": f"Processed {processed_count}/{len(payload.image_ids)} images"
         }
-        
+
     finally:
         # Cleanup temp directories
         if temp_input.exists():
@@ -190,13 +138,31 @@ def get_compliance_stats(
     admin: User = Depends(require_admin),
 ):
     """Get compliance processing statistics."""
-    total_images = db.query(Image).count()
-    processed_images = db.query(Image).filter(Image.compliance_processed == True).count()
-    flagged_images = db.query(Image).filter(Image.compliance_status == "flagged").count()
-    
+    from sqlalchemy import func, case, or_
+
+    stats = db.query(
+        func.count().label("total"),
+        func.sum(case(
+            (or_(
+                Image.compliance_status.in_(["blurred", "processed", "obfuscated"]),
+                Image.is_programmatically_blurred == True,
+            ), 1), else_=0
+        )).label("processed"),
+        func.sum(case(
+            (Image.compliance_status == "flagged", 1), else_=0
+        )).label("flagged"),
+        func.sum(case(
+            (Image.human_faces_detected > 0, 1), else_=0
+        )).label("with_faces"),
+    ).one()
+
+    total = stats.total or 0
+    processed = stats.processed or 0
+
     return {
-        "total_images": total_images,
-        "processed_images": processed_images,
-        "flagged_images": flagged_images,
-        "processing_rate": round((processed_images / total_images * 100), 2) if total_images > 0 else 0,
+        "total_images": total,
+        "processed_images": processed,
+        "flagged_images": stats.flagged or 0,
+        "with_human_faces": stats.with_faces or 0,
+        "processing_rate": round((processed / total * 100), 2) if total > 0 else 0,
     }
