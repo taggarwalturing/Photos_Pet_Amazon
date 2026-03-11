@@ -337,16 +337,17 @@ def assign_images_to_single_annotator(
     user_id: int,
     db: Session = Depends(get_db),
     _admin: User = Depends(require_admin),
-    count: int = Query(None, description="Number of images to assign (overrides stored count)"),
+    count: int = Query(None, description="Total number of images this annotator should have"),
 ):
     """
-    Assign images to a SINGLE annotator without touching other annotators'
-    assignments.
+    Adjust a SINGLE annotator's image assignment without touching others.
 
-    Algorithm:
-    1. Clear only THIS annotator's current assignments.
-    2. Get unassigned images (not assigned to any other annotator) ordered by id.
-    3. Assign the first `count` unassigned images to this annotator.
+    Smart behaviour:
+    - If new count > current: KEEP existing assignments, ADD more from the
+      unassigned pool.
+    - If new count < current: KEEP completed images, REMOVE excess
+      non-completed images (highest IDs first).
+    - If new count == current: no-op.
     """
     annotator = db.query(User).filter(User.id == user_id, User.role == "annotator").first()
     if not annotator:
@@ -355,44 +356,91 @@ def assign_images_to_single_annotator(
     # Update stored count if provided
     if count is not None:
         annotator.assigned_image_count = count
-    assign_count = annotator.assigned_image_count or 0
+    desired = annotator.assigned_image_count or 0
 
-    # Clear only THIS annotator's current assignments
-    cleared = (
+    # Current assignments for this annotator (ordered by ID)
+    current_images = (
         db.query(Image)
         .filter(Image.assigned_to == annotator.id)
-        .update({"assigned_to": None}, synchronize_session="fetch")
+        .order_by(Image.id)
+        .all()
     )
+    current_count = len(current_images)
 
-    assigned_ids = []
-    if assign_count > 0:
-        # Get unassigned, non-duplicate images ordered by ID
-        unassigned_images = (
+    added = 0
+    removed = 0
+
+    if desired > current_count:
+        # ── Need MORE images: pick from unassigned pool ──
+        need = desired - current_count
+        unassigned = (
             db.query(Image)
             .filter(
                 Image.is_duplicate == False,  # noqa: E712
                 Image.assigned_to.is_(None),
             )
             .order_by(Image.id)
-            .limit(assign_count)
+            .limit(need)
             .all()
         )
-
-        for img in unassigned_images:
+        for img in unassigned:
             img.assigned_to = annotator.id
-            assigned_ids.append(img.id)
+        added = len(unassigned)
+
+    elif desired < current_count:
+        # ── Need FEWER images: remove non-completed ones from the end ──
+        excess = current_count - desired
+        # Get non-completed images assigned to this user, highest ID first
+        removable = (
+            db.query(Image)
+            .filter(
+                Image.assigned_to == annotator.id,
+                Image.annotation_status != "completed",
+            )
+            .order_by(Image.id.desc())
+            .limit(excess)
+            .all()
+        )
+        for img in removable:
+            img.assigned_to = None
+        removed = len(removable)
+
+        # If we couldn't remove enough (some are completed), that's fine —
+        # annotator keeps the completed images even if it exceeds desired.
+        if removed < excess:
+            print(f"[ADMIN] Warning: could only remove {removed}/{excess} — "
+                  f"remaining are completed images")
 
     db.commit()
+    db.refresh(annotator)
 
-    id_range = f"{assigned_ids[0]}–{assigned_ids[-1]}" if assigned_ids else "none"
-    print(f"[ADMIN] Assigned {len(assigned_ids)} images to {annotator.username} "
-          f"(requested {assign_count}, cleared {cleared})")
+    # Final count after adjustment
+    final_count = db.query(Image).filter(Image.assigned_to == annotator.id).count()
+    final_range_q = (
+        db.query(Image.id)
+        .filter(Image.assigned_to == annotator.id)
+        .order_by(Image.id)
+        .all()
+    )
+    final_ids = [r[0] for r in final_range_q]
+    id_range = f"{final_ids[0]}–{final_ids[-1]}" if final_ids else "none"
+
+    action = "no change"
+    if added > 0:
+        action = f"added {added}"
+    elif removed > 0:
+        action = f"removed {removed}"
+
+    print(f"[ADMIN] {annotator.username}: {action} → now {final_count} images "
+          f"(desired {desired}, range {id_range})")
 
     return {
         "annotator_id": annotator.id,
         "username": annotator.username,
-        "requested": assign_count,
-        "assigned": len(assigned_ids),
+        "requested": desired,
+        "assigned": final_count,
+        "added": added,
+        "removed": removed,
         "image_id_range": id_range,
     }
 
