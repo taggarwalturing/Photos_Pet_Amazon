@@ -451,26 +451,45 @@ def _evict_oldest_cached(cache_dir: str, max_bytes: int):
         pass
 
 
-def cache_image(image_id: int, content: bytes, mime_type: str):
-    """Cache full image, medium-res view, and thumbnail."""
+def _normalize_full_image(content: bytes) -> bytes:
+    """Apply EXIF orientation to full-res image so browser and server agree on orientation."""
+    try:
+        pil_image = PILImage.open(io.BytesIO(content))
+        transposed = ImageOps.exif_transpose(pil_image)
+        if transposed.mode in ('RGBA', 'P'):
+            transposed = transposed.convert('RGB')
+        buf = io.BytesIO()
+        transposed.save(buf, format='JPEG', quality=95)
+        return buf.getvalue()
+    except Exception:
+        return content
+
+
+def cache_image(image_id: int, content: bytes, mime_type: str) -> bytes:
+    """Cache full image (EXIF-normalised), medium-res view, and thumbnail.
+    Returns the normalised full-res JPEG bytes."""
     try:
         jpeg_content = _to_jpeg(content, mime_type)
+        # Normalize full-res: bake EXIF orientation into pixels
+        normalized = _normalize_full_image(jpeg_content)
         # Save full image
         with open(os.path.join(CACHE_DIR, f"{image_id}.jpg"), "wb") as f:
-            f.write(jpeg_content)
-        # Save medium-res view (1200px)
-        view_content = _make_view_image(jpeg_content)
+            f.write(normalized)
+        # Save medium-res view (1200px) — from normalized content (EXIF already applied)
+        view_content = _make_view_image(normalized)
         with open(os.path.join(VIEW_DIR, f"{image_id}.jpg"), "wb") as f:
             f.write(view_content)
-        # Save thumbnail
-        thumb_content = _make_thumbnail(jpeg_content)
+        # Save thumbnail — from normalized content
+        thumb_content = _make_thumbnail(normalized)
         with open(os.path.join(THUMB_DIR, f"{image_id}.jpg"), "wb") as f:
             f.write(thumb_content)
         # Evict oldest full-res images if cache is too large
         with _cache_evict_lock:
             _evict_oldest_cached(CACHE_DIR, FULL_CACHE_MAX_BYTES)
+        return normalized
     except Exception as e:
         print(f"Failed to cache image {image_id}: {e}")
+        return content
 
 @app.get("/api/images/proxy/{image_id}")
 def proxy_image(image_id: int):
@@ -509,9 +528,9 @@ def proxy_image(image_id: int):
                 ext = os.path.splitext(img.filename)[1].lower()
                 mime_type = {'.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
                              '.gif': 'image/gif', '.webp': 'image/webp'}.get(ext, 'image/jpeg')
-                cache_image(image_id, content, mime_type)
+                served = cache_image(image_id, content, mime_type)
                 return Response(
-                    content=content, media_type=mime_type,
+                    content=served, media_type="image/jpeg",
                     headers={"Cache-Control": "public, max-age=604800", "X-Cache": "MISS", "X-Source": "gcs"}
                 )
             except Exception as e:
@@ -574,9 +593,9 @@ def proxy_image(image_id: int):
                                         mime_c = {'.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
                                                   '.png': 'image/png', '.gif': 'image/gif',
                                                   '.webp': 'image/webp'}.get(ext_c, 'image/jpeg')
-                                        cache_image(image_id, gcs_content, mime_c)
+                                        served = cache_image(image_id, gcs_content, mime_c)
                                         return Response(
-                                            content=gcs_content, media_type=mime_c,
+                                            content=served, media_type="image/jpeg",
                                             headers={"Cache-Control": "public, max-age=604800",
                                                      "X-Cache": "GCS_FALLBACK", "X-Source": "gcs"}
                                         )
@@ -615,9 +634,9 @@ def proxy_image(image_id: int):
                                     with open(os.path.join(dl_folder, filename), "wb") as f:
                                         f.write(gdrive_content)
                                     # Cache and serve
-                                    cache_image(image_id, gdrive_content, 'image/jpeg')
+                                    served = cache_image(image_id, gdrive_content, 'image/jpeg')
                                     return Response(
-                                        content=gdrive_content,
+                                        content=served,
                                         media_type='image/jpeg',
                                         headers={"Cache-Control": "public, max-age=604800", "X-Cache": "GDRIVE_RESTORE"}
                                     )
@@ -663,12 +682,12 @@ def proxy_image(image_id: int):
                     '.webp': 'image/webp',
                 }.get(ext, 'image/jpeg')
             
-            # Cache it
-            cache_image(image_id, content, mime_type)
+            # Cache it (returns EXIF-normalised JPEG)
+            served = cache_image(image_id, content, mime_type)
             
             return Response(
-                content=content,
-                media_type=mime_type,
+                content=served,
+                media_type="image/jpeg",
                 headers={
                     "Cache-Control": "public, max-age=604800",
                     "X-Cache": "MISS",
@@ -730,12 +749,12 @@ def proxy_image(image_id: int):
             else:
                 content = file_buffer.read()
             
-            # Cache the image for future requests
-            cache_image(image_id, content, mime_type)
+            # Cache the image for future requests (returns EXIF-normalised JPEG)
+            served = cache_image(image_id, content, mime_type)
             
             return Response(
-                content=content,
-                media_type=mime_type,
+                content=served,
+                media_type="image/jpeg",
                 headers={
                     "Cache-Control": "public, max-age=604800",  # 7 days
                     "X-Cache": "MISS",
