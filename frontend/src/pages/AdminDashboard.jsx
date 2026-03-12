@@ -717,8 +717,8 @@ function ImagesTab() {
 
       {/* Image Grid */}
       {loading ? (
-      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-          {Array.from({ length: 20 }).map((_, i) => (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          {Array.from({ length: 12 }).map((_, i) => (
             <div key={i} className="bg-gray-100 rounded-xl aspect-[4/3] animate-pulse" />
           ))}
             </div>
@@ -728,8 +728,8 @@ function ImagesTab() {
           <p className="text-sm mt-1">Try adjusting your filter or search.</p>
           </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
-          {paginatedImages.map((img) => {
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+          {images.map((img) => {
             const badges = getStatusBadges(img);
             const catLabels = img.category_labels || {};
             const catSources = img.category_label_source || {};
@@ -819,11 +819,10 @@ function ImagesTab() {
         </div>
       )}
 
-      {/* Pagination */}
+      {/* Image count */}
       {images.length > 0 && (
-      <div className="flex items-center justify-between text-sm text-gray-500">
-        <span>Showing {((safePage - 1) * imagesPerPage) + 1}–{Math.min(safePage * imagesPerPage, images.length)} of {images.length}</span>
-        <Pagination currentPage={safePage} totalPages={totalPages} onPageChange={setPage} />
+      <div className="text-sm text-gray-500">
+        <span>Showing all {images.length} images</span>
         </div>
       )}
 
@@ -1679,8 +1678,8 @@ function ReviewTab() {
     try {
       const params = new URLSearchParams();
       params.set('review_status', filter);
-      params.set('page', tablePage);
-      params.set('page_size', '20');
+      params.set('page', '1');
+      params.set('page_size', '10000');
       if (annotatorFilter) params.set('annotator_id', annotatorFilter);
 
       const [tableRes, statsRes, catsRes, usersRes] = await Promise.all([
@@ -1700,7 +1699,7 @@ function ReviewTab() {
     } finally {
       setTableLoading(false);
     }
-  }, [filter, annotatorFilter, tablePage]);
+  }, [filter, annotatorFilter]);
 
   useEffect(() => {
     loadTable();
@@ -2021,7 +2020,7 @@ function ReviewTab() {
             <div className="py-12 text-center text-gray-500">No annotations found for this filter.</div>
           ) : (
             <>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                 {tableData.images.map((row) => {
                   // Count annotated categories for this image
                   const totalAnnotated = tableData.categories.filter((cat) => row.annotations[String(cat.id)]).length;
@@ -2212,12 +2211,9 @@ function ReviewTab() {
                               );
                             })}
               </div>
-              {/* Pagination */}
-              <div className="flex items-center justify-between text-sm text-gray-500 mt-4">
-                <span>
-                  Showing {((tablePage - 1) * (tableData.page_size)) + 1}–{Math.min(tablePage * tableData.page_size, tableData.total_images)} of {tableData.total_images} images
-                </span>
-                <Pagination currentPage={tablePage} totalPages={tableTotalPages} onPageChange={setTablePage} />
+              {/* Image count */}
+              <div className="text-sm text-gray-500 mt-4">
+                <span>Showing all {tableData.total_images} images</span>
               </div>
             </>
           )}
