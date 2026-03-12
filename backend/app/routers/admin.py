@@ -385,6 +385,11 @@ def assign_images_to_single_annotator(
         )
         for img in unassigned:
             img.assigned_to = annotator.id
+            # Clear stale locks from previous annotators
+            if img.annotated_by and img.annotated_by != annotator.id and img.annotation_status != "completed":
+                img.annotated_by = None
+                img.annotated_at = None
+                img.annotation_status = "pending"
         added = len(unassigned)
 
     elif desired < current_count:
