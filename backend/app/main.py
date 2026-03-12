@@ -23,7 +23,7 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 
 # Image processing imports
-from PIL import Image as PILImage
+from PIL import Image as PILImage, ImageOps
 try:
     import pillow_heif
     pillow_heif.register_heif_opener()
@@ -380,6 +380,7 @@ def _make_thumbnail(content: bytes) -> bytes:
     """Create a small thumbnail from image bytes."""
     try:
         pil_image = PILImage.open(io.BytesIO(content))
+        pil_image = ImageOps.exif_transpose(pil_image)  # Apply EXIF orientation
         if pil_image.mode in ('RGBA', 'P'):
             pil_image = pil_image.convert('RGB')
         pil_image.thumbnail((THUMB_MAX_SIZE, THUMB_MAX_SIZE), PILImage.LANCZOS)
@@ -394,6 +395,7 @@ def _make_view_image(content: bytes) -> bytes:
     """Create a medium-res image (1200px) for annotation/review views."""
     try:
         pil_image = PILImage.open(io.BytesIO(content))
+        pil_image = ImageOps.exif_transpose(pil_image)  # Apply EXIF orientation
         if pil_image.mode in ('RGBA', 'P'):
             pil_image = pil_image.convert('RGB')
         w, h = pil_image.size
