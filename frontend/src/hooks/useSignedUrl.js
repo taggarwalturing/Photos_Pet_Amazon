@@ -5,6 +5,10 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:5001';
 const URL_CACHE = new Map();
 const CACHE_TTL_MS = 50 * 60 * 1000; // 50 minutes (URLs valid for 60)
 
+// Cache epoch — bump this after any server-side image-processing change
+// to force browsers to fetch fresh copies instead of stale max-age cache.
+const IMG_CACHE_EPOCH = 2;
+
 function getCachedUrl(imageId, folder) {
   const key = `${imageId}:${folder || ''}`;
   const entry = URL_CACHE.get(key);
@@ -27,17 +31,17 @@ export function getProxyUrl(imageId) {
 
 export function getThumbUrl(imageId) {
   if (!imageId) return '';
-  return `${API_BASE}/api/images/thumb/${imageId}`;
+  return `${API_BASE}/api/images/thumb/${imageId}?v=${IMG_CACHE_EPOCH}`;
 }
 
 export function getViewUrl(imageId) {
   if (!imageId) return '';
-  return `${API_BASE}/api/images/view/${imageId}`;
+  return `${API_BASE}/api/images/view/${imageId}?v=${IMG_CACHE_EPOCH}`;
 }
 
 export function getFullUrl(imageId) {
   if (!imageId) return '';
-  return `${API_BASE}/api/images/proxy/${imageId}`;
+  return `${API_BASE}/api/images/proxy/${imageId}?v=${IMG_CACHE_EPOCH}`;
 }
 
 export async function fetchSignedUrl(imageId, folder = null) {
