@@ -508,9 +508,9 @@ def reassign_images(
     """
     Move images from one annotator to another.
 
-    - Moves only non-completed images.
+    - Moves ALL images (including completed ones), resetting annotation state.
     - If `count` is provided, moves that many (lowest IDs first).
-    - If `count` is None, moves ALL non-completed images.
+    - If `count` is None, moves ALL images from source.
     - Updates both annotators' assigned_image_count accordingly.
     """
     from_user = db.query(User).filter(User.id == payload.from_annotator_id, User.role == "annotator").first()
@@ -523,13 +523,10 @@ def reassign_images(
     if from_user.id == to_user.id:
         raise HTTPException(status_code=400, detail="Source and target annotator are the same")
 
-    # Get movable images (non-completed, assigned to source)
+    # Get all images assigned to source annotator
     movable_q = (
         db.query(Image)
-        .filter(
-            Image.assigned_annotator == from_user.id,
-            Image.annotation_status != "completed",
-        )
+        .filter(Image.assigned_annotator == from_user.id)
         .order_by(Image.id)
     )
 
@@ -541,11 +538,14 @@ def reassign_images(
     moved_ids = []
     for img in movable:
         img.assigned_annotator = to_user.id
-        # Clear any stale in-progress locks from source annotator
-        if img.annotated_by == from_user.id:
-            img.annotated_by = None
-            img.annotated_at = None
-            img.annotation_status = "pending"
+        # Clear all annotation state so the new annotator starts fresh
+        img.annotated_by = None
+        img.annotated_at = None
+        img.annotation_status = "pending"
+        img.review_status = None
+        img.review_note = None
+        img.reviewed_by = None
+        img.reviewed_at = None
         moved_ids.append(img.id)
 
     # Update stored counts
