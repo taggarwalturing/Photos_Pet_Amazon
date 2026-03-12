@@ -221,11 +221,18 @@ def _migrate():
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_images_deliverable ON images(deliverable_image_path) WHERE deliverable_image_path IS NOT NULL"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_images_manually_blurred ON images(manually_blurred) WHERE manually_blurred = TRUE"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_images_assigned_annotator ON images(assigned_annotator)"))
-        # Rename column if old name exists
+        # Migrate data from old assigned_to column and drop it
         conn.execute(text("""
             DO $$ BEGIN
                 IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='images' AND column_name='assigned_to') THEN
-                    ALTER TABLE images RENAME COLUMN assigned_to TO assigned_annotator;
+                    -- If both columns exist, copy data then drop old column
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='images' AND column_name='assigned_annotator') THEN
+                        UPDATE images SET assigned_annotator = assigned_to WHERE assigned_to IS NOT NULL AND assigned_annotator IS NULL;
+                        ALTER TABLE images DROP COLUMN assigned_to;
+                    ELSE
+                        -- Only old column exists, just rename
+                        ALTER TABLE images RENAME COLUMN assigned_to TO assigned_annotator;
+                    END IF;
                 END IF;
             END $$;
         """))
