@@ -139,7 +139,7 @@ def _migrate():
             "improper_reason": "TEXT",
             "marked_improper_by": "INTEGER REFERENCES users(id)",
             "marked_improper_at": "TIMESTAMPTZ",
-            "assigned_to": "INTEGER REFERENCES users(id)",
+            "assigned_annotator": "INTEGER REFERENCES users(id)",
             "locked_by": "INTEGER REFERENCES users(id)",
             "locked_at": "TIMESTAMPTZ",
             "deliverable_image_path": "VARCHAR(500)",
@@ -220,7 +220,15 @@ def _migrate():
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_images_annotated_by ON images(annotated_by)"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_images_deliverable ON images(deliverable_image_path) WHERE deliverable_image_path IS NOT NULL"))
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_images_manually_blurred ON images(manually_blurred) WHERE manually_blurred = TRUE"))
-        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_images_assigned_to ON images(assigned_to)"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS idx_images_assigned_annotator ON images(assigned_annotator)"))
+        # Rename column if old name exists
+        conn.execute(text("""
+            DO $$ BEGIN
+                IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='images' AND column_name='assigned_to') THEN
+                    ALTER TABLE images RENAME COLUMN assigned_to TO assigned_annotator;
+                END IF;
+            END $$;
+        """))
     print("[MIGRATE] Ensured performance indexes exist")
 
 _migrate()

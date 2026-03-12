@@ -79,7 +79,7 @@ class Image(Base):
     marked_improper_at = Column(DateTime)
 
     # ── Assignment ──
-    assigned_to = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    assigned_annotator = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
 
     # ── Locking ──
     locked_by = Column(Integer, ForeignKey("users.id"), nullable=True)
@@ -104,7 +104,7 @@ class Image(Base):
     parent_image = relationship("Image", remote_side=[id], foreign_keys=[parent_image_id])
     annotator = relationship("User", foreign_keys=[annotated_by], lazy="joined")
     reviewer_user = relationship("User", foreign_keys=[reviewed_by], lazy="select")
-    assigned_user = relationship("User", foreign_keys=[assigned_to], lazy="select")
+    assigned_user = relationship("User", foreign_keys=[assigned_annotator], lazy="select")
 
     # ── Indexes ──
     __table_args__ = (
@@ -113,5 +113,5 @@ class Image(Base):
         Index("ix_images_annotated_by", "annotated_by"),
         Index("ix_images_source_folder", "source_folder_id"),
         Index("ix_images_gcs_folder", "gcs_folder"),
-        Index("ix_images_assigned_to", "assigned_to"),
+        Index("ix_images_assigned_annotator", "assigned_annotator"),
     )

@@ -71,7 +71,7 @@ def list_users(
         # Count images actually assigned to this user
         actual_assigned = (
             db.query(Image)
-            .filter(Image.assigned_to == u.id)
+            .filter(Image.assigned_annotator == u.id)
             .count()
         )
         
@@ -319,7 +319,7 @@ def update_user(
         user.assigned_image_count = payload.assigned_image_count
     db.commit()
     db.refresh(user)
-    actual_assigned = db.query(Image).filter(Image.assigned_to == user.id).count()
+    actual_assigned = db.query(Image).filter(Image.assigned_annotator == user.id).count()
     return UserResponse(
         id=user.id,
         username=user.username,
@@ -361,7 +361,7 @@ def assign_images_to_single_annotator(
     # Current assignments for this annotator (ordered by ID)
     current_images = (
         db.query(Image)
-        .filter(Image.assigned_to == annotator.id)
+        .filter(Image.assigned_annotator == annotator.id)
         .order_by(Image.id)
         .all()
     )
@@ -377,14 +377,14 @@ def assign_images_to_single_annotator(
             db.query(Image)
             .filter(
                 Image.is_duplicate == False,  # noqa: E712
-                Image.assigned_to.is_(None),
+                Image.assigned_annotator.is_(None),
             )
             .order_by(Image.id)
             .limit(need)
             .all()
         )
         for img in unassigned:
-            img.assigned_to = annotator.id
+            img.assigned_annotator = annotator.id
             # Clear stale locks from previous annotators
             if img.annotated_by and img.annotated_by != annotator.id and img.annotation_status != "completed":
                 img.annotated_by = None
@@ -399,7 +399,7 @@ def assign_images_to_single_annotator(
         removable = (
             db.query(Image)
             .filter(
-                Image.assigned_to == annotator.id,
+                Image.assigned_annotator == annotator.id,
                 Image.annotation_status != "completed",
             )
             .order_by(Image.id.desc())
@@ -407,7 +407,7 @@ def assign_images_to_single_annotator(
             .all()
         )
         for img in removable:
-            img.assigned_to = None
+            img.assigned_annotator = None
         removed = len(removable)
 
         # If we couldn't remove enough (some are completed), that's fine —
@@ -420,10 +420,10 @@ def assign_images_to_single_annotator(
     db.refresh(annotator)
 
     # Final count after adjustment
-    final_count = db.query(Image).filter(Image.assigned_to == annotator.id).count()
+    final_count = db.query(Image).filter(Image.assigned_annotator == annotator.id).count()
     final_range_q = (
         db.query(Image.id)
-        .filter(Image.assigned_to == annotator.id)
+        .filter(Image.assigned_annotator == annotator.id)
         .order_by(Image.id)
         .all()
     )
@@ -464,14 +464,14 @@ def get_assignment_summary(
     )
 
     total_images = db.query(Image).filter(Image.is_duplicate == False).count()  # noqa: E712
-    total_assigned = db.query(Image).filter(Image.assigned_to.isnot(None)).count()
+    total_assigned = db.query(Image).filter(Image.assigned_annotator.isnot(None)).count()
 
     summary = []
     for a in annotators:
-        actual = db.query(Image).filter(Image.assigned_to == a.id).count()
+        actual = db.query(Image).filter(Image.assigned_annotator == a.id).count()
         completed = (
             db.query(Image)
-            .filter(Image.assigned_to == a.id, Image.annotation_status == "completed")
+            .filter(Image.assigned_annotator == a.id, Image.annotation_status == "completed")
             .count()
         )
         summary.append({
@@ -488,6 +488,84 @@ def get_assignment_summary(
         "total_assigned": total_assigned,
         "unassigned": total_images - total_assigned,
         "annotators": summary,
+    }
+
+
+# ── Reassign Images ──────────────────────────────────────────────
+
+class ReassignRequest(BaseModel):
+    from_annotator_id: int
+    to_annotator_id: int
+    count: Optional[int] = None  # None = reassign ALL from source
+
+
+@router.post("/reassign-images")
+def reassign_images(
+    payload: ReassignRequest,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """
+    Move images from one annotator to another.
+
+    - Moves only non-completed images.
+    - If `count` is provided, moves that many (lowest IDs first).
+    - If `count` is None, moves ALL non-completed images.
+    - Updates both annotators' assigned_image_count accordingly.
+    """
+    from_user = db.query(User).filter(User.id == payload.from_annotator_id, User.role == "annotator").first()
+    to_user = db.query(User).filter(User.id == payload.to_annotator_id, User.role == "annotator").first()
+
+    if not from_user:
+        raise HTTPException(status_code=404, detail="Source annotator not found")
+    if not to_user:
+        raise HTTPException(status_code=404, detail="Target annotator not found")
+    if from_user.id == to_user.id:
+        raise HTTPException(status_code=400, detail="Source and target annotator are the same")
+
+    # Get movable images (non-completed, assigned to source)
+    movable_q = (
+        db.query(Image)
+        .filter(
+            Image.assigned_annotator == from_user.id,
+            Image.annotation_status != "completed",
+        )
+        .order_by(Image.id)
+    )
+
+    if payload.count is not None:
+        movable = movable_q.limit(payload.count).all()
+    else:
+        movable = movable_q.all()
+
+    moved_ids = []
+    for img in movable:
+        img.assigned_annotator = to_user.id
+        # Clear any stale in-progress locks from source annotator
+        if img.annotated_by == from_user.id:
+            img.annotated_by = None
+            img.annotated_at = None
+            img.annotation_status = "pending"
+        moved_ids.append(img.id)
+
+    # Update stored counts
+    from_current = db.query(Image).filter(Image.assigned_annotator == from_user.id).count()
+    to_current = db.query(Image).filter(Image.assigned_annotator == to_user.id).count()
+    from_user.assigned_image_count = from_current
+    to_user.assigned_image_count = to_current
+
+    db.commit()
+
+    id_range = f"{moved_ids[0]}–{moved_ids[-1]}" if moved_ids else "none"
+    print(f"[ADMIN] Reassigned {len(moved_ids)} images: {from_user.username} → {to_user.username} (range {id_range})")
+
+    return {
+        "moved": len(moved_ids),
+        "from_user": from_user.username,
+        "to_user": to_user.username,
+        "from_remaining": from_current,
+        "to_total": to_current,
+        "image_id_range": id_range,
     }
 
 

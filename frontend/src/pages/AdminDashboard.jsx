@@ -134,6 +134,10 @@ function UsersTab() {
   const [dailyDays, setDailyDays] = useState(7);
   const [editingImageCount, setEditingImageCount] = useState({}); // { userId: count }
   const [assigningUserId, setAssigningUserId] = useState(null);
+  const [reassignModal, setReassignModal] = useState(null); // { fromId, fromUsername }
+  const [reassignTarget, setReassignTarget] = useState('');
+  const [reassignCount, setReassignCount] = useState('');
+  const [reassigning, setReassigning] = useState(false);
 
   const generatePassword = () => {
     const chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%&*';
@@ -214,6 +218,29 @@ function UsersTab() {
       setAssigningUserId(null);
     }
   };
+
+  const handleReassign = async () => {
+    if (!reassignModal || !reassignTarget) return;
+    setReassigning(true);
+    try {
+      const body = {
+        from_annotator_id: reassignModal.fromId,
+        to_annotator_id: parseInt(reassignTarget),
+      };
+      if (reassignCount) body.count = parseInt(reassignCount);
+      await api.post('/admin/reassign-images', body);
+      setReassignModal(null);
+      setReassignTarget('');
+      setReassignCount('');
+      load();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Reassignment failed');
+    } finally {
+      setReassigning(false);
+    }
+  };
+
+  const annotators = users.filter(u => u.role === 'annotator' && u.is_active);
 
   if (loading) return <LoadingSkeleton rows={6} />;
 
@@ -457,6 +484,14 @@ function UsersTab() {
                     >
                       {u.is_active ? 'Disable' : 'Enable'}
                     </button>
+                    {u.role === 'annotator' && (u.actual_assigned || 0) > 0 && (
+                      <button
+                        onClick={() => { setReassignModal({ fromId: u.id, fromUsername: u.username }); setReassignTarget(''); setReassignCount(''); }}
+                        className="text-xs font-medium text-indigo-500 hover:text-indigo-700 cursor-pointer"
+                      >
+                        Reassign
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
@@ -466,9 +501,58 @@ function UsersTab() {
         </table>
       </div>
 
-      {/* Category assignment removed — all annotators see all categories in the new schema */}
-      {false && editingAssignment && (
-        <div></div>
+      {/* Reassign Modal */}
+      {reassignModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50" onClick={() => setReassignModal(null)}>
+          <div className="bg-white rounded-xl shadow-xl p-6 w-96 space-y-4" onClick={e => e.stopPropagation()}>
+            <h3 className="text-lg font-bold text-gray-900">Reassign Images</h3>
+            <p className="text-sm text-gray-500">
+              Move non-completed images from <span className="font-semibold text-gray-800">{reassignModal.fromUsername}</span> to another annotator.
+            </p>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Target Annotator</label>
+              <select
+                value={reassignTarget}
+                onChange={e => setReassignTarget(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+              >
+                <option value="">Select annotator...</option>
+                {annotators.filter(a => a.id !== reassignModal.fromId).map(a => (
+                  <option key={a.id} value={a.id}>{a.username} ({a.actual_assigned || 0} assigned)</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Number of images <span className="text-gray-400 font-normal">(leave empty = all non-completed)</span>
+              </label>
+              <input
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
+                value={reassignCount}
+                onChange={e => setReassignCount(e.target.value.replace(/[^0-9]/g, ''))}
+                placeholder="All"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+            <div className="flex gap-3 justify-end pt-2">
+              <button
+                onClick={() => setReassignModal(null)}
+                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleReassign}
+                disabled={!reassignTarget || reassigning}
+                className="px-4 py-2 text-sm font-semibold bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition cursor-pointer disabled:opacity-50"
+              >
+                {reassigning ? 'Reassigning...' : 'Reassign'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Daily Annotation Stats */}
