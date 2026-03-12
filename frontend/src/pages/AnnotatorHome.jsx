@@ -447,11 +447,11 @@ export default function AnnotatorHome() {
                       }`}
                     >
                       {/* Large Image */}
-                      <div className="relative aspect-[3/4] bg-gray-100">
+                      <div className="relative aspect-[4/3]">
                         <SignedImage
                           imageId={img.id}
                           alt={img.filename}
-                          className="w-full h-full object-contain"
+                          className="w-full h-full object-cover"
                           loading="lazy"
                           thumbnail
                         />
