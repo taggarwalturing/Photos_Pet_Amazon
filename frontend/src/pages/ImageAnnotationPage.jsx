@@ -913,7 +913,7 @@ export default function ImageAnnotationPage() {
               )}
             </div>
 
-            <div ref={imageContainerRef} className="relative max-w-full max-h-full overflow-hidden flex items-center justify-center">
+            <div ref={imageContainerRef} className="absolute inset-0 m-4 overflow-hidden flex items-center justify-center">
               <SignedImage
                 imageId={imageId}
                 full={true}
