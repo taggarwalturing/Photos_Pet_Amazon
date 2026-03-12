@@ -223,6 +223,16 @@ function UsersTab() {
         <div>
           <h2 className="text-lg font-bold text-gray-900">Users & Assignments</h2>
           <p className="text-sm text-gray-500 mt-0.5">{users.filter(u => u.role === 'annotator').length} annotators, {users.filter(u => u.role === 'admin').length} admins</p>
+          {(() => {
+            const totalAssigned = users.filter(u => u.role === 'annotator').reduce((s, u) => s + (u.actual_assigned || 0), 0);
+            const totalImages = users.find(u => u.role === 'annotator')?.total_images || 0;
+            const unassigned = totalImages - totalAssigned;
+            return totalImages > 0 ? (
+              <p className="text-xs text-gray-400 mt-0.5">
+                {totalImages} total &middot; {totalAssigned} assigned &middot; <span className={unassigned > 0 ? 'text-amber-600 font-semibold' : 'text-emerald-600 font-semibold'}>{unassigned} unassigned</span>
+              </p>
+            ) : null;
+          })()}
         </div>
         <button
           onClick={() => setShowCreate(!showCreate)}

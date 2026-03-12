@@ -43,7 +43,7 @@ def list_users(
     _admin: User = Depends(require_admin),
 ):
     users = db.query(User).order_by(User.id).all()
-    total_images = db.query(Image).count()
+    total_images = db.query(Image).filter(Image.is_duplicate == False).count()  # noqa: E712
 
     # Get today's date for daily stats
     today = date.today()
