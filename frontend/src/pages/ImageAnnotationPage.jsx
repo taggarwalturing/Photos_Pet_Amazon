@@ -268,6 +268,9 @@ export default function ImageAnnotationPage() {
   const [imageVersion, setImageVersion] = useState(Date.now()); // cache-buster for image reload
   const imageContainerRef = useRef(null);
 
+  // Client-side rotation (purely visual, never saved)
+  const [rotation, setRotation] = useState(0);
+
   const [isReworkMode, setIsReworkMode] = useState(false);
   const heartbeatRef = useRef(null);
   const currentLockRef = useRef(null); // track which image_id we hold a soft lock on
@@ -366,6 +369,7 @@ export default function ImageAnnotationPage() {
     setPendingChanges({});
     setBlurBoxes([]);
     setBlurActive(false);
+    setRotation(0); // reset rotation on image change
     setImageVersion(Date.now()); // fresh cache-buster for new image
 
     // Release any previous lock before loading a new image
@@ -810,8 +814,35 @@ export default function ImageAnnotationPage() {
               </button>
             )}
             
-            {/* Blur tool floating toolbar */}
+            {/* Floating toolbar: rotate + blur */}
             <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2">
+              {/* Rotate buttons — always visible */}
+              <div className="flex items-center gap-1 bg-black/50 backdrop-blur-sm rounded-full border border-white/20 px-1">
+                <button
+                  onClick={() => setRotation(r => (r - 90 + 360) % 360)}
+                  className="w-7 h-7 flex items-center justify-center text-white hover:bg-white/20 rounded-full transition cursor-pointer"
+                  title="Rotate left"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h1.168a2 2 0 011.748 1.028L7 13l2-6h2" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7.5 4.5L4 8l3.5 3.5" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h8a4 4 0 014 4v4" /></svg>
+                </button>
+                <button
+                  onClick={() => setRotation(r => (r + 90) % 360)}
+                  className="w-7 h-7 flex items-center justify-center text-white hover:bg-white/20 rounded-full transition cursor-pointer"
+                  title="Rotate right"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16.5 4.5L20 8l-3.5 3.5" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 8h-8a4 4 0 00-4 4v4" /></svg>
+                </button>
+                {rotation !== 0 && (
+                  <button
+                    onClick={() => setRotation(0)}
+                    className="w-7 h-7 flex items-center justify-center text-amber-300 hover:bg-white/20 rounded-full transition cursor-pointer text-xs font-bold"
+                    title="Reset rotation"
+                  >
+                    ↺
+                  </button>
+                )}
+              </div>
+
               {applyingBlur ? (
                 <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-600 text-white text-xs font-semibold shadow-lg">
                   <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -885,10 +916,11 @@ export default function ImageAnnotationPage() {
             <div ref={imageContainerRef} className="relative max-w-full max-h-full overflow-hidden flex items-center justify-center">
               <SignedImage
                 imageId={imageId}
-                view={true}
+                full={true}
                 refreshKey={imageVersion}
                 alt={data?.filename || ''}
                 className={`max-w-full max-h-full object-contain rounded-lg block ${isImproper ? 'opacity-50' : ''}`}
+                style={{ transform: rotation ? `rotate(${rotation}deg)` : undefined, transition: 'transform 0.3s ease' }}
                 onLoad={() => window.dispatchEvent(new Event('resize'))}
               />
               {blurActive && (

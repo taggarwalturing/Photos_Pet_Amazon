@@ -35,6 +35,11 @@ export function getViewUrl(imageId) {
   return `${API_BASE}/api/images/view/${imageId}`;
 }
 
+export function getFullUrl(imageId) {
+  if (!imageId) return '';
+  return `${API_BASE}/api/images/proxy/${imageId}`;
+}
+
 export async function fetchSignedUrl(imageId, folder = null) {
   if (!imageId) return '';
 

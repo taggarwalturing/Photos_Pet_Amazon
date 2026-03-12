@@ -935,6 +935,7 @@ function ImageLightbox({ img, images, idx, getStatusBadges, onClose, onNavigate,
   const [imageVersion, setImageVersion] = useState(Date.now());
   const [blurError, setBlurError] = useState('');
   const imageContainerRef = useRef(null);
+  const [rotation, setRotation] = useState(0);
 
   // Blur state flags — initialised from img prop, refreshed from admin endpoint
   const [blurFlags, setBlurFlags] = useState({
@@ -965,6 +966,7 @@ function ImageLightbox({ img, images, idx, getStatusBadges, onClose, onNavigate,
     setBlurBoxes([]);
     setBlurError('');
     setImageVersion(Date.now());
+    setRotation(0);
   }, [img.id, refreshBlurFlags]);
 
   // Keyboard nav
@@ -1059,8 +1061,21 @@ function ImageLightbox({ img, images, idx, getStatusBadges, onClose, onNavigate,
           </button>
         )}
 
-        {/* Blur tool floating toolbar */}
+        {/* Floating toolbar: rotate + blur */}
         <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2">
+          {/* Rotate buttons */}
+          <div className="flex items-center gap-1 bg-black/50 backdrop-blur-sm rounded-full border border-white/20 px-1">
+            <button onClick={() => setRotation(r => (r - 90 + 360) % 360)} className="w-7 h-7 flex items-center justify-center text-white hover:bg-white/20 rounded-full transition cursor-pointer" title="Rotate left">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7.5 4.5L4 8l3.5 3.5" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h8a4 4 0 014 4v4" /></svg>
+            </button>
+            <button onClick={() => setRotation(r => (r + 90) % 360)} className="w-7 h-7 flex items-center justify-center text-white hover:bg-white/20 rounded-full transition cursor-pointer" title="Rotate right">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16.5 4.5L20 8l-3.5 3.5" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 8h-8a4 4 0 00-4 4v4" /></svg>
+            </button>
+            {rotation !== 0 && (
+              <button onClick={() => setRotation(0)} className="w-7 h-7 flex items-center justify-center text-amber-300 hover:bg-white/20 rounded-full transition cursor-pointer text-xs font-bold" title="Reset rotation">↺</button>
+            )}
+          </div>
+
           {applyingBlur ? (
             <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-600 text-white text-xs font-semibold shadow-lg">
               <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
@@ -1128,10 +1143,11 @@ function ImageLightbox({ img, images, idx, getStatusBadges, onClose, onNavigate,
         <div ref={imageContainerRef} className="relative max-w-5xl w-full mx-16 flex items-center justify-center">
           <SignedImage
             imageId={img.id}
-            view={true}
+            full={true}
             refreshKey={imageVersion}
             alt={img.filename}
             className="max-w-full max-h-[80vh] object-contain rounded-lg block"
+            style={{ transform: rotation ? `rotate(${rotation}deg)` : undefined, transition: 'transform 0.3s ease' }}
             onLoad={() => window.dispatchEvent(new Event('resize'))}
           />
           {blurActive && (
@@ -1255,6 +1271,7 @@ function ImageDetailModal({ row, categories, tableImages, onApprove, onSaveEdits
     manually_blurred: row.manually_blurred || false,
   });
   const imageContainerRef = useRef(null);
+  const [rotation, setRotation] = useState(0);
 
   // Reset edits and blur state when image changes
   useEffect(() => {
@@ -1263,6 +1280,7 @@ function ImageDetailModal({ row, categories, tableImages, onApprove, onSaveEdits
     setBlurBoxes([]);
     setBlurError('');
     setImageVersion(Date.now());
+    setRotation(0);
   }, [row.image_id]);
 
   const getEditsForCat = (catId) => {
@@ -1457,13 +1475,26 @@ function ImageDetailModal({ row, categories, tableImages, onApprove, onSaveEdits
               </button>
             )}
 
-            {/* Blur tool floating toolbar */}
+            {/* Floating toolbar: rotate + blur */}
             <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2">
+              {/* Rotate buttons */}
+              <div className="flex items-center gap-1 bg-black/50 backdrop-blur-sm rounded-full border border-white/20 px-1">
+                <button onClick={() => setRotation(r => (r - 90 + 360) % 360)} className="w-7 h-7 flex items-center justify-center text-white hover:bg-white/20 rounded-full transition cursor-pointer" title="Rotate left">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7.5 4.5L4 8l3.5 3.5" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h8a4 4 0 014 4v4" /></svg>
+                </button>
+                <button onClick={() => setRotation(r => (r + 90) % 360)} className="w-7 h-7 flex items-center justify-center text-white hover:bg-white/20 rounded-full transition cursor-pointer" title="Rotate right">
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16.5 4.5L20 8l-3.5 3.5" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 8h-8a4 4 0 00-4 4v4" /></svg>
+                </button>
+                {rotation !== 0 && (
+                  <button onClick={() => setRotation(0)} className="w-7 h-7 flex items-center justify-center text-amber-300 hover:bg-white/20 rounded-full transition cursor-pointer text-xs font-bold" title="Reset rotation">↺</button>
+                )}
+              </div>
+
               {applyingBlur ? (
                 <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-600 text-white text-xs font-semibold shadow-lg">
                   <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                   Processing on server…
-          </div>
+                </div>
               ) : (
                 <>
                   <button
@@ -1513,7 +1544,7 @@ function ImageDetailModal({ row, categories, tableImages, onApprove, onSaveEdits
                   )}
                 </>
               )}
-        </div>
+            </div>
 
             {/* Blur error */}
             {blurError && (
@@ -1525,11 +1556,11 @@ function ImageDetailModal({ row, categories, tableImages, onApprove, onSaveEdits
             <div ref={imageContainerRef} className="relative w-full h-full overflow-hidden flex items-center justify-center">
               <SignedImage
                 imageId={row.image_id}
-                view={true}
+                full={true}
                 refreshKey={imageVersion}
                 alt={row.image_filename}
                 className="max-w-full max-h-full object-contain rounded-lg block"
-                style={{ maxHeight: 'calc(100vh - 120px)' }}
+                style={{ maxHeight: 'calc(100vh - 120px)', transform: rotation ? `rotate(${rotation}deg)` : undefined, transition: 'transform 0.3s ease' }}
                 onLoad={() => window.dispatchEvent(new Event('resize'))}
               />
               {blurActive && (
