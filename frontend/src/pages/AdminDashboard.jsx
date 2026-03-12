@@ -419,6 +419,14 @@ function UsersTab() {
                       >
                         {assigningUserId === u.id ? '…' : 'Assign'}
                       </button>
+                      {(u.actual_assigned || 0) > 0 && (
+                        <button
+                          onClick={() => { setReassignModal({ fromId: u.id, fromUsername: u.username }); setReassignTarget(''); setReassignCount(''); }}
+                          className="px-2.5 py-1 text-xs font-semibold bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition cursor-pointer whitespace-nowrap"
+                        >
+                          Reassign
+                        </button>
+                      )}
                     </div>
                   ) : '—'}
                 </td>
@@ -484,14 +492,6 @@ function UsersTab() {
                     >
                       {u.is_active ? 'Disable' : 'Enable'}
                     </button>
-                    {u.role === 'annotator' && (u.actual_assigned || 0) > 0 && (
-                      <button
-                        onClick={() => { setReassignModal({ fromId: u.id, fromUsername: u.username }); setReassignTarget(''); setReassignCount(''); }}
-                        className="text-xs font-medium text-indigo-500 hover:text-indigo-700 cursor-pointer"
-                      >
-                        Reassign
-                      </button>
-                    )}
                   </div>
                 </td>
               </tr>
