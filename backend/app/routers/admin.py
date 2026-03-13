@@ -852,6 +852,7 @@ def review_table(
                 Image.review_status == "pending",
                 Image.review_status == "rework_requested",
                 Image.review_status == "rework_completed",
+                Image.review_status == "edit_approved",
             )
         )
     elif review_status == "approved":

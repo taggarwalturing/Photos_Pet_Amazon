@@ -511,11 +511,16 @@ def get_image_for_annotation(
     is_owner = (image.annotated_by == user.id)
     has_rework = image.review_status == "rework_requested"
     is_own_rework = has_rework and is_owner
+    edit_approved = image.review_status == "edit_approved"
 
     can_edit = True
     is_locked = False
     if is_hard:
         # Another annotator owns this image — permanently locked
+        can_edit = False
+        is_locked = True
+    elif is_owner and image.annotation_status == "completed" and not is_own_rework and not edit_approved:
+        # Own completed image — locked until reviewer sends rework or edit is approved
         can_edit = False
         is_locked = True
 
@@ -549,6 +554,7 @@ def get_image_for_annotation(
         "annotation_status": "completed" if (is_hard and not is_owner) else (image.annotation_status or "pending"),
         "review_status": image.review_status if is_owner else None,  # Hide review details from non-owners
         "annotated_by": image.annotated_by,
+        "pending_edit_request": False,  # Edit requests are auto-approved, so never pending
     }
 
 
@@ -586,7 +592,18 @@ async def save_image_annotations(
     
     if image.is_improper:
         raise HTTPException(status_code=400, detail="Cannot save annotations for improper images")
-    
+
+    # ── Block re-edit of completed images unless rework or edit-approved ──
+    is_owner = (image.annotated_by == user.id)
+    if is_owner and image.annotation_status == "completed":
+        is_rework_allowed = image.review_status == "rework_requested"
+        is_edit_allowed = image.review_status == "edit_approved"
+        if not is_rework_allowed and not is_edit_allowed:
+            raise HTTPException(
+                status_code=403,
+                detail="This image is locked after submission. Use 'Request Edit' to unlock it.",
+            )
+
     # ── CRITICAL: Only ONE annotator may annotate each image ──
     if _is_hard_locked(image, user.id):
         # Exception: allow if this is the original annotator's rework
@@ -651,9 +668,12 @@ async def save_image_annotations(
     image.annotated_at = now
     image.annotation_status = "completed"
 
-    # Handle rework
+    # Handle review status transition
     if is_rework and image.review_status == "rework_requested":
         image.review_status = "rework_completed"
+    elif image.review_status == "edit_approved":
+        # Re-edit after self-unlock — send back for review
+        image.review_status = "pending"
     elif image.review_status is None:
         image.review_status = "pending"
 
@@ -685,6 +705,58 @@ async def save_image_annotations(
         "message": "Annotations saved",
         "image_id": image_id,
         "annotation_status": image.annotation_status,
+    }
+
+
+# ── Request Edit (self-service unlock) ────────────────────────────
+
+class EditRequestPayload(BaseModel):
+    reason: str
+
+
+@router.post("/images/{image_id}/request-edit")
+def request_edit(
+    image_id: int,
+    payload: EditRequestPayload,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_annotator),
+):
+    """
+    Annotator requests to re-edit a completed image.
+    Sets review_status to 'edit_approved' so the image becomes editable again.
+    The reason is recorded in the annotation history for audit.
+    """
+    image = db.query(Image).filter(Image.id == image_id).first()
+    if not image:
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    if image.annotated_by != user.id:
+        raise HTTPException(status_code=403, detail="You can only request edits on your own images")
+
+    if image.annotation_status != "completed":
+        raise HTTPException(status_code=400, detail="Image is not in completed state")
+
+    # Record the request in annotation history
+    now = datetime.now(timezone.utc)
+    history = list(image.annotation_history or [])
+    history.append({
+        "ts": now.isoformat(),
+        "by": user.id,
+        "username": user.username,
+        "role": "annotator",
+        "action": "edit_request",
+        "reason": payload.reason,
+    })
+    image.annotation_history = history
+
+    # Unlock the image for editing
+    image.review_status = "edit_approved"
+
+    db.commit()
+
+    return {
+        "message": "Edit request approved — you can now edit this image",
+        "image_id": image_id,
     }
 
 
