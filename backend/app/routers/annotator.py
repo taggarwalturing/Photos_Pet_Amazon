@@ -218,8 +218,12 @@ def list_images_for_annotator(
                 category_labels[cat_key] = []
 
         # Overall annotation status
+        # Use annotation_status as source of truth; only trust category
+        # annotations for "completed" if the CURRENT user annotated them.
         statuses = list(category_status.values())
-        if img.annotation_status == "completed" or all(s == "completed" for s in statuses):
+        if img.annotation_status == "completed":
+            overall_status = "completed"
+        elif all(s == "completed" for s in statuses) and img.annotated_by == user.id:
             overall_status = "completed"
         elif any(s == "completed" for s in statuses):
             overall_status = "partial"
@@ -597,11 +601,14 @@ async def save_image_annotations(
             )
 
     # ── CRITICAL: Rework belongs to the original annotator only ──
-    if image.review_status == "rework_requested" and image.annotated_by != user.id:
-                raise HTTPException(
-                    status_code=403,
+    # If annotated_by is None (e.g. after reassignment), auto-clear the stale rework status
+    if image.review_status == "rework_requested" and image.annotated_by is None:
+        image.review_status = None
+    elif image.review_status == "rework_requested" and image.annotated_by != user.id:
+        raise HTTPException(
+            status_code=403,
             detail="This rework is assigned to a different annotator.",
-                )
+        )
     
     is_rework = payload.get("is_rework", False)
     annotations_data = payload.get("annotations", {})

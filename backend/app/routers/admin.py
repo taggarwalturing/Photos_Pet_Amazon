@@ -385,11 +385,23 @@ def assign_images_to_single_annotator(
         )
         for img in unassigned:
             img.assigned_annotator = annotator.id
-            # Clear stale locks from previous annotators
-            if img.annotated_by and img.annotated_by != annotator.id and img.annotation_status != "completed":
+            # Clear ALL stale annotation state so the new annotator starts fresh
+            if img.annotated_by and img.annotated_by != annotator.id:
                 img.annotated_by = None
                 img.annotated_at = None
                 img.annotation_status = "pending"
+                img.annotations = None
+                img.review_status = None
+                img.review_note = None
+                img.reviewed_by = None
+                img.reviewed_at = None
+                img.annotation_history = []
+            # Also clear orphaned review_status (annotated_by is None but review_status is set)
+            elif img.annotated_by is None and img.review_status is not None:
+                img.review_status = None
+                img.review_note = None
+                img.annotations = None
+                img.annotation_history = []
         added = len(unassigned)
 
     elif desired < current_count:
@@ -542,10 +554,12 @@ def reassign_images(
         img.annotated_by = None
         img.annotated_at = None
         img.annotation_status = "pending"
+        img.annotations = None
         img.review_status = None
         img.review_note = None
         img.reviewed_by = None
         img.reviewed_at = None
+        img.annotation_history = []
         moved_ids.append(img.id)
 
     # Update stored counts
