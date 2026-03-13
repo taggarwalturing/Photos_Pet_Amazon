@@ -174,6 +174,7 @@ def list_images_for_annotator(
     active_soft_locks = _get_all_soft_locks(exclude_user_id=user.id)
 
     images_data = []
+    _all_statuses = []  # track overall status of every image (before filter)
     for img in all_images:
         annotations = img.annotations or {}
         arbiter_labels = img.arbiter_labels or {}
@@ -225,6 +226,9 @@ def list_images_for_annotator(
         else:
             overall_status = "pending"
         
+        # Track global stats (before any filter is applied)
+        _all_statuses.append(overall_status)
+
         # Apply filter
         if filter_status == "pending" and overall_status != "pending":
             continue
@@ -292,6 +296,11 @@ def list_images_for_annotator(
         start = (page - 1) * page_size
         paginated = images_data[start : start + page_size]
     
+    # Stable stats — always computed from ALL assigned images, regardless of filter
+    total_assigned = len(_all_statuses)
+    total_completed = sum(1 for s in _all_statuses if s == "completed")
+    total_remaining = total_assigned - total_completed
+
     return {
         "images": paginated,
         "total": total,
@@ -299,6 +308,10 @@ def list_images_for_annotator(
         "page_size": page_size,
         "categories": categories,
         "assigned_categories": categories,  # alias for frontend compat
+        # Stable stats (filter-independent)
+        "total_assigned_to_user": total_assigned,
+        "total_completed_by_user": total_completed,
+        "total_remaining": total_remaining,
     }
 
 
