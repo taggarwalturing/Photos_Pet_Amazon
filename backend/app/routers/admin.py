@@ -828,7 +828,7 @@ def review_table(
     annotator_id: Optional[int] = Query(None),
     review_status: Optional[str] = Query(None),  # pending, approved
     page: int = Query(1, ge=1),
-    page_size: int = Query(20, ge=1, le=100),
+    page_size: int = Query(20, ge=1, le=10000),
     db: Session = Depends(get_db),
     admin: User = Depends(require_admin),
 ):
