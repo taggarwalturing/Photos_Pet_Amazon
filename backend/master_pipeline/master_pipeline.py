@@ -1353,7 +1353,20 @@ class MasterPipeline:
         # Step 4: Upload deliverables to GCS (when source is GCS)
         if source == "gcs" and folder_id:
             self.step4_upload_to_gcs(folder_id)
-        
+
+            # Clean up large local files after successful upload to GCS.
+            # The downloaded originals and deliverables are now safely in the
+            # bucket, so keeping them locally only wastes disk space.
+            for dir_key in ('downloaded', 'final_output'):
+                d = self.folders.get(dir_key)
+                if d and d.exists():
+                    try:
+                        shutil.rmtree(str(d), ignore_errors=True)
+                        d.mkdir(parents=True, exist_ok=True)  # recreate empty dir
+                        print(f"   🧹 Cleaned {dir_key}/ after GCS upload")
+                    except Exception as e:
+                        print(f"   ⚠️  Could not clean {dir_key}/: {e}")
+
         # Final summary
         end_time = datetime.now()
         duration = (end_time - start_time).total_seconds()
@@ -1424,6 +1437,17 @@ def run_for_folders(
             import traceback
             traceback.print_exc()
             results[folder_id] = f"failed: {str(e)}"
+
+        # ── Per-folder cleanup: remove local workspace after processing ──
+        # Deliverables are already uploaded to GCS (step 4), so local files
+        # are no longer needed. This prevents disk from filling up when
+        # processing many folders sequentially.
+        try:
+            if folder_workspace.exists():
+                shutil.rmtree(str(folder_workspace), ignore_errors=True)
+                print(f"   🧹 Cleaned up local workspace for {folder_id}")
+        except Exception as cleanup_err:
+            print(f"   ⚠️  Cleanup warning for {folder_id}: {cleanup_err}")
     
     all_end = datetime.now()
     total_duration = (all_end - all_start).total_seconds()

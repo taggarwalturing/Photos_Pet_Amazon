@@ -1193,6 +1193,17 @@ def run_pipeline_background(
             except Exception:
                 pass
 
+            # ── Cleanup on failure too — free disk space ──
+            try:
+                import shutil as _shutil
+                folders_dir = _get_pipeline_workspace() / "folders"
+                if folders_dir.exists():
+                    for fd in sorted(d for d in folders_dir.iterdir() if d.is_dir()):
+                        _shutil.rmtree(str(fd), ignore_errors=True)
+                    print("[PIPELINE] 🧹 Cleaned up local pipeline workspace after failure")
+            except Exception as cleanup_err:
+                print(f"[PIPELINE] Cleanup warning: {cleanup_err}")
+
     except Exception as e:
         print(f"[PIPELINE] Exception: {str(e)}")
         import traceback
