@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
 import BoundingBoxCanvas from '../components/BoundingBoxCanvas';
@@ -238,6 +238,8 @@ function RequestEditModal({ isOpen, onClose, onConfirm, loading }) {
 export default function ImageAnnotationPage() {
   const { imageId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const filterStatus = searchParams.get('filter') || '';  // 'pending', 'completed', or '' (all)
   const { user, logout } = useAuth();
 
   const [data, setData] = useState(null);
@@ -408,7 +410,7 @@ export default function ImageAnnotationPage() {
         }
       }, 10000);
 
-      const res = await api.get(`/annotator/images/${id}`);
+      const res = await api.get(`/annotator/images/${id}${filterStatus ? `?filter_status=${filterStatus}` : ''}`);
       setData(res.data);
       
       const initial = {};
@@ -455,7 +457,7 @@ export default function ImageAnnotationPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [filterStatus]);
 
   useEffect(() => {
     loadImage(imageId);
@@ -530,7 +532,7 @@ export default function ImageAnnotationPage() {
     const success = await handleSave();
     if (success) {
       if (data?.next_image_id) {
-        navigate(`/annotator/image/${data.next_image_id}`);
+        navigate(`/annotator/image/${data.next_image_id}${filterStatus ? `?filter=${filterStatus}` : ''}`);
       } else {
         handleBack();
       }
@@ -539,7 +541,7 @@ export default function ImageAnnotationPage() {
 
   const handleNavigate = (id) => {
     if (id) {
-      navigate(`/annotator/image/${id}`);
+      navigate(`/annotator/image/${id}${filterStatus ? `?filter=${filterStatus}` : ''}`);
     }
   };
 
@@ -548,7 +550,7 @@ export default function ImageAnnotationPage() {
     if (window.history.length > 1) {
       navigate(-1);
     } else {
-    navigate('/annotator');
+      navigate(`/annotator${filterStatus ? `?filter=${filterStatus}` : ''}`);
     }
   };
 

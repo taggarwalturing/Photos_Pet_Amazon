@@ -417,6 +417,7 @@ def heartbeat_image_lock(
 @router.get("/images/{image_id}")
 def get_image_for_annotation(
     image_id: int,
+    filter_status: Optional[str] = Query(None),  # all, pending, completed — for prev/next navigation
     db: Session = Depends(get_db),
     user: User = Depends(require_annotator),
 ):
@@ -487,24 +488,47 @@ def get_image_for_annotation(
             "ai_suggestion": ai_suggestion,
         })
 
-    # Navigation — only within images assigned to this user
+    # Navigation — only within images assigned to this user, respecting filter
     has_any_assignments = db.query(Image).filter(Image.assigned_annotator.isnot(None)).count() > 0
     if has_any_assignments:
         nav_query = (
             db.query(Image.id)
             .filter(Image.is_duplicate == False, Image.assigned_annotator == user.id)  # noqa: E712
-            .order_by(Image.id)
         )
     else:
         nav_query = (
             db.query(Image.id)
             .filter(Image.is_duplicate == False)  # noqa: E712
-            .order_by(Image.id)
         )
+
+    # Apply filter to navigation so prev/next respects the annotator's filter
+    if filter_status == "pending":
+        nav_query = nav_query.filter(Image.annotation_status != "completed")
+    elif filter_status == "completed":
+        nav_query = nav_query.filter(Image.annotation_status == "completed")
+    # else: "all" or None → no extra filter
+
+    nav_query = nav_query.order_by(Image.id)
     all_image_ids = [row.id for row in nav_query.all()]
-    current_idx = all_image_ids.index(image_id) if image_id in all_image_ids else 0
-    prev_id = all_image_ids[current_idx - 1] if current_idx > 0 else None
-    next_id = all_image_ids[current_idx + 1] if current_idx < len(all_image_ids) - 1 else None
+
+    if image_id in all_image_ids:
+        # Current image is in the filtered list — normal prev/next
+        current_idx = all_image_ids.index(image_id)
+        prev_id = all_image_ids[current_idx - 1] if current_idx > 0 else None
+        next_id = all_image_ids[current_idx + 1] if current_idx < len(all_image_ids) - 1 else None
+    elif all_image_ids:
+        # Current image is NOT in the filtered list (e.g., just saved while filter=pending).
+        # Find the nearest neighbors by ID so prev/next still work.
+        import bisect
+        pos = bisect.bisect_left(all_image_ids, image_id)
+        current_idx = min(pos, len(all_image_ids) - 1)
+        prev_id = all_image_ids[pos - 1] if pos > 0 else None
+        next_id = all_image_ids[pos] if pos < len(all_image_ids) else None
+    else:
+        # No images match the filter at all
+        current_idx = 0
+        prev_id = None
+        next_id = None
 
     # Lock / rework status
     is_hard = _is_hard_locked(image, user.id)

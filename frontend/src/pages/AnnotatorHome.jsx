@@ -160,10 +160,10 @@ export default function AnnotatorHome() {
         alert(msg);
         return;
       }
-      navigate(`/annotator/image/${imgId}`);
+      navigate(`/annotator/image/${imgId}${filter !== 'all' ? `?filter=${filter}` : ''}`);
     } catch (err) {
       // On error, navigate anyway — the detail page will handle it
-      navigate(`/annotator/image/${imgId}`);
+      navigate(`/annotator/image/${imgId}${filter !== 'all' ? `?filter=${filter}` : ''}`);
     } finally {
       setCheckingLock(null);
     }
