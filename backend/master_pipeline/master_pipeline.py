@@ -1354,18 +1354,17 @@ class MasterPipeline:
         if source == "gcs" and folder_id:
             self.step4_upload_to_gcs(folder_id)
 
-            # Clean up large local files after successful upload to GCS.
-            # The downloaded originals and deliverables are now safely in the
-            # bucket, so keeping them locally only wastes disk space.
-            for dir_key in ('downloaded', 'final_output'):
-                d = self.folders.get(dir_key)
-                if d and d.exists():
-                    try:
-                        shutil.rmtree(str(d), ignore_errors=True)
-                        d.mkdir(parents=True, exist_ok=True)  # recreate empty dir
-                        print(f"   🧹 Cleaned {dir_key}/ after GCS upload")
-                    except Exception as e:
-                        print(f"   ⚠️  Could not clean {dir_key}/: {e}")
+            # Clean up downloaded originals after successful GCS upload.
+            # Keep deliverable/ and metadata — they are needed for DB import
+            # (which runs after the subprocess exits, or per-folder in run_for_folders).
+            d = self.folders.get('downloaded')
+            if d and d.exists():
+                try:
+                    shutil.rmtree(str(d), ignore_errors=True)
+                    d.mkdir(parents=True, exist_ok=True)  # recreate empty dir
+                    print(f"   🧹 Cleaned downloaded/ after GCS upload")
+                except Exception as e:
+                    print(f"   ⚠️  Could not clean downloaded/: {e}")
 
         # Final summary
         end_time = datetime.now()
@@ -1438,10 +1437,39 @@ def run_for_folders(
             traceback.print_exc()
             results[folder_id] = f"failed: {str(e)}"
 
+        # ── Per-folder DB import: save images to database BEFORE cleanup ──
+        # The deliverable/ folder and metadata files are needed for import.
+        # After import, they can be safely deleted.
+        try:
+            backend_dir = str(SCRIPT_DIR.parent)
+            if backend_dir not in sys.path:
+                sys.path.insert(0, backend_dir)
+            from import_pipeline_images import _import_from_workspace
+            from app.database import SessionLocal
+            from sqlalchemy import text as _text
+
+            _db = SessionLocal()
+            try:
+                _existing = _db.execute(_text("SELECT filename FROM images")).fetchall()
+                _existing_filenames = {row[0] for row in _existing}
+                counts = _import_from_workspace(
+                    _db, folder_workspace, folder_id=folder_id,
+                    existing_filenames=_existing_filenames,
+                )
+                _db.commit()
+                print(f"   📥 DB import: {counts['new']} new, {counts['updated']} updated")
+            except Exception as imp_err:
+                _db.rollback()
+                print(f"   ⚠️  Per-folder DB import error: {imp_err}")
+                import traceback; traceback.print_exc()
+            finally:
+                _db.close()
+        except Exception as imp_err:
+            print(f"   ⚠️  Per-folder DB import unavailable: {imp_err}")
+
         # ── Per-folder cleanup: remove local workspace after processing ──
-        # Deliverables are already uploaded to GCS (step 4), so local files
-        # are no longer needed. This prevents disk from filling up when
-        # processing many folders sequentially.
+        # Deliverables are already uploaded to GCS (step 4) and imported to
+        # the database, so local files are no longer needed.
         try:
             if folder_workspace.exists():
                 shutil.rmtree(str(folder_workspace), ignore_errors=True)
