@@ -1458,6 +1458,96 @@ def run_for_folders(
                 )
                 _db.commit()
                 print(f"   📥 DB import: {counts['new']} new, {counts['updated']} updated")
+
+                # ── Update drive_folders stats immediately ──
+                # Read from local metadata files (still available before cleanup)
+                # and from DB counts, then persist to drive_folders table.
+                try:
+                    from app.models.drive_folder import DriveFolder
+                    folder_record = _db.query(DriveFolder).filter(
+                        DriveFolder.folder_id == folder_id
+                    ).first()
+                    if folder_record:
+                        # total_in_drive from metadata
+                        for meta_name in ("gcs_metadata.json", "drive_metadata.json"):
+                            meta_path = folder_workspace / meta_name
+                            if meta_path.exists():
+                                try:
+                                    with open(meta_path) as _mf:
+                                        _dm = json.load(_mf)
+                                    folder_record.total_in_drive = (
+                                        _dm.get("total_in_gcs") or _dm.get("total_in_drive", 0)
+                                    )
+                                except Exception:
+                                    pass
+                                break
+
+                        # Counts from DB
+                        img_count = _db.execute(_text(
+                            "SELECT COUNT(*) FROM images WHERE source_folder_id = :fid"
+                        ), {"fid": folder_id}).scalar() or 0
+                        folder_record.downloaded_count = img_count
+
+                        blurred = _db.execute(_text(
+                            "SELECT COUNT(*) FROM images WHERE source_folder_id = :fid AND compliance_status = 'blurred'"
+                        ), {"fid": folder_id}).scalar() or 0
+                        clean = _db.execute(_text(
+                            "SELECT COUNT(*) FROM images WHERE source_folder_id = :fid AND compliance_status = 'clean'"
+                        ), {"fid": folder_id}).scalar() or 0
+                        folder_record.blurred_count = blurred
+                        folder_record.clean_count = clean
+
+                        # Dedup stats from local file or DB
+                        dedup_path = folder_workspace / "deduplication_stats.json"
+                        if dedup_path.exists():
+                            try:
+                                with open(dedup_path) as _df:
+                                    _dd = json.load(_df)
+                                folder_record.unique_count = _dd.get("unique_images", 0)
+                                folder_record.duplicate_count = _dd.get("duplicates_found", 0)
+                            except Exception:
+                                pass
+                        if not folder_record.unique_count and img_count > 0:
+                            dup_in_db = _db.execute(_text(
+                                "SELECT COUNT(*) FROM images WHERE source_folder_id = :fid AND is_duplicate = TRUE"
+                            ), {"fid": folder_id}).scalar() or 0
+                            folder_record.unique_count = img_count - dup_in_db
+                            folder_record.duplicate_count = dup_in_db
+
+                        # Obfuscation / failed stats
+                        obf_path = folder_workspace / "obfuscation_results.json"
+                        if obf_path.exists():
+                            try:
+                                with open(obf_path) as _of:
+                                    _od = json.load(_of)
+                                _stats = _od.get("statistics", {})
+                                folder_record.failed_count = (
+                                    _stats.get("verification_failed", 0) + _stats.get("failed", 0)
+                                )
+                            except Exception:
+                                pass
+
+                        # Status
+                        folder_status = results.get(folder_id, "completed")
+                        if "failed" in str(folder_status):
+                            folder_record.status = "failed"
+                            folder_record.error_log = str(folder_status)
+                        else:
+                            folder_record.status = "completed"
+                            if img_count == 0 and (folder_record.total_in_drive or 0) > 0:
+                                folder_record.error_log = (
+                                    "All images already exist in DB from another folder"
+                                )
+                            else:
+                                folder_record.error_log = None
+
+                        folder_record.last_run_at = datetime.now()
+                        _db.commit()
+                        print(f"   📊 Stats updated: {img_count} in DB, "
+                              f"{blurred} blurred, {clean} clean")
+                except Exception as stats_err:
+                    print(f"   ⚠️  Per-folder stats update warning: {stats_err}")
+
             except Exception as imp_err:
                 _db.rollback()
                 print(f"   ⚠️  Per-folder DB import error: {imp_err}")
