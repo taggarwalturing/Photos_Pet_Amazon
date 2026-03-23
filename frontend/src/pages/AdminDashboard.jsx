@@ -260,6 +260,15 @@ console.error(err);
     return folder.assigned_annotator_username;
   };
 
+  // Get total image count from selected folders for a user
+  const getSelectedImageCount = (userId) => {
+    const selected = getSelectedFolders(userId);
+    return selected.reduce((sum, fid) => {
+      const f = folders.find(x => x.folder_id === fid);
+      return sum + (f ? f.image_count : 0);
+    }, 0);
+  };
+
   const handleReassign = async () => {
     if (!reassignModal || !reassignTarget) return;
     setReassigning(true);
@@ -404,7 +413,7 @@ console.error(err);
       
 
       {/* Users table */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm">
+      <div className="bg-white rounded-xl border border-gray-200 overflow-visible shadow-sm">
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gradient-to-r from-gray-50 to-gray-50/80 text-gray-600 text-left">
@@ -438,18 +447,18 @@ console.error(err);
                     {u.role}
                   </span>
                 </td>
-                <td className="px-5 py-3">
+                <td className="px-5 py-3 overflow-visible">
                   {u.role === 'annotator' ? (
-                    <div className="flex items-center gap-1.5 relative">
+                    <div className="flex items-center gap-1.5">
                       {/* Folder multi-select dropdown */}
                       <div className="relative folder-dropdown-container">
                         <button
                           onClick={() => setFolderDropdownOpen(folderDropdownOpen === u.id ? null : u.id)}
-                          className="min-w-[180px] max-w-[260px] px-2.5 py-1.5 text-xs border border-gray-300 rounded-lg text-left bg-white hover:border-indigo-400 focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer flex items-center justify-between gap-1"
+                          className="min-w-[200px] max-w-[300px] px-2.5 py-1.5 text-xs border border-gray-300 rounded-lg text-left bg-white hover:border-indigo-400 focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer flex items-center justify-between gap-1"
                         >
                           <span className="truncate">
                             {getSelectedFolders(u.id).length > 0
-                              ? `${getSelectedFolders(u.id).length} folder${getSelectedFolders(u.id).length > 1 ? 's' : ''} selected`
+                              ? `${getSelectedFolders(u.id).length} folder${getSelectedFolders(u.id).length > 1 ? 's' : ''} · ${getSelectedImageCount(u.id)} imgs`
                               : 'Select folders…'}
                           </span>
                           <svg className={`w-3.5 h-3.5 text-gray-400 shrink-0 transition-transform ${folderDropdownOpen === u.id ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -458,9 +467,12 @@ console.error(err);
                         </button>
 
                         {folderDropdownOpen === u.id && (
-                          <div className="absolute z-50 mt-1 w-[340px] bg-white border border-gray-200 rounded-xl shadow-xl max-h-64 overflow-y-auto left-0">
-                            <div className="px-3 py-2 border-b border-gray-100 bg-gray-50/80 rounded-t-xl">
+                          <div className="absolute z-[100] mt-1 w-[420px] bg-white border border-gray-200 rounded-xl shadow-2xl max-h-80 overflow-y-auto left-0">
+                            <div className="sticky top-0 px-3 py-2 border-b border-gray-100 bg-gray-50/95 backdrop-blur rounded-t-xl flex items-center justify-between">
                               <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Select Folders for {u.username}</span>
+                              <span className="text-[10px] font-semibold text-indigo-600">
+                                {getSelectedFolders(u.id).length} selected · {getSelectedImageCount(u.id)} images
+                              </span>
                             </div>
                             {folders.length === 0 ? (
                               <div className="px-3 py-4 text-xs text-gray-400 text-center">No completed folders available</div>
@@ -472,7 +484,7 @@ console.error(err);
                                 return (
                                   <label
                                     key={f.folder_id}
-                                    className={`flex items-center gap-2.5 px-3 py-2 text-xs border-b border-gray-50 last:border-0 transition-colors ${
+                                    className={`flex items-center gap-2.5 px-3 py-2.5 text-xs border-b border-gray-50 last:border-0 transition-colors ${
                                       isDisabled
                                         ? 'bg-gray-50 text-gray-400 cursor-not-allowed'
                                         : isSelected
@@ -485,22 +497,23 @@ console.error(err);
                                       checked={isSelected}
                                       disabled={isDisabled}
                                       onChange={() => !isDisabled && toggleFolderForUser(u.id, f.folder_id)}
-                                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer disabled:cursor-not-allowed"
+                                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer disabled:cursor-not-allowed shrink-0"
                                     />
                                     <div className="flex-1 min-w-0">
-                                      <div className={`font-medium truncate ${isDisabled ? 'text-gray-400' : 'text-gray-800'}`}>
-                                        {f.folder_name || f.folder_id.slice(0, 20) + '…'}
+                                      <div className={`font-medium ${isDisabled ? 'text-gray-400' : 'text-gray-800'}`} title={f.folder_id}>
+                                        {f.folder_name || f.folder_id}
                                       </div>
                                       <div className="flex items-center gap-2 mt-0.5">
-                                        <span className="text-[10px] text-gray-400">{f.image_count} imgs</span>
-                                        {f.blurred_count > 0 && <span className="text-[10px] text-blue-500">{f.blurred_count} blur</span>}
+                                        <span className="text-[10px] text-gray-500 font-medium">{f.image_count} images</span>
+                                        {f.blurred_count > 0 && <span className="text-[10px] text-blue-500">{f.blurred_count} blurred</span>}
+                                        {f.clean_count > 0 && <span className="text-[10px] text-emerald-500">{f.clean_count} clean</span>}
                                         {isDisabled && (
-                                          <span className="text-[10px] text-amber-600 font-medium">→ {assignedTo}</span>
+                                          <span className="text-[10px] text-amber-600 font-semibold">→ {assignedTo}</span>
                                         )}
                                       </div>
                                     </div>
                                     {isSelected && !isDisabled && (
-                                      <svg className="w-3.5 h-3.5 text-indigo-500 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                      <svg className="w-4 h-4 text-indigo-500 shrink-0" fill="currentColor" viewBox="0 0 20 20">
                                         <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
                                       </svg>
                                     )}
