@@ -789,6 +789,8 @@ function ImagesTab() {
   const [selectedFolderIds, setSelectedFolderIds] = useState([]);
   const [folderDropdownOpen, setFolderDropdownOpen] = useState(false);
   const [folderDropdownPos, setFolderDropdownPos] = useState({ top: 0, left: 0 });
+  const [selectedImageIds, setSelectedImageIds] = useState([]); // ordered list for duplicate selection
+  const [markingDup, setMarkingDup] = useState(false);
   const imagesPerPage = 20;
 
   // Fetch folders for dropdown
@@ -840,6 +842,39 @@ function ImagesTab() {
     setPage(1);
   };
 
+  const toggleImageSelect = (imgId, e) => {
+    e.stopPropagation(); // prevent lightbox open
+    setSelectedImageIds(prev =>
+      prev.includes(imgId) ? prev.filter(id => id !== imgId) : [...prev, imgId]
+    );
+  };
+
+  const handleMarkAsDuplicate = async () => {
+    if (selectedImageIds.length < 2) return alert('Select at least 2 images (first = parent, rest = duplicates)');
+    setMarkingDup(true);
+    try {
+      await api.post('/admin/images/mark-duplicates', { image_ids: selectedImageIds });
+      setSelectedImageIds([]);
+      fetchImages();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to mark duplicates');
+    }
+    setMarkingDup(false);
+  };
+
+  const handleUnmarkDuplicate = async () => {
+    if (selectedImageIds.length === 0) return;
+    setMarkingDup(true);
+    try {
+      await api.post('/admin/images/unmark-duplicates', { image_ids: selectedImageIds });
+      setSelectedImageIds([]);
+      fetchImages();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to unmark duplicates');
+    }
+    setMarkingDup(false);
+  };
+
   const images = data?.images || [];
   const summary = data?.summary || {};
   const categories = data?.categories || [];
@@ -855,6 +890,7 @@ function ImagesTab() {
     { key: 'ai_generated', label: 'AI Generated', value: summary.ai_generated, icon: '🤖', color: 'amber' },
     { key: 'human_visible', label: 'Human Visible', value: summary.human_visible, icon: '👤', color: 'blue' },
     { key: 'improper', label: 'Improper', value: summary.improper, icon: '⚠️', color: 'orange' },
+    { key: 'duplicate', label: 'Duplicates', value: summary.duplicates, icon: '📋', color: 'slate' },
     { key: 'delivered', label: 'Delivered', value: summary.delivered, icon: '📦', color: 'teal' },
     { key: 'not_delivered', label: 'Not Delivered', value: (summary.total || 0) - (summary.delivered || 0), icon: '⏳', color: 'gray' },
   ];
@@ -868,6 +904,7 @@ function ImagesTab() {
     blue: { active: 'bg-blue-100 text-blue-700 border-blue-300 ring-blue-400', inactive: 'bg-white text-gray-600 border-gray-200 hover:border-gray-300' },
     orange: { active: 'bg-orange-100 text-orange-700 border-orange-300 ring-orange-400', inactive: 'bg-white text-gray-600 border-gray-200 hover:border-gray-300' },
     teal: { active: 'bg-teal-100 text-teal-700 border-teal-300 ring-teal-400', inactive: 'bg-white text-gray-600 border-gray-200 hover:border-gray-300' },
+    slate: { active: 'bg-slate-100 text-slate-700 border-slate-300 ring-slate-400', inactive: 'bg-white text-gray-600 border-gray-200 hover:border-gray-300' },
     gray: { active: 'bg-gray-100 text-gray-700 border-gray-300 ring-gray-400', inactive: 'bg-white text-gray-600 border-gray-200 hover:border-gray-300' },
   };
 
@@ -885,6 +922,9 @@ function ImagesTab() {
     }
     if (img.is_improper) {
       badges.push({ label: 'Improper', className: 'bg-orange-500' });
+    }
+    if (img.is_duplicate) {
+      badges.push({ label: 'Duplicate', className: 'bg-slate-500' });
     }
     if (img.human_faces_detected > 0) {
       badges.push({ label: `${img.human_faces_detected} face${img.human_faces_detected > 1 ? 's' : ''}`, className: 'bg-sky-500' });
@@ -1019,6 +1059,38 @@ function ImagesTab() {
         })}
       </div>
 
+      {/* Selection Action Bar */}
+      {selectedImageIds.length > 0 && (
+        <div className="flex items-center gap-3 px-4 py-2.5 bg-indigo-50 border border-indigo-200 rounded-xl">
+          <span className="text-sm font-medium text-indigo-700">
+            {selectedImageIds.length} image{selectedImageIds.length > 1 ? 's' : ''} selected
+            {selectedImageIds.length >= 1 && (
+              <span className="ml-1 text-xs text-indigo-500">(1st = parent)</span>
+            )}
+          </span>
+          <button
+            onClick={handleMarkAsDuplicate}
+            disabled={markingDup || selectedImageIds.length < 2}
+            className="px-3 py-1.5 text-xs font-semibold text-white bg-red-500 hover:bg-red-600 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition"
+          >
+            {markingDup ? 'Marking…' : 'Mark as Duplicate'}
+          </button>
+          <button
+            onClick={handleUnmarkDuplicate}
+            disabled={markingDup}
+            className="px-3 py-1.5 text-xs font-semibold text-white bg-emerald-500 hover:bg-emerald-600 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition"
+          >
+            Unmark Duplicate
+          </button>
+          <button
+            onClick={() => setSelectedImageIds([])}
+            className="px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg cursor-pointer transition"
+          >
+            Clear Selection
+          </button>
+        </div>
+      )}
+
       {/* Image Grid */}
       {loading ? (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -1037,11 +1109,15 @@ function ImagesTab() {
             const badges = getStatusBadges(img);
             const catLabels = img.category_labels || {};
             const catSources = img.category_label_source || {};
+            const isSelected = selectedImageIds.includes(img.id);
+            const selectionIdx = selectedImageIds.indexOf(img.id);
             return (
               <div
                 key={img.id}
                 onClick={() => setLightboxImg(img)}
-                className="group relative bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm hover:shadow-lg hover:ring-2 hover:ring-indigo-400 transition-all cursor-pointer"
+                className={`group relative bg-white rounded-xl border overflow-hidden shadow-sm hover:shadow-lg transition-all cursor-pointer ${
+                  isSelected ? 'border-indigo-500 ring-2 ring-indigo-400' : 'border-gray-200 hover:ring-2 hover:ring-indigo-400'
+                }`}
               >
                 <div className="relative aspect-[4/3]">
                   <img
@@ -1050,6 +1126,22 @@ function ImagesTab() {
                     className="w-full h-full object-cover"
                     loading="lazy"
                   />
+                  {/* Selection checkbox */}
+                  <div className="absolute top-2 right-2 z-10" onClick={(e) => toggleImageSelect(img.id, e)}>
+                    <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all cursor-pointer ${
+                      isSelected ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-white/80 border-gray-300 hover:border-indigo-400'
+                    }`}>
+                      {isSelected && (
+                        <span className="text-[10px] font-bold">{selectionIdx + 1}</span>
+                      )}
+                    </div>
+                  </div>
+                  {/* Parent badge */}
+                  {isSelected && selectionIdx === 0 && (
+                    <div className="absolute top-2 right-10 z-10">
+                      <span className="px-1.5 py-0.5 text-[9px] font-bold text-white bg-green-500 rounded-md shadow-sm">PARENT</span>
+                    </div>
+                  )}
                   {/* Status badges overlay */}
                   {badges.length > 0 && (
                     <div className="absolute top-2 left-2 flex flex-wrap gap-1">
