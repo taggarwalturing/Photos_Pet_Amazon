@@ -77,6 +77,13 @@ def list_users(
             .count()
         )
 
+        # Count images marked as improper by this user
+        improper_marked_count = (
+            db.query(Image)
+            .filter(Image.is_improper == True, Image.marked_improper_by == u.id)  # noqa: E712
+            .count()
+        )
+
         # Derive folder IDs assigned to this user from images table
         assigned_folders = (
             db.query(Image.source_folder_id)
@@ -102,6 +109,7 @@ def list_users(
             today_image_count=today_image_count,
             actual_assigned=actual_assigned,
             assigned_folder_ids=assigned_folder_ids,
+            improper_marked_count=improper_marked_count,
         ))
     return result
 

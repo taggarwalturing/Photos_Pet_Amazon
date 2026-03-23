@@ -141,6 +141,7 @@ function UsersTab() {
   const [folders, setFolders] = useState([]); // all completed folders
   const [editingFolders, setEditingFolders] = useState({}); // { userId: [folder_id, ...] }
   const [folderDropdownOpen, setFolderDropdownOpen] = useState(null); // userId of open dropdown
+  const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0 }); // fixed position for dropdown
   const dropdownRef = useRef(null);
 
   // Close dropdown when clicking outside
@@ -413,8 +414,8 @@ console.error(err);
       
 
       {/* Users table */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-visible shadow-sm">
-        <table className="w-full text-sm">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-x-auto">
+        <table className="w-full text-sm min-w-[1100px]">
           <thead>
             <tr className="bg-gradient-to-r from-gray-50 to-gray-50/80 text-gray-600 text-left">
               <th className="px-5 py-3.5 font-semibold">Turing ID</th>
@@ -447,13 +448,22 @@ console.error(err);
                     {u.role}
                   </span>
                 </td>
-                <td className="px-5 py-3 overflow-visible">
+                <td className="px-5 py-3">
                   {u.role === 'annotator' ? (
                     <div className="flex items-center gap-1.5">
                       {/* Folder multi-select dropdown */}
                       <div className="relative folder-dropdown-container">
                         <button
-                          onClick={() => setFolderDropdownOpen(folderDropdownOpen === u.id ? null : u.id)}
+                          ref={el => { if (el) el._userId = u.id; }}
+                          onClick={(e) => {
+                            if (folderDropdownOpen === u.id) {
+                              setFolderDropdownOpen(null);
+                            } else {
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              setDropdownPos({ top: rect.bottom + 4, left: rect.left });
+                              setFolderDropdownOpen(u.id);
+                            }
+                          }}
                           className="min-w-[200px] max-w-[300px] px-2.5 py-1.5 text-xs border border-gray-300 rounded-lg text-left bg-white hover:border-indigo-400 focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer flex items-center justify-between gap-1"
                         >
                           <span className="truncate">
@@ -467,7 +477,7 @@ console.error(err);
                         </button>
 
                         {folderDropdownOpen === u.id && (
-                          <div className="absolute z-[100] mt-1 w-[420px] bg-white border border-gray-200 rounded-xl shadow-2xl max-h-80 overflow-y-auto left-0">
+                          <div className="fixed z-[9999] w-[420px] bg-white border border-gray-200 rounded-xl shadow-2xl max-h-80 overflow-y-auto" style={{ top: dropdownPos.top, left: dropdownPos.left }}>
                             <div className="sticky top-0 px-3 py-2 border-b border-gray-100 bg-gray-50/95 backdrop-blur rounded-t-xl flex items-center justify-between">
                               <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Select Folders for {u.username}</span>
                               <span className="text-[10px] font-semibold text-indigo-600">

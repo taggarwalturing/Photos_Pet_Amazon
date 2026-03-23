@@ -43,6 +43,7 @@ class UserResponse(BaseModel):
     today_image_count: int = 0        # distinct images annotated today
     actual_assigned: int = 0          # how many images are actually assigned in DB
     assigned_folder_ids: List[str] = []  # folder_ids assigned to this annotator
+    improper_marked_count: int = 0    # images marked as improper by this annotator
 
     class Config:
         from_attributes = True
