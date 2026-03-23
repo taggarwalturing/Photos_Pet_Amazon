@@ -837,8 +837,15 @@ def list_images(
     _admin: User = Depends(require_admin),
     status_filter: Optional[str] = Query(None, alias="filter"),
     search: Optional[str] = Query(None),
+    folder_ids: Optional[str] = Query(None),  # comma-separated folder IDs
 ):
     query = db.query(Image).order_by(Image.id)
+
+    # Apply folder filter
+    if folder_ids:
+        fid_list = [f.strip() for f in folder_ids.split(",") if f.strip()]
+        if fid_list:
+            query = query.filter(Image.source_folder_id.in_(fid_list))
 
     # Apply search
     if search:

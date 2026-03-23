@@ -785,7 +785,22 @@ function ImagesTab() {
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [lightboxImg, setLightboxImg] = useState(null); // image object for lightbox
+  const [folders, setFolders] = useState([]);
+  const [selectedFolderIds, setSelectedFolderIds] = useState([]);
+  const [folderDropdownOpen, setFolderDropdownOpen] = useState(false);
+  const [folderDropdownPos, setFolderDropdownPos] = useState({ top: 0, left: 0 });
   const imagesPerPage = 20;
+
+  // Fetch folders for dropdown
+  useEffect(() => {
+    api.get('/admin/folders').then(res => setFolders(res.data || [])).catch(() => {});
+  }, []);
+
+  const toggleFolder = (folderId) => {
+    setSelectedFolderIds(prev =>
+      prev.includes(folderId) ? prev.filter(id => id !== folderId) : [...prev, folderId]
+    );
+  };
 
   const fetchImages = useCallback(async () => {
     setLoading(true);
@@ -793,15 +808,26 @@ function ImagesTab() {
       const params = {};
       if (filter !== 'all') params.filter = filter;
       if (search) params.search = search;
+      if (selectedFolderIds.length > 0) params.folder_ids = selectedFolderIds.join(',');
       const res = await api.get('/admin/images', { params });
       setData(res.data);
     } catch (err) {
       console.error('Failed to load images:', err);
     }
       setLoading(false);
-  }, [filter, search]);
+  }, [filter, search, selectedFolderIds]);
 
   useEffect(() => { fetchImages(); }, [fetchImages]);
+
+  // Close folder dropdown on outside click
+  useEffect(() => {
+    if (!folderDropdownOpen) return;
+    const handleClick = (e) => {
+      if (!e.target.closest('.images-folder-dropdown')) setFolderDropdownOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [folderDropdownOpen]);
 
   const handleFilterChange = (f) => {
     setFilter(f);
@@ -899,8 +925,79 @@ function ImagesTab() {
         </form>
       </div>
 
-      {/* Filter Tags */}
-      <div className="flex flex-wrap gap-2">
+      {/* Folder Filter Dropdown + Filter Tags */}
+      <div className="flex items-center gap-3 flex-wrap">
+        {/* Folder dropdown */}
+        <div className="relative images-folder-dropdown">
+          <button
+            onClick={(e) => {
+              if (folderDropdownOpen) {
+                setFolderDropdownOpen(false);
+              } else {
+                const rect = e.currentTarget.getBoundingClientRect();
+                setFolderDropdownPos({ top: rect.bottom + 4, left: rect.left });
+                setFolderDropdownOpen(true);
+              }
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-full border transition cursor-pointer bg-white text-gray-600 border-gray-200 hover:border-indigo-400"
+          >
+            <span>📁</span>
+            <span>{selectedFolderIds.length > 0 ? `${selectedFolderIds.length} folder${selectedFolderIds.length > 1 ? 's' : ''}` : 'All Folders'}</span>
+            <svg className={`w-3 h-3 text-gray-400 transition-transform ${folderDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          {folderDropdownOpen && (
+            <div
+              className="fixed z-[9999] w-[400px] bg-white border border-gray-200 rounded-xl shadow-2xl max-h-80 overflow-y-auto images-folder-dropdown"
+              style={{ top: folderDropdownPos.top, left: folderDropdownPos.left }}
+            >
+              <div className="sticky top-0 px-3 py-2 border-b border-gray-100 bg-gray-50/95 backdrop-blur rounded-t-xl flex items-center justify-between">
+                <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Filter by Folder</span>
+                {selectedFolderIds.length > 0 && (
+                  <button
+                    onClick={() => { setSelectedFolderIds([]); setPage(1); }}
+                    className="text-[10px] font-semibold text-red-500 hover:text-red-700 cursor-pointer"
+                  >
+                    Clear All
+                  </button>
+                )}
+              </div>
+              {folders.length === 0 ? (
+                <div className="px-3 py-4 text-xs text-gray-400 text-center">No folders available</div>
+              ) : (
+                folders.map(f => {
+                  const isSelected = selectedFolderIds.includes(f.folder_id);
+                  return (
+                    <label
+                      key={f.folder_id}
+                      className={`flex items-center gap-2.5 px-3 py-2 text-xs border-b border-gray-50 last:border-0 transition-colors cursor-pointer ${
+                        isSelected ? 'bg-indigo-50/50 hover:bg-indigo-50' : 'hover:bg-gray-50'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => { toggleFolder(f.folder_id); setPage(1); }}
+                        className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer shrink-0"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-gray-800 truncate" title={f.folder_id}>
+                          {f.folder_name || f.folder_id}
+                        </div>
+                      </div>
+                      <span className="text-[10px] text-gray-400 font-medium shrink-0">{f.image_count} imgs</span>
+                    </label>
+                  );
+                })
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="h-5 border-l border-gray-200" />
+
         {filterTags.map((tag) => {
           const isActive = filter === tag.key;
           const colors = colorMap[tag.color];
