@@ -6,7 +6,7 @@ Categories  : static JSON file (categories.json)
 """
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime, timezone
 from threading import Lock as ThreadLock
 from pydantic import BaseModel
@@ -152,8 +152,8 @@ def list_images_for_annotator(
 
     if has_any_assignments:
         # Assignment mode: only show images assigned to this user
-        all_images = (
-            db.query(Image)
+    all_images = (
+        db.query(Image)
             .filter(
                 Image.is_duplicate == False,  # noqa: E712
                 Image.assigned_annotator == user.id,
@@ -196,7 +196,7 @@ def list_images_for_annotator(
                     option_id_to_label.get(oid, f"option_{oid}") for oid in selected_ids
                 ]
                 category_label_source[cat_key] = "human"
-            else:
+                else:
                 category_status[cat_key] = "pending"
                 # Try AI prediction from arbiter_labels
                 if cat_key in arbiter_labels:
@@ -232,7 +232,7 @@ def list_images_for_annotator(
         
         # Track global stats (before any filter is applied)
         _all_statuses.append(overall_status)
-
+        
         # Apply filter
         if filter_status == "pending" and overall_status != "pending":
             continue
@@ -297,14 +297,14 @@ def list_images_for_annotator(
     if page_size == 0:
         paginated = images_data
     else:
-        start = (page - 1) * page_size
-        paginated = images_data[start : start + page_size]
+    start = (page - 1) * page_size
+    paginated = images_data[start : start + page_size]
     
     # Stable stats — always computed from ALL assigned images, regardless of filter
     total_assigned = len(_all_statuses)
     total_completed = sum(1 for s in _all_statuses if s == "completed")
     total_remaining = total_assigned - total_completed
-
+    
     return {
         "images": paginated,
         "total": total,
@@ -537,11 +537,11 @@ def get_image_for_annotation(
     is_own_rework = has_rework and is_owner
     edit_approved = image.review_status == "edit_approved"
 
-    can_edit = True
+            can_edit = True
     is_locked = False
     if is_hard:
         # Another annotator owns this image — permanently locked
-        can_edit = False
+            can_edit = False
         is_locked = True
     elif is_owner and image.annotation_status == "completed" and not is_own_rework and not edit_approved:
         # Own completed image — locked until reviewer sends rework or edit is approved
@@ -608,7 +608,7 @@ async def save_image_annotations(
     image = db.query(Image).filter(Image.id == image_id).first()
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
-
+    
     # Enforce assignment
     has_any_assignments = db.query(Image).filter(Image.assigned_annotator.isnot(None)).count() > 0
     if has_any_assignments and image.assigned_annotator != user.id:
@@ -616,7 +616,7 @@ async def save_image_annotations(
     
     if image.is_improper:
         raise HTTPException(status_code=400, detail="Cannot save annotations for improper images")
-
+    
     # ── Block re-edit of completed images unless rework or edit-approved ──
     is_owner = (image.annotated_by == user.id)
     if is_owner and image.annotation_status == "completed":
@@ -646,10 +646,10 @@ async def save_image_annotations(
     if image.review_status == "rework_requested" and image.annotated_by is None:
         image.review_status = None
     elif image.review_status == "rework_requested" and image.annotated_by != user.id:
-        raise HTTPException(
-            status_code=403,
+                raise HTTPException(
+                    status_code=403,
             detail="This rework is assigned to a different annotator.",
-        )
+                )
     
     is_rework = payload.get("is_rework", False)
     annotations_data = payload.get("annotations", {})
@@ -1043,3 +1043,60 @@ def get_time_limits(
 ):
     """Deprecated — time tracking is no longer used."""
     return {"max_annotation_time_seconds": 0}
+
+
+# ── Mark Duplicates (annotator) ───────────────────────────────────
+
+class AnnotatorMarkDuplicatesRequest(BaseModel):
+    image_ids: List[int]  # first id = parent, rest = duplicates
+
+
+@router.post("/images/mark-duplicates")
+def annotator_mark_duplicates(
+    body: AnnotatorMarkDuplicatesRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_annotator),
+):
+    """
+    Annotator marks images as duplicates.
+    First image_id = parent, rest = duplicates.
+    Only images assigned to this annotator can be marked.
+    """
+    if len(body.image_ids) < 2:
+        raise HTTPException(status_code=400, detail="Select at least 2 images (1 parent + 1 duplicate)")
+
+    parent_id = body.image_ids[0]
+    duplicate_ids = body.image_ids[1:]
+
+    # Verify parent exists and is assigned to this annotator
+    parent = db.query(Image).filter(Image.id == parent_id).first()
+    if not parent:
+        raise HTTPException(status_code=404, detail=f"Image {parent_id} not found")
+    if parent.assigned_annotator is not None and parent.assigned_annotator != user.id:
+        raise HTTPException(status_code=403, detail="You can only mark your own assigned images")
+
+    # Ensure parent is not a duplicate
+    parent.is_duplicate = False
+    parent.parent_image_id = None
+
+    marked = 0
+    for did in duplicate_ids:
+        img = db.query(Image).filter(Image.id == did).first()
+        if not img:
+            continue
+        # Only allow marking images assigned to this annotator (or unassigned)
+        if img.assigned_annotator is not None and img.assigned_annotator != user.id:
+            continue
+        img.is_duplicate = True
+        img.parent_image_id = parent_id
+        img.assigned_annotator = None
+        img.annotation_status = "pending"
+        img.annotated_by = None
+        img.annotated_at = None
+        img.annotations = None
+        img.review_status = None
+        img.review_note = None
+        marked += 1
+
+    db.commit()
+    return {"message": f"Marked {marked} images as duplicates of image {parent_id}", "parent_id": parent_id, "duplicates_marked": marked}

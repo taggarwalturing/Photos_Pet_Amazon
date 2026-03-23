@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../api/client';
@@ -20,6 +20,15 @@ export default function AnnotatorHome() {
 
   // Guide modal state
   const [showGuideModal, setShowGuideModal] = useState(false);
+
+  // Folder filter
+  const [selectedFolderIds, setSelectedFolderIds] = useState([]);
+  const [folderDropdownOpen, setFolderDropdownOpen] = useState(false);
+  const [folderDropdownPos, setFolderDropdownPos] = useState({ top: 0, left: 0 });
+
+  // Duplicate selection
+  const [selectedImageIds, setSelectedImageIds] = useState([]);
+  const [markingDup, setMarkingDup] = useState(false);
 
   // Notifications state
   const [notifications, setNotifications] = useState([]);
@@ -147,6 +156,43 @@ export default function AnnotatorHome() {
     setFilter(f); // setFilter already resets page to 1
   };
 
+  const toggleFolder = (folderId) => {
+    setSelectedFolderIds(prev =>
+      prev.includes(folderId) ? prev.filter(id => id !== folderId) : [...prev, folderId]
+    );
+  };
+
+  const toggleImageSelect = (imgId, e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    setSelectedImageIds(prev =>
+      prev.includes(imgId) ? prev.filter(id => id !== imgId) : [...prev, imgId]
+    );
+  };
+
+  const handleMarkAsDuplicate = async () => {
+    if (selectedImageIds.length < 2) return alert('Select at least 2 images (first = parent, rest = duplicates)');
+    setMarkingDup(true);
+    try {
+      await api.post('/annotator/images/mark-duplicates', { image_ids: selectedImageIds });
+      setSelectedImageIds([]);
+      loadImages();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Failed to mark duplicates');
+    }
+    setMarkingDup(false);
+  };
+
+  // Close folder dropdown on outside click
+  useEffect(() => {
+    if (!folderDropdownOpen) return;
+    const handleClick = (e) => {
+      if (!e.target.closest('.annotator-folder-dropdown')) setFolderDropdownOpen(false);
+    };
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [folderDropdownOpen]);
+
   // Pre-check lock status before navigating to image detail
   const handleImageClick = async (imgId) => {
     setCheckingLock(imgId);
@@ -173,6 +219,27 @@ export default function AnnotatorHome() {
   const totalAssigned = data?.total_assigned_to_user || 0;
   const totalCompleted = data?.total_completed_by_user || 0;
   const totalRemaining = data?.total_remaining || 0;
+
+  // Derive unique folders from images for the dropdown
+  const allImages = data?.images || [];
+  const folderMap = useMemo(() => {
+    const m = {};
+    allImages.forEach(img => {
+      const fid = img.source_folder_id;
+      if (fid) m[fid] = (m[fid] || 0) + 1;
+    });
+    return m;
+  }, [allImages]);
+  const folderList = useMemo(() =>
+    Object.entries(folderMap).map(([id, count]) => ({ folder_id: id, image_count: count })).sort((a, b) => a.folder_id.localeCompare(b.folder_id)),
+    [folderMap]
+  );
+
+  // Apply folder filter on frontend (images already loaded)
+  const filteredImages = useMemo(() => {
+    if (selectedFolderIds.length === 0) return allImages;
+    return allImages.filter(img => selectedFolderIds.includes(img.source_folder_id));
+  }, [allImages, selectedFolderIds]);
 
   return (
     <div className="min-h-screen mesh-bg">
@@ -363,7 +430,63 @@ export default function AnnotatorHome() {
                 </button>
               </div>
               
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                {/* Folder filter dropdown */}
+                <div className="relative annotator-folder-dropdown">
+                  <button
+                    onClick={(e) => {
+                      if (folderDropdownOpen) {
+                        setFolderDropdownOpen(false);
+                      } else {
+                        const rect = e.currentTarget.getBoundingClientRect();
+                        setFolderDropdownPos({ top: rect.bottom + 4, left: Math.min(rect.left, window.innerWidth - 360) });
+                        setFolderDropdownOpen(true);
+                      }
+                    }}
+                    className={`px-3 py-1.5 text-xs font-medium rounded-full border transition cursor-pointer flex items-center gap-1.5 ${
+                      selectedFolderIds.length > 0
+                        ? 'bg-indigo-100 text-indigo-700 border-indigo-300'
+                        : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400'
+                    }`}
+                  >
+                    <span>📁</span>
+                    <span>{selectedFolderIds.length > 0 ? `${selectedFolderIds.length} folder${selectedFolderIds.length > 1 ? 's' : ''}` : 'All Folders'}</span>
+                    <svg className={`w-3 h-3 text-gray-400 transition-transform ${folderDropdownOpen ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </button>
+
+                  {folderDropdownOpen && (
+                    <div
+                      className="fixed z-[9999] w-[340px] bg-white border border-gray-200 rounded-xl shadow-2xl max-h-72 overflow-y-auto annotator-folder-dropdown"
+                      style={{ top: folderDropdownPos.top, left: folderDropdownPos.left }}
+                    >
+                      <div className="sticky top-0 px-3 py-2 border-b border-gray-100 bg-gray-50/95 backdrop-blur rounded-t-xl flex items-center justify-between">
+                        <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Filter by Folder</span>
+                        {selectedFolderIds.length > 0 && (
+                          <button onClick={() => setSelectedFolderIds([])} className="text-[10px] font-semibold text-red-500 hover:text-red-700 cursor-pointer">Clear</button>
+                        )}
+                      </div>
+                      {folderList.length === 0 ? (
+                        <div className="px-3 py-4 text-xs text-gray-400 text-center">No folders</div>
+                      ) : (
+                        folderList.map(f => {
+                          const isSelected = selectedFolderIds.includes(f.folder_id);
+                          return (
+                            <label key={f.folder_id} className={`flex items-center gap-2.5 px-3 py-2 text-xs border-b border-gray-50 last:border-0 transition-colors cursor-pointer ${isSelected ? 'bg-indigo-50/50' : 'hover:bg-gray-50'}`}>
+                              <input type="checkbox" checked={isSelected} onChange={() => toggleFolder(f.folder_id)} className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer shrink-0" />
+                              <span className="flex-1 min-w-0 font-medium text-gray-800 truncate" title={f.folder_id}>{f.folder_id}</span>
+                              <span className="text-[10px] text-gray-400 font-medium shrink-0">{f.image_count} imgs</span>
+                            </label>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                <div className="h-4 border-l border-gray-200" />
+
                 {['all', 'pending', 'completed'].map((f) => (
                 <button
                     key={f}
@@ -395,8 +518,31 @@ export default function AnnotatorHome() {
               </div>
             </div>
 
+            {/* Duplicate Selection Action Bar */}
+            {selectedImageIds.length > 0 && (
+              <div className="flex items-center gap-3 px-4 py-2.5 bg-indigo-50 border border-indigo-200 rounded-xl mb-4 animate-fade-in">
+                <span className="text-sm font-medium text-indigo-700">
+                  {selectedImageIds.length} image{selectedImageIds.length > 1 ? 's' : ''} selected
+                  <span className="ml-1 text-xs text-indigo-500">(1st = parent)</span>
+                </span>
+                <button
+                  onClick={handleMarkAsDuplicate}
+                  disabled={markingDup || selectedImageIds.length < 2}
+                  className="px-3 py-1.5 text-xs font-semibold text-white bg-red-500 hover:bg-red-600 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition"
+                >
+                  {markingDup ? 'Marking…' : 'Mark as Duplicate'}
+                </button>
+                <button
+                  onClick={() => setSelectedImageIds([])}
+                  className="px-3 py-1.5 text-xs font-semibold text-gray-600 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg cursor-pointer transition"
+                >
+                  Clear
+                </button>
+              </div>
+            )}
+
             {/* Image Grid */}
-            {data.images.length === 0 ? (
+            {filteredImages.length === 0 ? (
               <div className="bg-white rounded-2xl border border-gray-200 p-16 text-center animate-fade-in">
                 <div className="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-emerald-100 to-teal-100 rounded-2xl flex items-center justify-center">
                   <svg className="w-8 h-8 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 13l4 4L19 7" /></svg>
@@ -410,7 +556,7 @@ export default function AnnotatorHome() {
                     </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 stagger-children">
-                {data.images.map((img) => {
+                {filteredImages.map((img) => {
                   const isLockedByOther = img.locked_by_other === true;
                   const lockType = img.lock_type; // "completed" | "in_progress" | null
                   const heldBy = img.held_by || '';
@@ -421,6 +567,9 @@ export default function AnnotatorHome() {
                   const isHumanValidated = img.annotation_status === 'completed' && img.review_status === 'approved';
                   const categoryLabels = img.category_labels || {};
                   
+                  const isSelected = selectedImageIds.includes(img.id);
+                  const selectionIdx = selectedImageIds.indexOf(img.id);
+
                   return (
                     <button
                       key={img.id}
@@ -430,6 +579,8 @@ export default function AnnotatorHome() {
                       }}
                       disabled={isLockedByOther || checkingLock === img.id}
                       className={`group relative rounded-xl overflow-hidden shadow-md text-left animate-slide-up transition-all duration-300 ${
+                        isSelected ? 'ring-3 ring-indigo-500 ' : ''
+                      }${
                         checkingLock === img.id
                           ? 'ring-2 ring-indigo-400 opacity-80 cursor-wait'
                           : lockType === 'completed'
@@ -455,8 +606,25 @@ export default function AnnotatorHome() {
                           thumbnail
                         />
                         
+                        {/* Selection checkbox for duplicate marking */}
+                        <div
+                          className="absolute bottom-2 right-2 z-20"
+                          onClick={(e) => toggleImageSelect(img.id, e)}
+                        >
+                          <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition-all cursor-pointer shadow-sm ${
+                            isSelected ? 'bg-indigo-500 border-indigo-500 text-white' : 'bg-white/80 border-gray-300 hover:border-indigo-400'
+                          }`}>
+                            {isSelected && <span className="text-[10px] font-bold">{selectionIdx + 1}</span>}
+                          </div>
+                        </div>
+                        {isSelected && selectionIdx === 0 && (
+                          <div className="absolute bottom-2 right-10 z-20">
+                            <span className="px-1.5 py-0.5 text-[9px] font-bold text-white bg-green-500 rounded-md shadow-sm">PARENT</span>
+                          </div>
+                        )}
+
                         {/* Dark gradient overlay for text readability */}
-                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent pointer-events-none" />
                         
                         {/* Status badge - top left */}
                         <div className="absolute top-3 left-3">
