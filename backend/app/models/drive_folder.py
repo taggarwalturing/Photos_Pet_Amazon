@@ -1,5 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Text, JSON, ForeignKey
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, Integer, String, DateTime, Text, JSON
 from sqlalchemy.sql import func
 from app.database import Base
 
@@ -24,10 +23,6 @@ class DriveFolder(Base):
     blurred_count = Column(Integer, default=0)
     clean_count = Column(Integer, default=0)
     failed_count = Column(Integer, default=0)
-    
-    # Assignment — which annotator is assigned to this folder
-    assigned_annotator_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
-    assigned_annotator = relationship("User", foreign_keys=[assigned_annotator_id])
     
     # Metadata
     notes = Column(Text, nullable=True)
