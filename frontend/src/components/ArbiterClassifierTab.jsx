@@ -370,16 +370,36 @@ export default function ArbiterClassifierTab() {
       )}
 
       {/* ─── Config cards ──────────────────────────── */}
-      {config && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-          <ConfigCard label="Model 1" value={config.gemini_model} sub={config.gemini_provider} icon="🔵" />
-          <ConfigCard label="Model 2" value={config.openai_model} sub={config.openai_provider} icon="🟢" />
-          <ConfigCard label="Arbiter" value={config.arbiter_model} sub={config.arbiter_provider} icon="⚖️" />
-          <ConfigCard label="Total Unique" value={config.available_images} sub="unique images in DB" icon="🖼️" />
-          <ConfigCard label="Pending" value={config.pending_images ?? config.available_images}
-            sub={`${config.already_classified || 0} already classified`} icon="⏳" />
-        </div>
-      )}
+      {config && (() => {
+        const classified = config.already_classified || 0;
+        const total = config.available_images || 0;
+        const failed = failedCount || 0;
+        const untried = Math.max(0, total - classified - failed);
+        return (
+          <div className="space-y-3">
+            {/* Row 1: Model config */}
+            <div className="grid grid-cols-3 gap-4">
+              <ConfigCard label="Model 1" value={config.gemini_model} sub={config.gemini_provider} icon="🔵" />
+              <ConfigCard label="Model 2" value={config.openai_model} sub={config.openai_provider} icon="🟢" />
+              <ConfigCard label="Arbiter" value={config.arbiter_model} sub={config.arbiter_provider} icon="⚖️" />
+            </div>
+            {/* Row 2: Image stats breakdown */}
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+              <ConfigCard label="Total Unique" value={total.toLocaleString()} sub="unique images in DB" icon="🖼️" />
+              <ConfigCard label="Classified" value={classified.toLocaleString()} sub={`${total > 0 ? Math.round(classified / total * 100) : 0}% of total`} icon="✅" />
+              <ConfigCard label="Failed" value={failed.toLocaleString()}
+                sub={failed > 0
+                  ? (apiErrorSummary?.dominant_type === 'budget_exceeded' ? '💳 budget exceeded'
+                    : apiErrorSummary?.dominant_type === 'rate_limited' ? '⏱️ rate limited'
+                    : '⚠️ retryable')
+                  : 'none'} icon={failed > 0 ? '❌' : '✅'} />
+              <ConfigCard label="Untried" value={untried.toLocaleString()} sub="never attempted yet" icon="⏳" />
+              <ConfigCard label="Pending Total" value={(failed + untried).toLocaleString()}
+                sub={`${failed.toLocaleString()} failed + ${untried.toLocaleString()} untried`} icon="📋" />
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ─── Per-folder classification status ────── */}
       {config?.folder_stats?.length > 0 && (
@@ -710,23 +730,15 @@ export default function ArbiterClassifierTab() {
         </div>
       )}
 
-      {/* ─── Summary Stats ─────────────────────── */}
+      {/* ─── Classification Results ─────────────────────── */}
       {summary.total_images > 0 && (
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           <StatCard label="Total Classified" value={summary.total_images} icon="📊" />
           <StatCard label="Agreement Rate" value={`${summary.agreement_rate}%`}
             sub={`${summary.total_agreements} / ${summary.total_categories} categories`} icon="🤝" />
           <StatCard label="Arbiter Called" value={summary.total_arbiter_calls}
             sub={`for ${summary.total_categories - summary.total_agreements} disagreements`} icon="⚖️" />
           <StatCard label="Categories" value={CATEGORIES.length} sub="per image" icon="📋" />
-          <StatCard label="Failed" value={failedCount}
-            sub={failedCount > 0
-              ? (apiErrorSummary?.dominant_type === 'budget_exceeded' ? '💳 API budget issue'
-                : apiErrorSummary?.dominant_type === 'forbidden' ? '🔒 API access issue'
-                : apiErrorSummary?.dominant_type === 'rate_limited' ? '⏱️ rate limited'
-                : 'can retry ↑')
-              : 'none'}
-            icon={failedCount > 0 ? '❌' : '✅'} />
         </div>
       )}
 
