@@ -961,7 +961,16 @@ def get_arbiter_config(
         "pending_images": image_count - len(already_classified),
         "categories": CATEGORIES,
         "folder_stats": folder_stats,
+        "key_pool": _get_key_pool_summary(),
     }
+
+
+def _get_key_pool_summary():
+    try:
+        from arbiter_classifier.batch_arbiter import key_pool
+        return key_pool.summary()
+    except Exception:
+        return None
 
 
 @router.get("/status")
@@ -969,6 +978,12 @@ def get_arbiter_status(admin: User = Depends(require_admin)):
     """Get current arbiter pipeline execution status, including API error categorization."""
     enriched = dict(arbiter_status)
     enriched["api_error_summary"] = _categorize_errors(arbiter_status.get("errors", []))
+    # Include key pool health
+    try:
+        from arbiter_classifier.batch_arbiter import key_pool
+        enriched["key_pool"] = key_pool.summary()
+    except Exception:
+        enriched["key_pool"] = None
     return enriched
 
 

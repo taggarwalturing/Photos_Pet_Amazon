@@ -401,6 +401,69 @@ export default function ArbiterClassifierTab() {
         );
       })()}
 
+      {/* ─── API Key Pool Status ──────────────────── */}
+      {(config?.key_pool || status?.key_pool) && (() => {
+        const kp = status?.key_pool || config?.key_pool;
+        if (!kp || kp.total_keys <= 1) return null;
+        return (
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-semibold text-gray-700">🔑 API Key Pool ({kp.total_keys} keys)</h3>
+              <div className="flex gap-2 text-xs">
+                <span className="px-2 py-0.5 rounded-full bg-green-100 text-green-700">
+                  {kp.active} active
+                </span>
+                {kp.budget_exceeded > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+                    {kp.budget_exceeded} budget exceeded
+                  </span>
+                )}
+                {kp.rate_limited > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                    {kp.rate_limited} rate limited
+                  </span>
+                )}
+                {kp.forbidden > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+                    {kp.forbidden} forbidden
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {kp.per_key?.map((k, i) => (
+                <div key={i} className={`rounded-lg border p-3 text-sm ${
+                  k.state === 'active' ? 'border-green-200 bg-green-50/50' :
+                  k.state === 'budget_exceeded' ? 'border-red-200 bg-red-50/50' :
+                  k.state === 'rate_limited' ? 'border-amber-200 bg-amber-50/50' :
+                  'border-gray-200 bg-gray-50/50'
+                }`}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-mono text-xs text-gray-500">Key {i + 1}</span>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${
+                      k.state === 'active' ? 'bg-green-100 text-green-700' :
+                      k.state === 'budget_exceeded' ? 'bg-red-100 text-red-700' :
+                      k.state === 'rate_limited' ? 'bg-amber-100 text-amber-700' :
+                      'bg-gray-100 text-gray-600'
+                    }`}>
+                      {k.state === 'active' ? '✅ Active' :
+                       k.state === 'budget_exceeded' ? '💳 Exhausted' :
+                       k.state === 'rate_limited' ? '⏱️ Cooling' :
+                       '🔒 Forbidden'}
+                    </span>
+                  </div>
+                  <p className="font-mono text-xs text-gray-400">{k.key_suffix}</p>
+                  <div className="flex gap-3 mt-1 text-xs">
+                    <span className="text-green-600">{k.ok} OK</span>
+                    <span className="text-red-500">{k.fail} fail</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ─── Per-folder classification status ────── */}
       {config?.folder_stats?.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
