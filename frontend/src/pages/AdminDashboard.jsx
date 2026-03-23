@@ -2240,10 +2240,22 @@ function ReviewTab() {
 
   // ── Approve ALL pending images (server-side) ──
   const [approvingAll, setApprovingAll] = useState(false);
+
+  // Count pending images currently visible (respects annotator filter)
+  const pendingInView = useMemo(() => {
+    if (!tableData || filter !== 'pending') return 0;
+    return tableData.images.filter((row) => {
+      const hasAnnotations = tableData.categories.some((cat) => row.annotations[String(cat.id)]);
+      return hasAnnotations && (!row.review_status || row.review_status === 'pending' || row.review_status === 'rework_completed');
+    }).length;
+  }, [tableData, filter]);
+
   const handleApproveAll = async () => {
-    const pendingCount = stats?.pending_review || 0;
-    if (pendingCount === 0) return;
-    if (!window.confirm(`Are you sure you want to approve all ${pendingCount} pending images?`)) return;
+    if (pendingInView === 0) return;
+    const annotatorName = annotatorFilter
+      ? users.find((u) => String(u.id) === String(annotatorFilter))?.username || 'selected annotator'
+      : 'all annotators';
+    if (!window.confirm(`Are you sure you want to approve all ${pendingInView} pending images for ${annotatorName}?`)) return;
     setApprovingAll(true);
     try {
       const params = new URLSearchParams();
@@ -2450,7 +2462,7 @@ function ReviewTab() {
         </select>
 
         {/* Approve All button */}
-        {filter === 'pending' && stats?.pending_review > 0 && (
+        {filter === 'pending' && pendingInView > 0 && (
           <button
             onClick={handleApproveAll}
             disabled={approvingAll}
@@ -2466,7 +2478,7 @@ function ReviewTab() {
                 <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
-                Approve All ({stats.pending_review})
+                Approve All ({pendingInView})
               </>
             )}
           </button>
