@@ -173,7 +173,6 @@ export default function AnnotatorHome() {
   const totalAssigned = data?.total_assigned_to_user || 0;
   const totalCompleted = data?.total_completed_by_user || 0;
   const totalRemaining = data?.total_remaining || 0;
-  const totalImproper = data?.total_improper || 0;
 
   return (
     <div className="min-h-screen mesh-bg">
@@ -319,7 +318,7 @@ export default function AnnotatorHome() {
         ) : (
           <>
             {/* Stats Row */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6 stagger-children">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6 stagger-children">
               <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm animate-slide-up relative overflow-hidden">
                 <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-br from-indigo-500 to-purple-500 opacity-10 rounded-bl-[32px] -mr-1 -mt-1" />
                 <div className="w-8 h-8 bg-gradient-to-br from-indigo-500 to-purple-500 rounded-lg flex items-center justify-center text-white text-sm mb-2 shadow-sm">
@@ -337,19 +336,12 @@ export default function AnnotatorHome() {
                 <p className="text-xs text-gray-500 font-medium">Annotated</p>
               </div>
               <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm animate-slide-up relative overflow-hidden">
+                
                 <div className="w-8 h-8 bg-gradient-to-br from-amber-500 to-orange-500 rounded-lg flex items-center justify-center text-white text-sm mb-2 shadow-sm">
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                 </div>
                 <p className="text-2xl font-bold text-amber-600">{totalRemaining}</p>
                 <p className="text-xs text-gray-500 font-medium">Remaining</p>
-              </div>
-              <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm animate-slide-up relative overflow-hidden">
-                <div className="absolute top-0 right-0 w-16 h-16 bg-gradient-to-br from-red-500 to-orange-500 opacity-10 rounded-bl-[32px] -mr-1 -mt-1" />
-                <div className="w-8 h-8 bg-gradient-to-br from-red-500 to-orange-500 rounded-lg flex items-center justify-center text-white text-sm mb-2 shadow-sm">
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4.5c-.77-.833-1.964-.833-2.732 0L4.082 16.5c-.77.833.192 2.5 1.732 2.5z" /></svg>
-                </div>
-                <p className="text-2xl font-bold text-red-600">{totalImproper}</p>
-                <p className="text-xs text-gray-500 font-medium">Improper</p>
               </div>
             </div>
 
@@ -372,19 +364,17 @@ export default function AnnotatorHome() {
               </div>
               
               <div className="flex items-center gap-2">
-                {['all', 'pending', 'completed', 'improper'].map((f) => (
+                {['all', 'pending', 'completed'].map((f) => (
                 <button
                     key={f}
                     onClick={() => handleFilterChange(f)}
                     className={`px-4 py-1.5 text-xs font-medium rounded-full border transition cursor-pointer capitalize ${
                       filter === f
-                        ? f === 'improper'
-                          ? 'bg-gradient-to-r from-red-500 to-orange-500 text-white border-red-500 shadow-sm'
-                          : 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white border-indigo-500 shadow-sm'
+                        ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white border-indigo-500 shadow-sm'
                         : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400'
                     }`}
                   >
-                    {f === 'improper' ? `⚠ Improper` : f}
+                    {f}
                   </button>
                 ))}
               </div>
@@ -412,10 +402,10 @@ export default function AnnotatorHome() {
                   <svg className="w-8 h-8 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 13l4 4L19 7" /></svg>
                 </div>
                 <h3 className="text-lg font-semibold text-gray-700">
-                  {filter === 'pending' ? 'All images annotated!' : filter === 'improper' ? 'No improper images' : 'No images found'}
+                  {filter === 'pending' ? 'All images annotated!' : 'No images found'}
                   </h3>
                 <p className="text-gray-500 mt-1">
-                  {filter === 'pending' ? 'Great work! Check back later for new images.' : filter === 'improper' ? 'None of your assigned images are marked as improper.' : 'Try changing the filter.'}
+                  {filter === 'pending' ? 'Great work! Check back later for new images.' : 'Try changing the filter.'}
                 </p>
                     </div>
             ) : (

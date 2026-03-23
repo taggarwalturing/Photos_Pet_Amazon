@@ -775,8 +775,6 @@ function ImagesTab() {
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [lightboxImg, setLightboxImg] = useState(null); // image object for lightbox
-  const [selectedImages, setSelectedImages] = useState([]); // for duplicate marking
-  const [markingDuplicates, setMarkingDuplicates] = useState(false);
   const imagesPerPage = 20;
 
   const fetchImages = useCallback(async () => {
@@ -806,44 +804,6 @@ function ImagesTab() {
     setPage(1);
   };
 
-  const toggleImageSelection = (imgId, e) => {
-    e.stopPropagation();
-    setSelectedImages(prev =>
-      prev.includes(imgId) ? prev.filter(id => id !== imgId) : [...prev, imgId]
-    );
-  };
-
-  const handleMarkDuplicates = async () => {
-    if (selectedImages.length < 2) {
-      alert('Select at least 2 images. The first selected will be the parent, the rest will be marked as duplicates.');
-      return;
-    }
-    setMarkingDuplicates(true);
-    try {
-      const res = await api.post('/admin/images/mark-duplicates', { image_ids: selectedImages });
-      alert(res.data.message);
-      setSelectedImages([]);
-      fetchImages();
-    } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to mark duplicates');
-    }
-    setMarkingDuplicates(false);
-  };
-
-  const handleUnmarkDuplicates = async () => {
-    if (selectedImages.length === 0) return;
-    setMarkingDuplicates(true);
-    try {
-      const res = await api.post('/admin/images/unmark-duplicates', { image_ids: selectedImages });
-      alert(res.data.message);
-      setSelectedImages([]);
-      fetchImages();
-    } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to unmark duplicates');
-    }
-    setMarkingDuplicates(false);
-  };
-
   const images = data?.images || [];
   const summary = data?.summary || {};
   const categories = data?.categories || [];
@@ -861,7 +821,6 @@ function ImagesTab() {
     { key: 'improper', label: 'Improper', value: summary.improper, icon: '⚠️', color: 'orange' },
     { key: 'delivered', label: 'Delivered', value: summary.delivered, icon: '📦', color: 'teal' },
     { key: 'not_delivered', label: 'Not Delivered', value: (summary.total || 0) - (summary.delivered || 0), icon: '⏳', color: 'gray' },
-    { key: 'duplicate', label: 'Duplicates', value: summary.duplicates, icon: '🔗', color: 'slate' },
   ];
 
   const colorMap = {
@@ -874,7 +833,6 @@ function ImagesTab() {
     orange: { active: 'bg-orange-100 text-orange-700 border-orange-300 ring-orange-400', inactive: 'bg-white text-gray-600 border-gray-200 hover:border-gray-300' },
     teal: { active: 'bg-teal-100 text-teal-700 border-teal-300 ring-teal-400', inactive: 'bg-white text-gray-600 border-gray-200 hover:border-gray-300' },
     gray: { active: 'bg-gray-100 text-gray-700 border-gray-300 ring-gray-400', inactive: 'bg-white text-gray-600 border-gray-200 hover:border-gray-300' },
-    slate: { active: 'bg-slate-100 text-slate-700 border-slate-300 ring-slate-400', inactive: 'bg-white text-gray-600 border-gray-200 hover:border-gray-300' },
   };
 
   const getStatusBadges = (img) => {
@@ -891,9 +849,6 @@ function ImagesTab() {
     }
     if (img.is_improper) {
       badges.push({ label: 'Improper', className: 'bg-orange-500' });
-    }
-    if (img.is_duplicate) {
-      badges.push({ label: 'Duplicate', className: 'bg-gray-500' });
     }
     if (img.human_faces_detected > 0) {
       badges.push({ label: `${img.human_faces_detected} face${img.human_faces_detected > 1 ? 's' : ''}`, className: 'bg-sky-500' });
@@ -957,39 +912,6 @@ function ImagesTab() {
         })}
       </div>
 
-      {/* Selection Actions Bar */}
-      {selectedImages.length > 0 && (
-        <div className="flex items-center gap-3 p-3 bg-indigo-50 border border-indigo-200 rounded-xl animate-fade-in">
-          <span className="text-sm font-medium text-indigo-700">
-            {selectedImages.length} image{selectedImages.length > 1 ? 's' : ''} selected
-          </span>
-          <span className="text-xs text-indigo-500">
-            (1st selected = parent, rest = duplicates)
-          </span>
-          <div className="flex-1" />
-          <button
-            onClick={handleMarkDuplicates}
-            disabled={markingDuplicates || selectedImages.length < 2}
-            className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-red-500 text-white hover:bg-red-600 disabled:opacity-50 disabled:cursor-not-allowed transition cursor-pointer"
-          >
-            {markingDuplicates ? 'Marking…' : `🔗 Mark as Duplicate (${selectedImages.length - 1})`}
-          </button>
-          <button
-            onClick={handleUnmarkDuplicates}
-            disabled={markingDuplicates}
-            className="px-4 py-1.5 text-xs font-semibold rounded-lg bg-green-500 text-white hover:bg-green-600 disabled:opacity-50 disabled:cursor-not-allowed transition cursor-pointer"
-          >
-            ↩ Unmark Duplicate
-          </button>
-          <button
-            onClick={() => setSelectedImages([])}
-            className="px-3 py-1.5 text-xs font-medium rounded-lg bg-white text-gray-600 border border-gray-300 hover:bg-gray-50 transition cursor-pointer"
-          >
-            Clear
-          </button>
-        </div>
-      )}
-
       {/* Image Grid */}
       {loading ? (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
@@ -1004,50 +926,16 @@ function ImagesTab() {
           </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {images.map((img, imgIdx) => {
+          {images.map((img) => {
             const badges = getStatusBadges(img);
             const catLabels = img.category_labels || {};
             const catSources = img.category_label_source || {};
-            const isSelected = selectedImages.includes(img.id);
-            const selectionOrder = selectedImages.indexOf(img.id);
             return (
               <div
                 key={img.id}
                 onClick={() => setLightboxImg(img)}
-                className={`group relative bg-white rounded-xl border overflow-hidden shadow-sm hover:shadow-lg transition-all cursor-pointer ${
-                  isSelected
-                    ? 'border-indigo-500 ring-2 ring-indigo-400'
-                    : 'border-gray-200 hover:ring-2 hover:ring-indigo-400'
-                }`}
+                className="group relative bg-white rounded-xl border border-gray-200 overflow-hidden shadow-sm hover:shadow-lg hover:ring-2 hover:ring-indigo-400 transition-all cursor-pointer"
               >
-                {/* Selection checkbox */}
-                <div
-                  className="absolute top-2 left-2 z-10"
-                  onClick={(e) => toggleImageSelection(img.id, e)}
-                >
-                  <div className={`w-6 h-6 rounded-md border-2 flex items-center justify-center transition cursor-pointer ${
-                    isSelected
-                      ? 'bg-indigo-500 border-indigo-500 text-white'
-                      : 'bg-white/80 border-gray-300 hover:border-indigo-400 text-transparent hover:text-indigo-300'
-                  }`}>
-                    {isSelected ? (
-                      <span className="text-xs font-bold">{selectionOrder + 1}</span>
-                    ) : (
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                    )}
-                  </div>
-                </div>
-                {/* Parent badge */}
-                {isSelected && selectionOrder === 0 && selectedImages.length > 1 && (
-                  <div className="absolute top-2 left-10 z-10 px-1.5 py-0.5 bg-green-500 text-white text-[9px] font-bold rounded">
-                    PARENT
-                  </div>
-                )}
-                {isSelected && selectionOrder > 0 && (
-                  <div className="absolute top-2 left-10 z-10 px-1.5 py-0.5 bg-red-500 text-white text-[9px] font-bold rounded">
-                    DUP
-                  </div>
-                )}
                 <div className="relative aspect-[4/3]">
                   <img
                     src={getImageUrl(img.id)}
