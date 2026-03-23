@@ -2238,6 +2238,26 @@ function ReviewTab() {
     }
   };
 
+  // ── Approve ALL pending images (server-side) ──
+  const [approvingAll, setApprovingAll] = useState(false);
+  const handleApproveAll = async () => {
+    const pendingCount = stats?.pending_review || 0;
+    if (pendingCount === 0) return;
+    if (!window.confirm(`Are you sure you want to approve all ${pendingCount} pending images?`)) return;
+    setApprovingAll(true);
+    try {
+      const params = new URLSearchParams();
+      if (annotatorFilter) params.set('annotator_id', annotatorFilter);
+      const res = await api.post(`/admin/review/bulk-approve?${params.toString()}`);
+      alert(`✅ ${res.data.approved_count} images approved`);
+      refreshData();
+    } catch (err) {
+      alert(err.response?.data?.detail || 'Bulk approve failed');
+    } finally {
+      setApprovingAll(false);
+    }
+  };
+
   const toggleRowSelect = (imageId) => {
     setSelectedRows((prev) => {
       const next = new Set(prev);
@@ -2428,6 +2448,29 @@ function ReviewTab() {
           <option value="">All Annotators</option>
           {users.map((u) => <option key={u.id} value={u.id}>{u.username}</option>)}
         </select>
+
+        {/* Approve All button */}
+        {filter === 'pending' && stats?.pending_review > 0 && (
+          <button
+            onClick={handleApproveAll}
+            disabled={approvingAll}
+            className="px-4 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg shadow-sm disabled:opacity-50 transition cursor-pointer flex items-center gap-1.5"
+          >
+            {approvingAll ? (
+              <>
+                <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                Approving...
+              </>
+            ) : (
+              <>
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Approve All ({stats.pending_review})
+              </>
+            )}
+          </button>
+        )}
 
         {/* Shortcuts hint */}
         <button

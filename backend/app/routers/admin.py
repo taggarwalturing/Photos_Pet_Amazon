@@ -1437,6 +1437,58 @@ def approve_image(
     return {"message": "Image approved", "image_id": image_id}
 
 
+@router.post("/review/bulk-approve")
+def bulk_approve_all(
+    annotator_id: Optional[int] = Query(None),
+    db: Session = Depends(get_db),
+    admin: User = Depends(require_admin),
+):
+    """Approve ALL pending images in one go. Optionally filter by annotator."""
+    now = datetime.now(timezone.utc)
+
+    # Find all images that are completed but pending review
+    q = db.query(Image).filter(
+        Image.annotation_status == "completed",
+        or_(
+            Image.review_status == None,       # noqa: E711
+            Image.review_status == "pending",
+            Image.review_status == "rework_completed",
+            Image.review_status == "edit_requested",
+        ),
+    )
+    if annotator_id:
+        q = q.filter(Image.annotated_by == annotator_id)
+
+    pending_images = q.all()
+
+    approved_count = 0
+    for image in pending_images:
+        history = list(image.annotation_history or [])
+        history.append({
+            "ts": now.isoformat(),
+            "by": admin.id,
+            "username": admin.username,
+            "role": "reviewer",
+            "action": "bulk_approve",
+        })
+        image.annotation_history = history
+        image.review_status = "approved"
+        image.reviewed_by = admin.id
+        image.reviewed_at = now
+        approved_count += 1
+
+    db.commit()
+
+    # Deliver all approved images
+    for image in pending_images:
+        try:
+            check_and_deliver_image(image.id, db)
+        except Exception:
+            pass  # don't fail the bulk operation for delivery errors
+
+    return {"message": f"Approved {approved_count} images", "approved_count": approved_count}
+
+
 @router.put("/review/image/{image_id}/update")
 def update_and_approve_image(
     image_id: int,
