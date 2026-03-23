@@ -87,120 +87,13 @@ CONFIG = load_config()
 # CONFIGURATION
 # ============================================================================
 TURING_API_URL = CONFIG.get("TURING_API_URL", "https://kong.turing.com/api/v2/chat")
-TURING_GW_KEY = CONFIG.get("TURING_GW_KEY")
-TURING_AUTH = CONFIG.get("TURING_AUTH")
 
-# ── Multi-key pool with round-robin + auto-failover ──────────────────────
-# Supports TURING_API_KEYS (comma-separated) or single TURING_API_KEY
-_raw_keys = CONFIG.get("TURING_API_KEYS", "")
-if _raw_keys:
-    API_KEY_LIST = [k.strip() for k in _raw_keys.split(",") if k.strip()]
-else:
-    single = CONFIG.get("TURING_API_KEY", "YOUR_API_KEY")
-    API_KEY_LIST = [single] if single and single != "YOUR_API_KEY" else []
-
-
-class _KeyPool:
-    """Thread-safe round-robin API key pool with auto-failover on budget/auth errors."""
-
-    def __init__(self, keys: list, gw_key: str, auth: str):
-        self._keys = list(keys)
-        self._gw_key = gw_key
-        self._auth = auth
-        self._lock = threading.Lock()
-        self._idx = 0
-        # State per key: "active" | "budget_exceeded" | "forbidden" | "rate_limited"
-        self._state = {k: "active" for k in self._keys}
-        self._rate_limit_until = {}  # key -> timestamp when cooldown ends
-        self._stats = {k: {"ok": 0, "fail": 0} for k in self._keys}
-
-    @property
-    def total_keys(self):
-        return len(self._keys)
-
-    @property
-    def active_keys(self):
-        with self._lock:
-            now = time.time()
-            return sum(
-                1 for k in self._keys
-                if self._state[k] == "active"
-                or (self._state[k] == "rate_limited"
-                    and now >= self._rate_limit_until.get(k, 0))
-            )
-
-    def get_headers(self) -> dict | None:
-        """Return headers using next available key (round-robin). None if all exhausted."""
-        with self._lock:
-            now = time.time()
-            tried = 0
-            while tried < len(self._keys):
-                key = self._keys[self._idx % len(self._keys)]
-                self._idx += 1
-                tried += 1
-                st = self._state[key]
-                if st == "active":
-                    return self._build_headers(key)
-                if st == "rate_limited" and now >= self._rate_limit_until.get(key, 0):
-                    self._state[key] = "active"
-                    return self._build_headers(key)
-                # budget_exceeded / forbidden → skip
-            return None  # all keys exhausted
-
-    def report_success(self, headers: dict):
-        key = headers.get("x-api-key", "")
-        with self._lock:
-            if key in self._stats:
-                self._stats[key]["ok"] += 1
-
-    def report_error(self, headers: dict, status_code: int):
-        key = headers.get("x-api-key", "")
-        with self._lock:
-            if key not in self._state:
-                return
-            self._stats[key]["fail"] += 1
-            if status_code == 402:
-                self._state[key] = "budget_exceeded"
-                remaining = self.active_keys  # already inside lock, call inline
-                print(f"[KEY-POOL] 💳 Key ...{key[-8:]} budget exceeded. "
-                      f"{sum(1 for k in self._keys if self._state[k] == 'active')} key(s) remaining.")
-            elif status_code == 403:
-                self._state[key] = "forbidden"
-                print(f"[KEY-POOL] 🔒 Key ...{key[-8:]} forbidden (403).")
-            elif status_code == 429:
-                self._state[key] = "rate_limited"
-                self._rate_limit_until[key] = time.time() + 60  # cooldown 60s
-                print(f"[KEY-POOL] ⏱️  Key ...{key[-8:]} rate-limited, cooling down 60s.")
-
-    def summary(self) -> dict:
-        with self._lock:
-            return {
-                "total_keys": len(self._keys),
-                "active": sum(1 for k in self._keys if self._state[k] == "active"),
-                "budget_exceeded": sum(1 for k in self._keys if self._state[k] == "budget_exceeded"),
-                "rate_limited": sum(1 for k in self._keys if self._state[k] == "rate_limited"),
-                "forbidden": sum(1 for k in self._keys if self._state[k] == "forbidden"),
-                "per_key": [
-                    {"key_suffix": f"...{k[-8:]}", "state": self._state[k],
-                     "ok": self._stats[k]["ok"], "fail": self._stats[k]["fail"]}
-                    for k in self._keys
-                ],
-            }
-
-    def _build_headers(self, api_key: str) -> dict:
-        return {
-            "Content-Type": "application/json",
-            "x-api-key": api_key,
-            "x-api-gw-key": self._gw_key or "",
-            "Authorization": self._auth or "",
-        }
-
-
-key_pool = _KeyPool(API_KEY_LIST, TURING_GW_KEY, TURING_AUTH)
+# ── Multi-key pool (shared module — no heavy deps) ───────────────────────
+from arbiter_classifier.key_pool import key_pool  # noqa: E402
 
 # Legacy single-key fallback (used only for `main()` guard)
-TURING_API_KEY = API_KEY_LIST[0] if API_KEY_LIST else "YOUR_API_KEY"
-HEADERS = key_pool._build_headers(TURING_API_KEY) if API_KEY_LIST else {}
+TURING_API_KEY = CONFIG.get("TURING_API_KEY", "YOUR_API_KEY")
+HEADERS = key_pool.get_headers() or {}
 
 # Models
 GEMINI_MODEL = CONFIG.get("GEMINI_MODEL", "gemini-2.5-pro")

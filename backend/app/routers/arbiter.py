@@ -280,6 +280,38 @@ def encode_image(image_path: str, max_size_mb: float = 4.0) -> tuple:
 
 
 # ─── API Calls ────────────────────────────────────────────────
+def _do_api_call_with_pool(api_url, payload, timeout, max_retries=3):
+    """Core API call with key-pool rotation and auto-failover."""
+    from arbiter_classifier.key_pool import key_pool as _kp
+    last_error = None
+    for _attempt in range(max_retries):
+        headers = _kp.get_headers()
+        if headers is None:
+            return {"error": "All API keys exhausted (budget exceeded / forbidden). "
+                             "Please add more keys or top up budget."}
+        try:
+            resp = http_requests.post(api_url, headers=headers, json=payload, timeout=timeout)
+            if resp.status_code in [200, 201]:
+                _kp.report_success(headers)
+                text = resp.json()["choices"][0]["message"]["content"]
+                if "```" in text:
+                    text = text.split("```")[1]
+                    if text.startswith("json"):
+                        text = text[4:]
+                return json.loads(text.strip())
+            else:
+                _kp.report_error(headers, resp.status_code)
+                error_body = resp.text[:300]
+                last_error = f"API returned {resp.status_code}: {error_body}"
+                if resp.status_code in [402, 403, 429]:
+                    continue  # retry with next key
+                return {"error": last_error}
+        except Exception as e:
+            last_error = str(e)
+            return {"error": last_error}
+    return {"error": last_error or "All retries exhausted"}
+
+
 def call_vision_api(api_url, headers, model, provider, prompt, image_b64, mime, timeout):
     payload = {
         "model": model,
@@ -294,21 +326,7 @@ def call_vision_api(api_url, headers, model, provider, prompt, image_b64, mime, 
         "temperature": 0,
         "max_tokens": 1000,
     }
-    try:
-        resp = http_requests.post(api_url, headers=headers, json=payload, timeout=timeout)
-        if resp.status_code in [200, 201]:
-            text = resp.json()["choices"][0]["message"]["content"]
-            if "```" in text:
-                text = text.split("```")[1]
-                if text.startswith("json"):
-                    text = text[4:]
-            return json.loads(text.strip())
-        else:
-            # Surface non-200 errors (402 budget, 429 rate limit, etc.)
-            error_body = resp.text[:300]
-            return {"error": f"API returned {resp.status_code}: {error_body}"}
-    except Exception as e:
-        return {"error": str(e)}
+    return _do_api_call_with_pool(api_url, payload, timeout)
 
 
 def call_text_api(api_url, headers, model, provider, prompt, timeout):
@@ -319,20 +337,7 @@ def call_text_api(api_url, headers, model, provider, prompt, timeout):
         "temperature": 0,
         "max_tokens": 1000,
     }
-    try:
-        resp = http_requests.post(api_url, headers=headers, json=payload, timeout=timeout)
-        if resp.status_code in [200, 201]:
-            text = resp.json()["choices"][0]["message"]["content"]
-            if "```" in text:
-                text = text.split("```")[1]
-                if text.startswith("json"):
-                    text = text[4:]
-            return json.loads(text.strip())
-        else:
-            error_body = resp.text[:300]
-            return {"error": f"API returned {resp.status_code}: {error_body}"}
-    except Exception as e:
-        return {"error": str(e)}
+    return _do_api_call_with_pool(api_url, payload, timeout)
 
 
 # ─── Classification helpers ──────────────────────────────────
@@ -967,7 +972,7 @@ def get_arbiter_config(
 
 def _get_key_pool_summary():
     try:
-        from arbiter_classifier.batch_arbiter import key_pool
+        from arbiter_classifier.key_pool import key_pool
         return key_pool.summary()
     except Exception:
         return None
@@ -979,11 +984,7 @@ def get_arbiter_status(admin: User = Depends(require_admin)):
     enriched = dict(arbiter_status)
     enriched["api_error_summary"] = _categorize_errors(arbiter_status.get("errors", []))
     # Include key pool health
-    try:
-        from arbiter_classifier.batch_arbiter import key_pool
-        enriched["key_pool"] = key_pool.summary()
-    except Exception:
-        enriched["key_pool"] = None
+    enriched["key_pool"] = _get_key_pool_summary()
     return enriched
 
 
