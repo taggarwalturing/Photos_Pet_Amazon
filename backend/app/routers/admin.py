@@ -26,10 +26,12 @@ from app.schemas.annotation import (
     ReviewTableCategoryCell, ReviewTableRow, ReviewTableCategory, ReviewTableResponse,
     ReworkRequest, ImageReworkRequest,
 )
+from app.models.drive_folder import DriveFolder
 from app.services.auth import hash_password
 from app.utils.deliverable import check_and_deliver_image, update_deliverable_if_delivered
 from app.utils import categories as categories_util
 from pydantic import BaseModel
+from typing import List
 
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -74,6 +76,14 @@ def list_users(
             .filter(Image.assigned_annotator == u.id)
             .count()
         )
+
+        # Get folder IDs assigned to this user
+        assigned_folders = (
+            db.query(DriveFolder.folder_id)
+            .filter(DriveFolder.assigned_annotator_id == u.id)
+            .all()
+        )
+        assigned_folder_ids = [r[0] for r in assigned_folders]
         
         result.append(UserResponse(
             id=u.id,
@@ -87,6 +97,7 @@ def list_users(
             completed_annotations=completed_annotations,
             today_image_count=today_image_count,
             actual_assigned=actual_assigned,
+            assigned_folder_ids=assigned_folder_ids,
         ))
     return result
 
@@ -320,6 +331,9 @@ def update_user(
     db.commit()
     db.refresh(user)
     actual_assigned = db.query(Image).filter(Image.assigned_annotator == user.id).count()
+    assigned_folders = db.query(DriveFolder.folder_id).filter(
+        DriveFolder.assigned_annotator_id == user.id
+    ).all()
     return UserResponse(
         id=user.id,
         username=user.username,
@@ -329,6 +343,7 @@ def update_user(
         created_at=user.created_at,
         assigned_image_count=user.assigned_image_count or 0,
         actual_assigned=actual_assigned,
+        assigned_folder_ids=[r[0] for r in assigned_folders],
     )
 
 
@@ -580,6 +595,181 @@ def reassign_images(
         "from_remaining": from_current,
         "to_total": to_current,
         "image_id_range": id_range,
+    }
+
+
+# ── Folder-based Assignment ────────────────────────────────────────
+
+class FolderAssignRequest(BaseModel):
+    folder_ids: List[str]  # list of drive_folder folder_id strings
+
+
+@router.get("/folders")
+def list_folders_for_assignment(
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """
+    List all completed drive folders with their assignment status.
+    Only folders with status='completed' and images in DB are included.
+    """
+    folders = (
+        db.query(DriveFolder)
+        .filter(DriveFolder.status == "completed")
+        .order_by(DriveFolder.id)
+        .all()
+    )
+
+    result = []
+    for f in folders:
+        # Count non-duplicate images in this folder
+        img_count = (
+            db.query(func.count(Image.id))
+            .filter(Image.source_folder_id == f.folder_id, Image.is_duplicate == False)  # noqa: E712
+            .scalar()
+        ) or 0
+
+        # Get assignee username
+        assignee_username = None
+        if f.assigned_annotator_id:
+            assignee = db.query(User).filter(User.id == f.assigned_annotator_id).first()
+            if assignee:
+                assignee_username = assignee.username
+
+        result.append({
+            "id": f.id,
+            "folder_id": f.folder_id,
+            "folder_name": f.folder_name,
+            "image_count": img_count,
+            "total_in_drive": f.total_in_drive or 0,
+            "assigned_annotator_id": f.assigned_annotator_id,
+            "assigned_annotator_username": assignee_username,
+            "blurred_count": f.blurred_count or 0,
+            "clean_count": f.clean_count or 0,
+        })
+
+    return result
+
+
+@router.post("/assign-folders/{user_id}")
+def assign_folders_to_annotator(
+    user_id: int,
+    payload: FolderAssignRequest,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """
+    Assign specific folders to an annotator.
+
+    - Validates that none of the requested folders are already assigned to
+      another annotator.
+    - Updates `drive_folders.assigned_annotator_id` for requested folders.
+    - Un-assigns any folders previously assigned to this user that are NOT in
+      the new list.
+    - Bulk-updates `images.assigned_annotator` to match folder assignments.
+    """
+    annotator = db.query(User).filter(User.id == user_id, User.role == "annotator").first()
+    if not annotator:
+        raise HTTPException(status_code=404, detail="Annotator not found")
+
+    requested_folder_ids = set(payload.folder_ids)
+
+    # Validate: none of the requested folders belong to someone else
+    for fid in requested_folder_ids:
+        folder = db.query(DriveFolder).filter(DriveFolder.folder_id == fid).first()
+        if not folder:
+            raise HTTPException(status_code=404, detail=f"Folder '{fid}' not found")
+        if folder.assigned_annotator_id and folder.assigned_annotator_id != user_id:
+            other = db.query(User).filter(User.id == folder.assigned_annotator_id).first()
+            other_name = other.username if other else f"user #{folder.assigned_annotator_id}"
+            raise HTTPException(
+                status_code=400,
+                detail=f"Folder '{fid}' is already assigned to {other_name}",
+            )
+
+    # Un-assign folders that were previously assigned to this user but are no
+    # longer in the requested set
+    previously_assigned = (
+        db.query(DriveFolder)
+        .filter(DriveFolder.assigned_annotator_id == user_id)
+        .all()
+    )
+    removed_folder_ids = []
+    for pf in previously_assigned:
+        if pf.folder_id not in requested_folder_ids:
+            pf.assigned_annotator_id = None
+            removed_folder_ids.append(pf.folder_id)
+            # Un-assign images in this folder (only non-completed ones)
+            (
+                db.query(Image)
+                .filter(
+                    Image.source_folder_id == pf.folder_id,
+                    Image.assigned_annotator == user_id,
+                    Image.annotation_status != "completed",
+                )
+                .update({
+                    Image.assigned_annotator: None,
+                }, synchronize_session="fetch")
+            )
+
+    # Assign requested folders
+    added_folder_ids = []
+    for fid in requested_folder_ids:
+        folder = db.query(DriveFolder).filter(DriveFolder.folder_id == fid).first()
+        if folder.assigned_annotator_id != user_id:
+            folder.assigned_annotator_id = user_id
+            added_folder_ids.append(fid)
+
+        # Assign all non-duplicate images in this folder to the annotator
+        images_in_folder = (
+            db.query(Image)
+            .filter(
+                Image.source_folder_id == fid,
+                Image.is_duplicate == False,  # noqa: E712
+            )
+            .all()
+        )
+        for img in images_in_folder:
+            if img.assigned_annotator != user_id:
+                # Clear stale annotation state when assigning to a new annotator
+                if img.annotated_by and img.annotated_by != user_id:
+                    img.annotated_by = None
+                    img.annotated_at = None
+                    img.annotation_status = "pending"
+                    img.annotations = None
+                    img.review_status = None
+                    img.review_note = None
+                    img.reviewed_by = None
+                    img.reviewed_at = None
+                    img.annotation_history = []
+                elif img.annotated_by is None and img.review_status is not None:
+                    img.review_status = None
+                    img.review_note = None
+                    img.annotations = None
+                    img.annotation_history = []
+                img.assigned_annotator = user_id
+
+    # Update stored assigned_image_count
+    total_assigned = (
+        db.query(func.count(Image.id))
+        .filter(Image.assigned_annotator == user_id)
+        .scalar()
+    ) or 0
+    annotator.assigned_image_count = total_assigned
+
+    db.commit()
+
+    print(f"[ADMIN] Folder assignment for {annotator.username}: "
+          f"+{len(added_folder_ids)} folders, -{len(removed_folder_ids)} folders, "
+          f"{total_assigned} images total")
+
+    return {
+        "annotator_id": annotator.id,
+        "username": annotator.username,
+        "assigned_folder_ids": list(requested_folder_ids),
+        "added_folders": added_folder_ids,
+        "removed_folders": removed_folder_ids,
+        "total_images_assigned": total_assigned,
     }
 
 

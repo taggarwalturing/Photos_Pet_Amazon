@@ -138,6 +138,23 @@ function UsersTab() {
   const [reassignTarget, setReassignTarget] = useState('');
   const [reassignCount, setReassignCount] = useState('');
   const [reassigning, setReassigning] = useState(false);
+  const [folders, setFolders] = useState([]); // all completed folders
+  const [editingFolders, setEditingFolders] = useState({}); // { userId: [folder_id, ...] }
+  const [folderDropdownOpen, setFolderDropdownOpen] = useState(null); // userId of open dropdown
+  const dropdownRef = useRef(null);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    if (!folderDropdownOpen) return;
+    const handleClickOutside = (e) => {
+      // If click is outside any folder dropdown, close it
+      if (!e.target.closest('.folder-dropdown-container')) {
+        setFolderDropdownOpen(null);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [folderDropdownOpen]);
 
   const generatePassword = () => {
     const chars = 'abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789!@#$%&*';
@@ -149,16 +166,18 @@ function UsersTab() {
 
   const load = async () => {
     try {
-      const [usersRes, catsRes, dailyRes] = await Promise.all([
+      const [usersRes, catsRes, dailyRes, foldersRes] = await Promise.all([
         api.get('/admin/users'),
         api.get('/admin/categories'),
         api.get(`/admin/users/daily-stats?days=${dailyDays}`),
+        api.get('/admin/folders'),
       ]);
       setUsers(usersRes.data);
       setCategories(catsRes.data);
       setDailyStats(dailyRes.data);
+      setFolders(foldersRes.data);
     } catch (err) {
-      console.error(err);
+console.error(err);
     } finally {
       setLoading(false);
     }
@@ -202,21 +221,43 @@ function UsersTab() {
   };
 
   const handleAssignForUser = async (userId) => {
-    const rawVal = editingImageCount[userId];
-    const count = rawVal !== undefined ? (parseInt(rawVal) || 0) : null;
+    const folderIds = editingFolders[userId] || users.find(u => u.id === userId)?.assigned_folder_ids || [];
 
     setAssigningUserId(userId);
     try {
-      // Call per-annotator assignment endpoint (only affects this annotator)
-      const queryCount = count !== null ? `?count=${count}` : '';
-      await api.post(`/admin/assign-images/${userId}${queryCount}`);
-      setEditingImageCount(prev => { const copy = { ...prev }; delete copy[userId]; return copy; });
+      await api.post(`/admin/assign-folders/${userId}`, { folder_ids: folderIds });
+      setEditingFolders(prev => { const copy = { ...prev }; delete copy[userId]; return copy; });
+      setFolderDropdownOpen(null);
       load();
     } catch (err) {
       alert(err.response?.data?.detail || 'Assignment failed');
     } finally {
       setAssigningUserId(null);
     }
+  };
+
+  // Toggle a folder in an annotator's editing list
+  const toggleFolderForUser = (userId, folderId) => {
+    setEditingFolders(prev => {
+      const current = prev[userId] || users.find(u => u.id === userId)?.assigned_folder_ids || [];
+      const next = current.includes(folderId)
+        ? current.filter(id => id !== folderId)
+        : [...current, folderId];
+      return { ...prev, [userId]: next };
+    });
+  };
+
+  // Get the effective folder selection for a user (editing state or saved state)
+  const getSelectedFolders = (userId) => {
+    return editingFolders[userId] || users.find(u => u.id === userId)?.assigned_folder_ids || [];
+  };
+
+  // Check if a folder is assigned to someone else
+  const getFolderAssignee = (folderId, excludeUserId) => {
+    const folder = folders.find(f => f.folder_id === folderId);
+    if (!folder || !folder.assigned_annotator_id) return null;
+    if (folder.assigned_annotator_id === excludeUserId) return null;
+    return folder.assigned_annotator_username;
   };
 
   const handleReassign = async () => {
@@ -370,7 +411,7 @@ function UsersTab() {
               <th className="px-5 py-3.5 font-semibold">Turing ID</th>
               <th className="px-5 py-3 font-medium">Name</th>
               <th className="px-5 py-3 font-medium">Role</th>
-              <th className="px-5 py-3 font-medium">Assign Count</th>
+              <th className="px-5 py-3 font-medium">Assign Folders</th>
               <th className="px-5 py-3 font-medium">Assigned</th>
               <th className="px-5 py-3 font-medium">Today</th>
               <th className="px-5 py-3 font-medium">Progress</th>
@@ -399,30 +440,89 @@ function UsersTab() {
                 </td>
                 <td className="px-5 py-3">
                   {u.role === 'annotator' ? (
-                    <div className="flex items-center gap-1.5">
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        pattern="[0-9]*"
-                        value={editingImageCount[u.id] !== undefined ? editingImageCount[u.id] : String(u.assigned_image_count || 0)}
-                        onChange={(e) => {
-                          const val = e.target.value.replace(/[^0-9]/g, '');
-                          setEditingImageCount(prev => ({ ...prev, [u.id]: val }));
-                        }}
-                        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleAssignForUser(u.id); } }}
-                        className="w-20 px-2 py-1 text-sm border border-gray-300 rounded-lg text-center focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none"
-                      />
+                    <div className="flex items-center gap-1.5 relative">
+                      {/* Folder multi-select dropdown */}
+                      <div className="relative folder-dropdown-container">
+                        <button
+                          onClick={() => setFolderDropdownOpen(folderDropdownOpen === u.id ? null : u.id)}
+                          className="min-w-[180px] max-w-[260px] px-2.5 py-1.5 text-xs border border-gray-300 rounded-lg text-left bg-white hover:border-indigo-400 focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer flex items-center justify-between gap-1"
+                        >
+                          <span className="truncate">
+                            {getSelectedFolders(u.id).length > 0
+                              ? `${getSelectedFolders(u.id).length} folder${getSelectedFolders(u.id).length > 1 ? 's' : ''} selected`
+                              : 'Select folders…'}
+                          </span>
+                          <svg className={`w-3.5 h-3.5 text-gray-400 shrink-0 transition-transform ${folderDropdownOpen === u.id ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        </button>
+
+                        {folderDropdownOpen === u.id && (
+                          <div className="absolute z-50 mt-1 w-[340px] bg-white border border-gray-200 rounded-xl shadow-xl max-h-64 overflow-y-auto left-0">
+                            <div className="px-3 py-2 border-b border-gray-100 bg-gray-50/80 rounded-t-xl">
+                              <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Select Folders for {u.username}</span>
+                            </div>
+                            {folders.length === 0 ? (
+                              <div className="px-3 py-4 text-xs text-gray-400 text-center">No completed folders available</div>
+                            ) : (
+                              folders.map(f => {
+                                const assignedTo = getFolderAssignee(f.folder_id, u.id);
+                                const isSelected = getSelectedFolders(u.id).includes(f.folder_id);
+                                const isDisabled = !!assignedTo;
+                                return (
+                                  <label
+                                    key={f.folder_id}
+                                    className={`flex items-center gap-2.5 px-3 py-2 text-xs border-b border-gray-50 last:border-0 transition-colors ${
+                                      isDisabled
+                                        ? 'bg-gray-50 text-gray-400 cursor-not-allowed'
+                                        : isSelected
+                                          ? 'bg-indigo-50/50 hover:bg-indigo-50'
+                                          : 'hover:bg-gray-50 cursor-pointer'
+                                    }`}
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={isSelected}
+                                      disabled={isDisabled}
+                                      onChange={() => !isDisabled && toggleFolderForUser(u.id, f.folder_id)}
+                                      className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer disabled:cursor-not-allowed"
+                                    />
+                                    <div className="flex-1 min-w-0">
+                                      <div className={`font-medium truncate ${isDisabled ? 'text-gray-400' : 'text-gray-800'}`}>
+                                        {f.folder_name || f.folder_id.slice(0, 20) + '…'}
+                                      </div>
+                                      <div className="flex items-center gap-2 mt-0.5">
+                                        <span className="text-[10px] text-gray-400">{f.image_count} imgs</span>
+                                        {f.blurred_count > 0 && <span className="text-[10px] text-blue-500">{f.blurred_count} blur</span>}
+                                        {isDisabled && (
+                                          <span className="text-[10px] text-amber-600 font-medium">→ {assignedTo}</span>
+                                        )}
+                                      </div>
+                                    </div>
+                                    {isSelected && !isDisabled && (
+                                      <svg className="w-3.5 h-3.5 text-indigo-500 shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                                      </svg>
+                                    )}
+                                  </label>
+                                );
+                              })
+                            )}
+                          </div>
+                        )}
+                      </div>
+
                       <button
                         onClick={() => handleAssignForUser(u.id)}
                         disabled={assigningUserId !== null}
-                        className="px-2.5 py-1 text-xs font-semibold bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition cursor-pointer disabled:opacity-50 whitespace-nowrap"
+                        className="px-2.5 py-1.5 text-xs font-semibold bg-emerald-500 text-white rounded-lg hover:bg-emerald-600 transition cursor-pointer disabled:opacity-50 whitespace-nowrap"
                       >
                         {assigningUserId === u.id ? '…' : 'Assign'}
                       </button>
                       {(u.actual_assigned || 0) > 0 && (
                         <button
                           onClick={() => { setReassignModal({ fromId: u.id, fromUsername: u.username }); setReassignTarget(''); setReassignCount(''); }}
-                          className="px-2.5 py-1 text-xs font-semibold bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition cursor-pointer whitespace-nowrap"
+                          className="px-2.5 py-1.5 text-xs font-semibold bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition cursor-pointer whitespace-nowrap"
                         >
                           Reassign
                         </button>

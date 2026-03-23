@@ -1,6 +1,6 @@
 """User schemas — simplified for 3-table design."""
 from pydantic import BaseModel, field_validator
-from typing import Optional
+from typing import Optional, List
 from datetime import datetime
 import re
 
@@ -42,6 +42,7 @@ class UserResponse(BaseModel):
     completed_annotations: int = 0    # images this user has annotated
     today_image_count: int = 0        # distinct images annotated today
     actual_assigned: int = 0          # how many images are actually assigned in DB
+    assigned_folder_ids: List[str] = []  # folder_ids assigned to this annotator
 
     class Config:
         from_attributes = True

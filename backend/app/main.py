@@ -209,6 +209,22 @@ def _migrate():
                         print(f"[MIGRATE] Warning: could not add users.{col_name}: {e}")
         print("[MIGRATE] Checked users table columns")
 
+    # ── Drive Folders table: add new columns ──
+    if "drive_folders" in inspector.get_table_names():
+        existing_df = {col["name"] for col in inspector.get_columns("drive_folders")}
+        df_new_columns = {
+            "assigned_annotator_id": "INTEGER REFERENCES users(id)",
+        }
+        with engine.begin() as conn:
+            for col_name, col_def in df_new_columns.items():
+                if col_name not in existing_df:
+                    try:
+                        conn.execute(text(f"ALTER TABLE drive_folders ADD COLUMN {col_name} {col_def}"))
+                        print(f"[MIGRATE] Added drive_folders.{col_name}")
+                    except Exception as e:
+                        print(f"[MIGRATE] Warning: could not add drive_folders.{col_name}: {e}")
+        print("[MIGRATE] Checked drive_folders table columns")
+
     # ── Performance indexes ──
     with engine.begin() as conn:
         conn.execute(text("CREATE INDEX IF NOT EXISTS idx_images_image_id ON images(image_id)"))
