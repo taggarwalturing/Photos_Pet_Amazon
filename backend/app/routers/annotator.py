@@ -152,8 +152,8 @@ def list_images_for_annotator(
 
     if has_any_assignments:
         # Assignment mode: only show images assigned to this user
-        all_images = (
-            db.query(Image)
+    all_images = (
+        db.query(Image)
             .filter(
                 Image.is_duplicate == False,  # noqa: E712
                 Image.assigned_annotator == user.id,
@@ -175,6 +175,7 @@ def list_images_for_annotator(
 
     images_data = []
     _all_statuses = []  # track overall status of every image (before filter)
+    _improper_count = 0  # count of improper images (before filter)
     for img in all_images:
         annotations = img.annotations or {}
         arbiter_labels = img.arbiter_labels or {}
@@ -196,7 +197,7 @@ def list_images_for_annotator(
                     option_id_to_label.get(oid, f"option_{oid}") for oid in selected_ids
                 ]
                 category_label_source[cat_key] = "human"
-            else:
+                else:
                 category_status[cat_key] = "pending"
                 # Try AI prediction from arbiter_labels
                 if cat_key in arbiter_labels:
@@ -232,11 +233,15 @@ def list_images_for_annotator(
         
         # Track global stats (before any filter is applied)
         _all_statuses.append(overall_status)
-
+        if img.is_improper:
+            _improper_count += 1
+        
         # Apply filter
-        if filter_status == "pending" and overall_status != "pending":
+        if filter_status == "pending" and (overall_status != "pending" or (img.is_improper or False)):
             continue
         if filter_status == "completed" and overall_status != "completed":
+            continue
+        if filter_status == "improper" and not (img.is_improper or False):
             continue
         
         # Hard lock — another annotator already submitted annotations
@@ -297,14 +302,15 @@ def list_images_for_annotator(
     if page_size == 0:
         paginated = images_data
     else:
-        start = (page - 1) * page_size
-        paginated = images_data[start : start + page_size]
+    start = (page - 1) * page_size
+    paginated = images_data[start : start + page_size]
     
     # Stable stats — always computed from ALL assigned images, regardless of filter
     total_assigned = len(_all_statuses)
     total_completed = sum(1 for s in _all_statuses if s == "completed")
-    total_remaining = total_assigned - total_completed
-
+    total_improper = _improper_count
+    total_remaining = total_assigned - total_completed - total_improper
+    
     return {
         "images": paginated,
         "total": total,
@@ -316,6 +322,7 @@ def list_images_for_annotator(
         "total_assigned_to_user": total_assigned,
         "total_completed_by_user": total_completed,
         "total_remaining": total_remaining,
+        "total_improper": total_improper,
     }
 
 
@@ -503,9 +510,11 @@ def get_image_for_annotation(
 
     # Apply filter to navigation so prev/next respects the annotator's filter
     if filter_status == "pending":
-        nav_query = nav_query.filter(Image.annotation_status != "completed")
+        nav_query = nav_query.filter(Image.annotation_status != "completed", Image.is_improper != True)  # noqa: E712
     elif filter_status == "completed":
         nav_query = nav_query.filter(Image.annotation_status == "completed")
+    elif filter_status == "improper":
+        nav_query = nav_query.filter(Image.is_improper == True)  # noqa: E712
     # else: "all" or None → no extra filter
 
     nav_query = nav_query.order_by(Image.id)
@@ -537,11 +546,11 @@ def get_image_for_annotation(
     is_own_rework = has_rework and is_owner
     edit_approved = image.review_status == "edit_approved"
 
-    can_edit = True
+            can_edit = True
     is_locked = False
     if is_hard:
         # Another annotator owns this image — permanently locked
-        can_edit = False
+            can_edit = False
         is_locked = True
     elif is_owner and image.annotation_status == "completed" and not is_own_rework and not edit_approved:
         # Own completed image — locked until reviewer sends rework or edit is approved
@@ -608,7 +617,7 @@ async def save_image_annotations(
     image = db.query(Image).filter(Image.id == image_id).first()
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
-
+    
     # Enforce assignment
     has_any_assignments = db.query(Image).filter(Image.assigned_annotator.isnot(None)).count() > 0
     if has_any_assignments and image.assigned_annotator != user.id:
@@ -616,7 +625,7 @@ async def save_image_annotations(
     
     if image.is_improper:
         raise HTTPException(status_code=400, detail="Cannot save annotations for improper images")
-
+    
     # ── Block re-edit of completed images unless rework or edit-approved ──
     is_owner = (image.annotated_by == user.id)
     if is_owner and image.annotation_status == "completed":
@@ -646,10 +655,10 @@ async def save_image_annotations(
     if image.review_status == "rework_requested" and image.annotated_by is None:
         image.review_status = None
     elif image.review_status == "rework_requested" and image.annotated_by != user.id:
-        raise HTTPException(
-            status_code=403,
+                raise HTTPException(
+                    status_code=403,
             detail="This rework is assigned to a different annotator.",
-        )
+                )
     
     is_rework = payload.get("is_rework", False)
     annotations_data = payload.get("annotations", {})
