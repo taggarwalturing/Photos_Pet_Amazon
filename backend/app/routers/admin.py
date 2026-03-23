@@ -861,6 +861,8 @@ def list_images(
         query = query.filter(Image.deliverable_image_path.isnot(None))
     elif status_filter == "not_delivered":
         query = query.filter(Image.deliverable_image_path.is_(None))
+    elif status_filter == "duplicate":
+        query = query.filter(Image.is_duplicate == True)  # noqa: E712
 
     images = query.all()
 
@@ -884,6 +886,7 @@ def list_images(
         func.sum(case((Image.human_visible == True, 1), else_=0)).label("human_visible"),
         func.sum(case((Image.is_improper == True, 1), else_=0)).label("improper"),
         func.sum(case((Image.deliverable_image_path.isnot(None), 1), else_=0)).label("delivered"),
+        func.sum(case((Image.is_duplicate == True, 1), else_=0)).label("duplicates"),
     ).one()
 
     # ── Load all categories from static JSON ──
@@ -979,6 +982,8 @@ def list_images(
             "is_restore_annotator": img.is_restore_annotator or False,
             "deliverable_image_path": img.deliverable_image_path,
             "is_manually_modified": img.is_manually_modified,
+            "is_duplicate": img.is_duplicate or False,
+            "parent_image_id": img.parent_image_id,
             # Label data
             "category_labels": cat_labels,
             "category_label_source": lbl_source,
@@ -995,6 +1000,7 @@ def list_images(
             "human_visible": summary_row.human_visible or 0,
             "improper": summary_row.improper or 0,
             "delivered": summary_row.delivered or 0,
+            "duplicates": summary_row.duplicates or 0,
         },
         "total": len(images_out),
         "categories": [
@@ -1537,6 +1543,91 @@ def revoke_improper_status(
     return {
         "message": "Image marked as proper again",
         "image_id": image_id,
+    }
+
+
+# ── Mark Images as Duplicates ──────────────────────────────────────
+
+@router.post("/images/mark-duplicates")
+def mark_images_as_duplicates(
+    payload: dict,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """
+    Mark selected images as duplicates.
+    Payload: { "image_ids": [1, 2, 3, ...] }
+    The first image_id is the parent (kept as non-duplicate).
+    The rest are marked as duplicates with parent_image_id set to the first.
+    """
+    image_ids = payload.get("image_ids", [])
+    if len(image_ids) < 2:
+        raise HTTPException(status_code=400, detail="At least 2 images required (1 parent + 1 duplicate)")
+
+    parent_id = image_ids[0]
+    duplicate_ids = image_ids[1:]
+
+    # Verify parent exists
+    parent = db.query(Image).filter(Image.id == parent_id).first()
+    if not parent:
+        raise HTTPException(status_code=404, detail=f"Parent image {parent_id} not found")
+
+    # Ensure parent is NOT a duplicate
+    parent.is_duplicate = False
+    parent.parent_image_id = None
+
+    # Mark the rest as duplicates
+    marked = 0
+    for dup_id in duplicate_ids:
+        img = db.query(Image).filter(Image.id == dup_id).first()
+        if img:
+            img.is_duplicate = True
+            img.parent_image_id = parent_id
+            # Unassign from annotator since duplicates shouldn't be assigned
+            img.assigned_annotator = None
+            img.annotation_status = "pending"
+            img.annotated_by = None
+            img.annotated_at = None
+            img.annotations = None
+            img.review_status = None
+            marked += 1
+
+    db.commit()
+
+    return {
+        "message": f"Marked {marked} image(s) as duplicates of image {parent_id}",
+        "parent_id": parent_id,
+        "duplicate_count": marked,
+    }
+
+
+@router.post("/images/unmark-duplicates")
+def unmark_images_as_duplicates(
+    payload: dict,
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_admin),
+):
+    """
+    Unmark selected images as duplicates (restore them to non-duplicate).
+    Payload: { "image_ids": [1, 2, 3, ...] }
+    """
+    image_ids = payload.get("image_ids", [])
+    if not image_ids:
+        raise HTTPException(status_code=400, detail="No image IDs provided")
+
+    unmarked = 0
+    for img_id in image_ids:
+        img = db.query(Image).filter(Image.id == img_id).first()
+        if img and img.is_duplicate:
+            img.is_duplicate = False
+            img.parent_image_id = None
+            unmarked += 1
+
+    db.commit()
+
+    return {
+        "message": f"Unmarked {unmarked} image(s) as non-duplicate",
+        "unmarked_count": unmarked,
     }
 
 
