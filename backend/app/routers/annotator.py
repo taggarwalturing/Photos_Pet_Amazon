@@ -152,8 +152,8 @@ def list_images_for_annotator(
 
     if has_any_assignments:
         # Assignment mode: only show images assigned to this user
-    all_images = (
-        db.query(Image)
+        all_images = (
+            db.query(Image)
             .filter(
                 Image.is_duplicate == False,  # noqa: E712
                 Image.assigned_annotator == user.id,
