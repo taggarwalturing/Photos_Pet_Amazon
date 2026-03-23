@@ -196,7 +196,7 @@ def list_images_for_annotator(
                     option_id_to_label.get(oid, f"option_{oid}") for oid in selected_ids
                 ]
                 category_label_source[cat_key] = "human"
-                else:
+            else:
                 category_status[cat_key] = "pending"
                 # Try AI prediction from arbiter_labels
                 if cat_key in arbiter_labels:
@@ -297,8 +297,8 @@ def list_images_for_annotator(
     if page_size == 0:
         paginated = images_data
     else:
-    start = (page - 1) * page_size
-    paginated = images_data[start : start + page_size]
+        start = (page - 1) * page_size
+        paginated = images_data[start : start + page_size]
     
     # Stable stats — always computed from ALL assigned images, regardless of filter
     total_assigned = len(_all_statuses)
@@ -537,11 +537,11 @@ def get_image_for_annotation(
     is_own_rework = has_rework and is_owner
     edit_approved = image.review_status == "edit_approved"
 
-            can_edit = True
+    can_edit = True
     is_locked = False
     if is_hard:
         # Another annotator owns this image — permanently locked
-            can_edit = False
+        can_edit = False
         is_locked = True
     elif is_owner and image.annotation_status == "completed" and not is_own_rework and not edit_approved:
         # Own completed image — locked until reviewer sends rework or edit is approved
