@@ -175,6 +175,7 @@ def list_images_for_annotator(
 
     images_data = []
     _all_statuses = []  # track overall status of every image (before filter)
+    _improper_count = 0
     for img in all_images:
         annotations = img.annotations or {}
         arbiter_labels = img.arbiter_labels or {}
@@ -232,12 +233,20 @@ def list_images_for_annotator(
         
         # Track global stats (before any filter is applied)
         _all_statuses.append(overall_status)
+        _is_img_improper = img.is_improper or False
+        if _is_img_improper:
+            _improper_count += 1
         
         # Apply filter
-        if filter_status == "pending" and overall_status != "pending":
+        if filter_status == "pending":
+            # Exclude improper images from pending
+            if overall_status != "pending" or _is_img_improper:
+                continue
+        elif filter_status == "completed" and overall_status != "completed":
             continue
-        if filter_status == "completed" and overall_status != "completed":
-            continue
+        elif filter_status == "improper":
+            if not _is_img_improper:
+                continue
         
         # Hard lock — another annotator already submitted annotations
         is_hard = _is_hard_locked(img, user.id)
@@ -303,7 +312,7 @@ def list_images_for_annotator(
     # Stable stats — always computed from ALL assigned images, regardless of filter
     total_assigned = len(_all_statuses)
     total_completed = sum(1 for s in _all_statuses if s == "completed")
-    total_remaining = total_assigned - total_completed
+    total_remaining = total_assigned - total_completed - _improper_count
     
     return {
         "images": paginated,
@@ -316,6 +325,7 @@ def list_images_for_annotator(
         "total_assigned_to_user": total_assigned,
         "total_completed_by_user": total_completed,
         "total_remaining": total_remaining,
+        "total_improper": _improper_count,
     }
 
 
