@@ -373,7 +373,7 @@ export default function AnnotatorHome() {
             <h3 className="text-lg font-semibold text-gray-700">No categories assigned yet</h3>
             <p className="text-gray-500 mt-1">Ask your admin to assign categories to you.</p>
           </div>
-        ) : data.images.length === 0 && data.total === 0 ? (
+        ) : data.images.length === 0 && data.total === 0 && (data.total_assigned_to_user || 0) === 0 ? (
           <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-16 text-center animate-fade-in">
             <div className="w-16 h-16 mx-auto mb-5 bg-gradient-to-br from-emerald-100 to-teal-100 rounded-2xl flex items-center justify-center">
               <svg className="w-8 h-8 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 13l4 4L19 7" /></svg>
@@ -548,10 +548,10 @@ export default function AnnotatorHome() {
                   <svg className="w-8 h-8 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 13l4 4L19 7" /></svg>
                 </div>
                 <h3 className="text-lg font-semibold text-gray-700">
-                  {filter === 'pending' ? 'All images annotated!' : 'No images found'}
+                  {filter === 'pending' ? 'No pending images' : filter === 'improper' ? 'No improper images' : 'No images found'}
                   </h3>
                 <p className="text-gray-500 mt-1">
-                  {filter === 'pending' ? 'Great work! Check back later for new images.' : 'Try changing the filter.'}
+                  {filter === 'pending' ? 'All pending images have been annotated or marked improper.' : filter === 'improper' ? 'No images have been marked as improper.' : 'Try changing the filter.'}
                 </p>
                     </div>
             ) : (
