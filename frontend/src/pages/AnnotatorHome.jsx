@@ -487,17 +487,19 @@ export default function AnnotatorHome() {
 
                 <div className="h-4 border-l border-gray-200" />
 
-                {['all', 'pending', 'completed'].map((f) => (
+                {['all', 'pending', 'completed', 'improper'].map((f) => (
                 <button
                     key={f}
                     onClick={() => handleFilterChange(f)}
                     className={`px-4 py-1.5 text-xs font-medium rounded-full border transition cursor-pointer capitalize ${
                       filter === f
-                        ? 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white border-indigo-500 shadow-sm'
+                        ? f === 'improper'
+                          ? 'bg-gradient-to-r from-red-500 to-orange-500 text-white border-red-500 shadow-sm'
+                          : 'bg-gradient-to-r from-indigo-500 to-purple-500 text-white border-indigo-500 shadow-sm'
                         : 'bg-white text-gray-600 border-gray-300 hover:border-gray-400'
                     }`}
                   >
-                    {f}
+                    {f === 'improper' ? '⚠ Improper' : f}
                   </button>
                 ))}
               </div>
