@@ -307,7 +307,8 @@ def list_images_for_annotator(
     # Stable stats — always computed from ALL assigned images, regardless of filter
     total_assigned = len(_all_statuses)
     total_completed = sum(1 for s in _all_statuses if s == "completed")
-    total_remaining = total_assigned - total_completed
+    total_improper = sum(1 for img in all_images if img.is_improper)
+    total_remaining = total_assigned - total_completed - total_improper
     
     return {
         "images": paginated,
@@ -320,6 +321,7 @@ def list_images_for_annotator(
         "total_assigned_to_user": total_assigned,
         "total_completed_by_user": total_completed,
         "total_remaining": total_remaining,
+        "total_improper": total_improper,
     }
 
 
