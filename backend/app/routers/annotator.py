@@ -234,10 +234,14 @@ def list_images_for_annotator(
         _all_statuses.append(overall_status)
         
         # Apply filter
-        if filter_status == "pending" and overall_status != "pending":
-            continue
+        if filter_status == "pending":
+            if overall_status != "pending" or (img.is_improper or False):
+                continue
         if filter_status == "completed" and overall_status != "completed":
             continue
+        if filter_status == "improper":
+            if not (img.is_improper or False):
+                continue
         
         # Hard lock — another annotator already submitted annotations
         is_hard = _is_hard_locked(img, user.id)
