@@ -528,6 +528,19 @@ def proxy_image(image_id: int):
                 ext = os.path.splitext(img.filename)[1].lower()
                 mime_type = {'.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
                              '.gif': 'image/gif', '.webp': 'image/webp'}.get(ext, 'image/jpeg')
+                # Convert HEIC/HEIF to JPEG for browser compatibility
+                if len(content) >= 12 and content[4:8] == b"ftyp" and content[8:12] in (b"heic", b"heix", b"hevc", b"mif1"):
+                    try:
+                        import pillow_heif
+                        pillow_heif.register_heif_opener()
+                        from PIL import Image as PILImg
+                        pil_img = PILImg.open(io.BytesIO(content))
+                        buf = io.BytesIO()
+                        pil_img.save(buf, format="JPEG", quality=90)
+                        content = buf.getvalue()
+                        mime_type = "image/jpeg"
+                    except Exception as heic_err:
+                        print(f"[Proxy] HEIC conversion failed for {img.filename}: {heic_err}")
                 cache_image(image_id, content, mime_type)
                 return Response(
                     content=content, media_type=mime_type,

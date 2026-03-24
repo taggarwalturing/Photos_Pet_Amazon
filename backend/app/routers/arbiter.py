@@ -259,6 +259,14 @@ def load_prompt(name: str, version: str) -> str:
 
 
 # ─── Image Encoding ──────────────────────────────────────────
+def _is_heic(data: bytes) -> bool:
+    """Check if raw bytes are HEIC/HEIF format by looking for 'ftyp' + 'heic'/'heix'/'hevc'."""
+    if len(data) < 12:
+        return False
+    # ftyp box: bytes 4-8 should be 'ftyp', bytes 8-12 the brand
+    return data[4:8] == b"ftyp" and data[8:12] in (b"heic", b"heix", b"hevc", b"mif1")
+
+
 def encode_image(image_path: str, max_size_mb: float = 4.0) -> tuple:
     with open(image_path, "rb") as f:
         data = f.read()
@@ -266,8 +274,22 @@ def encode_image(image_path: str, max_size_mb: float = 4.0) -> tuple:
     size_mb = len(data) / (1024 * 1024)
     suffix = Path(image_path).suffix.lower()
 
+    # ── Handle HEIC/HEIF images (convert to JPEG) ──
+    if _is_heic(data):
+        try:
+            import pillow_heif
+            pillow_heif.register_heif_opener()
+        except ImportError:
+            pass
+        img = PILImage.open(io.BytesIO(data))
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=90)
+        data = buf.getvalue()
+        suffix = ".jpg"
+        size_mb = len(data) / (1024 * 1024)
+
     if size_mb > max_size_mb:
-        img = PILImage.open(image_path)
+        img = PILImage.open(io.BytesIO(data))
         ratio = (max_size_mb / size_mb) ** 0.5
         new_size = (int(img.width * ratio), int(img.height * ratio))
         img = img.resize(new_size, PILImage.LANCZOS)
