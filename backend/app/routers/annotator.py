@@ -1089,13 +1089,6 @@ def annotator_mark_duplicates(
             continue
         img.is_duplicate = True
         img.parent_image_id = parent_id
-        img.assigned_annotator = None
-        img.annotation_status = "pending"
-        img.annotated_by = None
-        img.annotated_at = None
-        img.annotations = None
-        img.review_status = None
-        img.review_note = None
         marked += 1
 
     db.commit()

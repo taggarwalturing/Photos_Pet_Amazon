@@ -1061,14 +1061,6 @@ def mark_duplicates(
         if img:
             img.is_duplicate = True
             img.parent_image_id = parent_id
-            # Clear assignment/annotation so duplicates don't appear in annotator queues
-            img.assigned_annotator = None
-            img.annotation_status = "pending"
-            img.annotated_by = None
-            img.annotated_at = None
-            img.annotations = None
-            img.review_status = None
-            img.review_note = None
             marked += 1
 
     db.commit()
