@@ -1651,7 +1651,8 @@ def revoke_improper_status(
     db: Session = Depends(get_db),
     _admin: User = Depends(require_admin),
 ):
-    """Admin revokes improper status - marks image as proper again."""
+    """Admin revokes improper status - marks image as proper again and resets
+    annotation state so the assigned annotator can re-annotate from scratch."""
     image = db.query(Image).filter(Image.id == image_id).first()
     if not image:
         raise HTTPException(status_code=404, detail="Image not found")
@@ -1659,10 +1660,21 @@ def revoke_improper_status(
     if not image.is_improper:
         raise HTTPException(status_code=400, detail="Image is not marked as improper")
     
+    # Clear improper flags
     image.is_improper = False
     image.improper_reason = None
     image.marked_improper_by = None
     image.marked_improper_at = None
+
+    # Reset annotation state so the annotator gets a clean slate
+    image.annotation_status = "pending"
+    image.annotations = None
+    image.annotated_by = None
+    image.annotated_at = None
+    image.review_status = None
+    image.review_note = None
+    image.reviewed_by = None
+    image.reviewed_at = None
     
     db.commit()
     
