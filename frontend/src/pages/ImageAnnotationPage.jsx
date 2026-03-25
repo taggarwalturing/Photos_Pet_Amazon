@@ -240,7 +240,17 @@ export default function ImageAnnotationPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const filterStatus = searchParams.get('filter') || '';  // 'pending', 'completed', or '' (all)
+  const foldersParam = searchParams.get('folders') || '';  // comma-separated folder IDs
   const { user, logout } = useAuth();
+
+  // Build query string preserving filter + folders
+  const buildQs = () => {
+    const qs = new URLSearchParams();
+    if (filterStatus) qs.set('filter', filterStatus);
+    if (foldersParam) qs.set('folders', foldersParam);
+    const s = qs.toString();
+    return s ? `?${s}` : '';
+  };
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -532,7 +542,7 @@ export default function ImageAnnotationPage() {
     const success = await handleSave();
     if (success) {
       if (data?.next_image_id) {
-        navigate(`/annotator/image/${data.next_image_id}${filterStatus ? `?filter=${filterStatus}` : ''}`);
+        navigate(`/annotator/image/${data.next_image_id}${buildQs()}`);
       } else {
         handleBack();
       }
@@ -541,16 +551,16 @@ export default function ImageAnnotationPage() {
 
   const handleNavigate = (id) => {
     if (id) {
-      navigate(`/annotator/image/${id}${filterStatus ? `?filter=${filterStatus}` : ''}`);
+      navigate(`/annotator/image/${id}${buildQs()}`);
     }
   };
 
   const handleBack = () => {
-    // Use browser back to preserve the page number on the annotator home
+    // Use browser back to preserve the page number and folder selection on the annotator home
     if (window.history.length > 1) {
       navigate(-1);
     } else {
-      navigate(`/annotator${filterStatus ? `?filter=${filterStatus}` : ''}`);
+      navigate(`/annotator${buildQs()}`);
     }
   };
 
@@ -560,7 +570,7 @@ export default function ImageAnnotationPage() {
       await api.post(`/annotator/images/${imageId}/mark-improper`, { reason });
       setShowImproperModal(false);
       if (data?.next_image_id) {
-        navigate(`/annotator/image/${data.next_image_id}`);
+        navigate(`/annotator/image/${data.next_image_id}${buildQs()}`);
       } else {
         await loadImage(imageId);
       }
@@ -773,7 +783,7 @@ export default function ImageAnnotationPage() {
           </div>
           <div className="flex items-center gap-3">
             <button
-              onClick={() => navigate('/annotator')}
+              onClick={() => navigate(`/annotator${buildQs()}`)}
               className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg text-xs font-medium transition cursor-pointer"
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-4 0a1 1 0 01-1-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 01-1 1" /></svg>

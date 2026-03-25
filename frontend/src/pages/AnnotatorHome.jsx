@@ -21,8 +21,23 @@ export default function AnnotatorHome() {
   // Guide modal state
   const [showGuideModal, setShowGuideModal] = useState(false);
 
-  // Folder filter
-  const [selectedFolderIds, setSelectedFolderIds] = useState([]);
+  // Folder filter — restore from URL params on mount
+  const [selectedFolderIds, setSelectedFolderIdsState] = useState(() => {
+    const f = searchParams.get('folders');
+    return f ? f.split(',').filter(Boolean) : [];
+  });
+  const setSelectedFolderIds = (valOrFn) => {
+    setSelectedFolderIdsState((prev) => {
+      const next = typeof valOrFn === 'function' ? valOrFn(prev) : valOrFn;
+      // Sync to URL params
+      setSearchParams((sp) => {
+        if (next.length > 0) sp.set('folders', next.join(','));
+        else sp.delete('folders');
+        return sp;
+      }, { replace: true });
+      return next;
+    });
+  };
   const [folderDropdownOpen, setFolderDropdownOpen] = useState(false);
   const [folderDropdownPos, setFolderDropdownPos] = useState({ top: 0, left: 0 });
 
@@ -206,10 +221,18 @@ export default function AnnotatorHome() {
         alert(msg);
         return;
       }
-      navigate(`/annotator/image/${imgId}${filter !== 'all' ? `?filter=${filter}` : ''}`);
+      const qs = new URLSearchParams();
+      if (filter !== 'all') qs.set('filter', filter);
+      if (selectedFolderIds.length > 0) qs.set('folders', selectedFolderIds.join(','));
+      const qsStr = qs.toString();
+      navigate(`/annotator/image/${imgId}${qsStr ? `?${qsStr}` : ''}`);
     } catch (err) {
       // On error, navigate anyway — the detail page will handle it
-      navigate(`/annotator/image/${imgId}${filter !== 'all' ? `?filter=${filter}` : ''}`);
+      const qs = new URLSearchParams();
+      if (filter !== 'all') qs.set('filter', filter);
+      if (selectedFolderIds.length > 0) qs.set('folders', selectedFolderIds.join(','));
+      const qsStr = qs.toString();
+      navigate(`/annotator/image/${imgId}${qsStr ? `?${qsStr}` : ''}`);
     } finally {
       setCheckingLock(null);
     }

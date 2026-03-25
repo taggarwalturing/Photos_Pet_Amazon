@@ -46,6 +46,7 @@ RULES:
 | under_blanket | Part covered by fabric |
 | peeking_box | Inside container, peeking out |
 | toy_obscuring | Toy blocking part of pet |
+| partial_visible_body | Only part of pet's body visible in frame |
 | None | Cannot determine |
 
 ## 5. ACTIVITY
@@ -55,8 +56,9 @@ RULES:
 | jumping | Mid-air, legs off ground |
 | playing | Multiple pets interacting |
 | running | Motion blur, running pose |
-| sitting_posed | Still, calm, posed |
+| sitting_posed | Still, calm, posed (sitting) |
 | sleeping | Eyes closed, resting |
+| standing_posed | Standing still, alert, or posed |
 | None | Cannot determine |
 
 ## 6. MULTIPET

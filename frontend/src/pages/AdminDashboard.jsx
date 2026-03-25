@@ -5,6 +5,7 @@ import api from '../api/client';
 import MasterPipelineTab from '../components/MasterPipelineTab';
 import PhotoRegistryTab from '../components/PhotoRegistryTab';
 import ArbiterClassifierTab from '../components/ArbiterClassifierTab';
+import ValidationTab from '../components/ValidationTab';
 import AnnotatorStatsTab from '../components/AnnotatorStatsTab';
 import BoundingBoxCanvas from '../components/BoundingBoxCanvas';
 import SignedImage from '../components/SignedImage';
@@ -784,6 +785,7 @@ function ImagesTab() {
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [searchInput, setSearchInput] = useState('');
+  const searchTimerRef = useRef(null);
   const [lightboxImg, setLightboxImg] = useState(null); // image object for lightbox
   const [folders, setFolders] = useState([]);
   const [selectedFolderIds, setSelectedFolderIds] = useState([]);
@@ -836,8 +838,20 @@ function ImagesTab() {
     setPage(1);
   };
 
+  // Debounced search: triggers 400ms after the user stops typing
+  useEffect(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => {
+      setSearch(searchInput);
+      setPage(1);
+    }, 400);
+    return () => clearTimeout(searchTimerRef.current);
+  }, [searchInput]);
+
   const handleSearch = (e) => {
     e.preventDefault();
+    // Immediate search on Enter
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     setSearch(searchInput);
     setPage(1);
   };
@@ -957,11 +971,23 @@ function ImagesTab() {
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             placeholder="Search filename…"
-            className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
+            className="w-full pl-9 pr-8 py-2 text-sm border border-gray-200 rounded-lg focus:ring-indigo-500 focus:border-indigo-500"
           />
           <svg className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
+          {searchInput && (
+            <button
+              type="button"
+              onClick={() => { setSearchInput(''); }}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+              title="Clear search"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
         </form>
       </div>
 
@@ -3761,7 +3787,7 @@ export default function AdminDashboard() {
   const { user, logout } = useAuth();
 
   // Derive active tab from URL path: /admin/review -> 'review', /admin -> 'users'
-  const VALID_TABS = ['users', 'review', 'images', 'improper', 'edit-requests', 'annotator-stats', 'settings', 'pipeline', 'arbiter', 'compliance', 'photo-registry'];
+  const VALID_TABS = ['users', 'review', 'images', 'improper', 'edit-requests', 'annotator-stats', 'settings', 'pipeline', 'arbiter', 'validation', 'compliance', 'photo-registry'];
   const pathSegment = location.pathname.replace(/^\/admin\/?/, '').split('/')[0] || 'users';
   const activeTab = VALID_TABS.includes(pathSegment) ? pathSegment : 'users';
 
@@ -3796,6 +3822,9 @@ export default function AdminDashboard() {
     )},
     { key: 'arbiter', label: 'Arbiter Classifier', icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3" /></svg>
+    )},
+    { key: 'validation', label: 'Validation', icon: (
+      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
     )},
     { key: 'compliance', label: 'Compliance', icon: (
       <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>
@@ -3871,6 +3900,7 @@ export default function AdminDashboard() {
           {activeTab === 'settings' && <SettingsTab />}
           {activeTab === 'pipeline' && <MasterPipelineTab />}
           {activeTab === 'arbiter' && <ArbiterClassifierTab />}
+          {activeTab === 'validation' && <ValidationTab />}
           {activeTab === 'compliance' && <ComplianceTab />}
           {activeTab === 'photo-registry' && <PhotoRegistryTab />}
         </div>

@@ -91,6 +91,10 @@ class Image(Base):
     # ── Arbiter labels (pre-filled from classifier) ──
     arbiter_labels = Column(JSON)                            # {"lighting": {"final": "well_lit", ...}, ...}
 
+    # ── VLM Validation ──
+    vlm_validation = Column(JSON)                            # {"aligned": bool, "contradictions": [...], "category_details": {...}}
+    vlm_validated_at = Column(DateTime)
+
     # ── Legacy / mapping columns (kept for pipeline import) ──
     original_filename = Column(String(500))
     image_drive_id = Column(String(200))

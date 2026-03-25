@@ -118,6 +118,7 @@ _ARBITER_LABEL_TO_OPTION = {
     "under_blanket": "Partially hidden under a blanket",
     "peeking_box": "Peeking out of box-carrier",
     "toy_obscuring": "Toy obscuring part of body",
+    "partial_visible_body": "Partial Visible Body",
     # Activity
     "eating_drinking": "Eating-drinking",
     "jumping": "Jumping to catch toy",
@@ -125,6 +126,7 @@ _ARBITER_LABEL_TO_OPTION = {
     "running_blur": "Running with motion blur",
     "sitting_posed": "Sitting still-posed (typical)",
     "sleeping": "Sleeping-curled up",
+    "standing_posed": "Standing still-posed",
     # Multi-pet
     "breed_lookalike": "Pet with breed lookalike",
     "single_pet": "Single pet (typical)",

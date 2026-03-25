@@ -217,6 +217,8 @@ def apply_manual_blur(
                 pass
             image.gcs_folder = "blur"
             image.gcs_annotated_path = f"gs://{blur_gcs_path}"
+            bucket_name = os.getenv("GCS_BUCKET_NAME", "amazon-photo-pets")
+            image.url = f"gs://{bucket_name}/{blur_gcs_path}"
         else:
             os.makedirs(BLUR_OUTPUT_DIR, exist_ok=True)
             blurred_path = os.path.join(BLUR_OUTPUT_DIR, blurred_filename)
@@ -383,12 +385,15 @@ def remove_blur(
         except Exception as e:
             print(f"Warning: Could not upload restored image to GCS annotated/clean/: {e}")
 
-    # 5. Update database — reset to clean stage
+    # 5. Update database — reset to clean stage and fix URL to point to current blob
     image.manually_blurred = False
     image.blur_regions = None
     image.gcs_annotated_path = None
     image.is_using_processed = False
     image.gcs_folder = "clean"
+    if folder_id != "unknown" and image.filename:
+        bucket_name = os.getenv("GCS_BUCKET_NAME", "amazon-photo-pets")
+        image.url = f"gs://{bucket_name}/{build_gcs_path(folder_id, image.filename, 'clean')}"
 
     if current_user.role == "annotator":
         image.is_restore_annotator = True

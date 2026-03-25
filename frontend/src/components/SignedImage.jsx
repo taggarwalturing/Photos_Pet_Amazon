@@ -13,6 +13,7 @@ import { fetchSignedUrl, getProxyUrl, getThumbUrl, getViewUrl, getFullUrl } from
 export default function SignedImage({ imageId, folder, refreshKey, fallbackToProxy = true, thumbnail = false, view = false, full = false, ...imgProps }) {
   const [src, setSrc] = useState('');
   const mountedRef = useRef(true);
+  const retriesRef = useRef(0);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -25,23 +26,21 @@ export default function SignedImage({ imageId, folder, refreshKey, fallbackToPro
       return;
     }
 
-    // Cache-buster for refreshKey changes (e.g. after blur apply/undo)
-    const bust = refreshKey ? `?t=${refreshKey}` : '';
+    retriesRef.current = 0;
+
+    const bust = refreshKey ? `&t=${refreshKey}` : '';
 
     if (thumbnail) {
-      // Fast path: 400px thumbnail, no signed-url round-trip
       if (mountedRef.current) setSrc(getThumbUrl(imageId) + bust);
       return;
     }
 
     if (full) {
-      // Full-res path: original quality via proxy, no downsizing
       if (mountedRef.current) setSrc(getFullUrl(imageId) + bust);
       return;
     }
 
     if (view) {
-      // Medium path: 1200px view image, no signed-url round-trip
       if (mountedRef.current) setSrc(getViewUrl(imageId) + bust);
       return;
     }
@@ -52,7 +51,13 @@ export default function SignedImage({ imageId, folder, refreshKey, fallbackToPro
   }, [imageId, folder, refreshKey, thumbnail, view, full]);
 
   const handleError = () => {
-    if (fallbackToProxy && imageId) {
+    if (!fallbackToProxy || !imageId) return;
+    const attempt = retriesRef.current;
+    retriesRef.current += 1;
+
+    if (attempt === 0) {
+      setSrc(getViewUrl(imageId));
+    } else if (attempt === 1) {
       setSrc(getProxyUrl(imageId));
     }
   };

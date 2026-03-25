@@ -40,6 +40,7 @@ For EACH category:
 - under_blanket: Partially hidden under blanket
 - peeking_box: Peeking out of box/carrier
 - toy_obscuring: Toy covering part of body
+- partial_visible_body: Only part of the pet's body is visible in the frame
 - None: Doesn't match any above
 
 ### 5. ACTIVITY
@@ -49,6 +50,7 @@ For EACH category:
 - running: Running with motion blur
 - sitting_posed: Sitting still, posed (most common)
 - sleeping: Sleeping, eyes closed
+- standing_posed: Standing still, posed or alert
 - None: Doesn't match any above
 
 ### 6. MULTIPET

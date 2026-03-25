@@ -11,7 +11,7 @@ import threading
 from contextlib import asynccontextmanager
 from app.config import settings
 from app.database import engine, Base, SessionLocal, get_db
-from app.routers import auth, admin, annotator, compliance, compliance_management, pipeline, public_blur, annotator_blur, arbiter
+from app.routers import auth, admin, annotator, compliance, compliance_management, pipeline, public_blur, annotator_blur, arbiter, validation
 from app.seed import seed_database
 from app.models.image import Image
 from app.ws_manager import lock_manager
@@ -145,6 +145,8 @@ def _migrate():
             "deliverable_image_path": "VARCHAR(500)",
             "arbiter_labels": "JSON",
             "annotation_history": "JSON DEFAULT '[]'::json",
+            "vlm_validation": "JSON",
+            "vlm_validated_at": "TIMESTAMPTZ",
             "original_filename": "VARCHAR(500)",
             "image_drive_id": "VARCHAR(200)",
             "source_folder_id": "VARCHAR(200)",
@@ -287,6 +289,7 @@ app.include_router(compliance_management.router, prefix="/api")
 app.include_router(pipeline.router, prefix="/api")
 app.include_router(public_blur.router, prefix="/api")
 app.include_router(arbiter.router, prefix="/api")
+app.include_router(validation.router, prefix="/api")
 
 
 @app.get("/api/health")
@@ -517,14 +520,46 @@ def proxy_image(image_id: int):
         if not img:
             raise HTTPException(status_code=404, detail="Image not found")
         
-        url = img.url
+        url = img.url or ""
         
         # Handle GCS gs:// URLs
         if url.startswith('gs://'):
             try:
-                from app.utils.gcs import download_to_bytes, parse_gs_uri
+                from app.utils.gcs import download_to_bytes, parse_gs_uri, gcs_path as build_gcs_path, blob_exists as gcs_blob_exists
                 _, blob_path = parse_gs_uri(url)
-                content = download_to_bytes(blob_path)
+                content = None
+
+                # Try the URL blob first; if it no longer exists (e.g. deleted
+                # after a blur/restore operation), fall back to gcs_folder-based
+                # path so the proxy serves the correct current version.
+                try:
+                    content = download_to_bytes(blob_path)
+                except Exception:
+                    pass
+
+                if not content and img.source_folder_id and img.filename:
+                    stages = [img.gcs_folder or "input"]
+                    for s in ("blur", "clean", "input"):
+                        if s not in stages:
+                            stages.append(s)
+                    for stage in stages:
+                        try:
+                            alt_blob = build_gcs_path(img.source_folder_id, img.filename, stage)
+                            if gcs_blob_exists(alt_blob):
+                                content = download_to_bytes(alt_blob)
+                                if content:
+                                    # Update the stale URL so future requests don't need fallback
+                                    bucket_name = os.getenv("GCS_BUCKET_NAME", "amazon-photo-pets")
+                                    img.url = f"gs://{bucket_name}/{alt_blob}"
+                                    img.gcs_folder = stage
+                                    db.commit()
+                                    break
+                        except Exception:
+                            continue
+
+                if not content:
+                    raise Exception(f"Blob not found at {blob_path} or any fallback stage")
+
                 ext = os.path.splitext(img.filename)[1].lower()
                 mime_type = {'.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
                              '.gif': 'image/gif', '.webp': 'image/webp'}.get(ext, 'image/jpeg')
@@ -828,13 +863,24 @@ def proxy_view(image_id: int):
         content = None
 
         if url.startswith('gs://'):
+            from app.utils.gcs import download_to_bytes, parse_gs_uri, gcs_path as build_gcs_path, blob_exists as gcs_blob_exists
             try:
-                from app.utils.gcs import download_to_bytes, parse_gs_uri
                 _, blob_path = parse_gs_uri(url)
                 content = download_to_bytes(blob_path)
-            except Exception as e:
-                print(f"[View] GCS fetch failed for {img.filename}: {e}")
-                raise HTTPException(status_code=502, detail=f"GCS fetch failed")
+            except Exception:
+                pass
+            if not content and img.source_folder_id and img.filename:
+                for stage in [img.gcs_folder or "input", "blur", "clean", "input"]:
+                    try:
+                        alt_blob = build_gcs_path(img.source_folder_id, img.filename, stage)
+                        if gcs_blob_exists(alt_blob):
+                            content = download_to_bytes(alt_blob)
+                            if content:
+                                break
+                    except Exception:
+                        continue
+            if not content:
+                raise HTTPException(status_code=502, detail="GCS fetch failed")
         elif url.startswith('file://'):
             local_path = url.replace('file://', '')
             if not os.path.isabs(local_path):
@@ -917,13 +963,24 @@ def proxy_thumbnail(image_id: int):
         content = None
 
         if url.startswith('gs://'):
+            from app.utils.gcs import download_to_bytes, parse_gs_uri, gcs_path as build_gcs_path, blob_exists as gcs_blob_exists
             try:
-                from app.utils.gcs import download_to_bytes, parse_gs_uri
                 _, blob_path = parse_gs_uri(url)
                 content = download_to_bytes(blob_path)
-            except Exception as e:
-                print(f"[Thumb] GCS fetch failed for {img.filename}: {e}")
-                raise HTTPException(status_code=502, detail=f"GCS fetch failed")
+            except Exception:
+                pass
+            if not content and img.source_folder_id and img.filename:
+                for stage in [img.gcs_folder or "input", "blur", "clean", "input"]:
+                    try:
+                        alt_blob = build_gcs_path(img.source_folder_id, img.filename, stage)
+                        if gcs_blob_exists(alt_blob):
+                            content = download_to_bytes(alt_blob)
+                            if content:
+                                break
+                    except Exception:
+                        continue
+            if not content:
+                raise HTTPException(status_code=502, detail="GCS fetch failed")
         elif url.startswith('file://'):
             local_path = url.replace('file://', '')
             if not os.path.isabs(local_path):
