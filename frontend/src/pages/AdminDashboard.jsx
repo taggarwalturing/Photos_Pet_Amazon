@@ -3093,6 +3093,7 @@ function ImproperImagesTab() {
   const [count, setCount] = useState(0);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const [lightboxId, setLightboxId] = useState(null);
   const imagesPerPage = 10;
 
   const load = async () => {
@@ -3163,7 +3164,9 @@ function ImproperImagesTab() {
                   <img
                     src={getImageUrl(img.id)}
                     alt={img.filename}
-                    className="w-32 h-32 rounded-lg object-cover shrink-0 ring-2 ring-red-200"
+                    className="w-32 h-32 rounded-lg object-cover shrink-0 ring-2 ring-red-200 cursor-pointer hover:ring-indigo-400 hover:opacity-90 transition"
+                    onClick={() => setLightboxId(img.id)}
+                    title="Click to view full image"
                   />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-2">
@@ -3209,6 +3212,27 @@ function ImproperImagesTab() {
             </div>
           )}
         </>
+      )}
+
+      {/* Lightbox modal */}
+      {lightboxId && (
+        <div
+          className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-8"
+          onClick={() => setLightboxId(null)}
+        >
+          <button
+            onClick={() => setLightboxId(null)}
+            className="absolute top-5 right-5 w-10 h-10 bg-white/20 hover:bg-white/40 rounded-full flex items-center justify-center text-white text-xl transition cursor-pointer z-10"
+          >
+            ✕
+          </button>
+          <img
+            src={getProxyUrl(lightboxId)}
+            alt="Full resolution"
+            className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
       )}
     </div>
   );
