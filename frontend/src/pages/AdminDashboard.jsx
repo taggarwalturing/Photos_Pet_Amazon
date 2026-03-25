@@ -2078,6 +2078,8 @@ function ReviewTab() {
   const [filter, setFilter] = useState('pending');
   const [catFilter, setCatFilter] = useState('');
   const [annotatorFilter, setAnnotatorFilter] = useState('');
+  const [folderFilter, setFolderFilter] = useState('');
+  const [folders, setFolders] = useState([]);
   const [page, setPage] = useState(1);
   const [editingId, setEditingId] = useState(null);
   const [editSelections, setEditSelections] = useState([]);
@@ -2134,17 +2136,20 @@ function ReviewTab() {
       params.set('page', '1');
       params.set('page_size', '10000');
       if (annotatorFilter) params.set('annotator_id', annotatorFilter);
+      if (folderFilter) params.set('folder_id', folderFilter);
 
-      const [tableRes, statsRes, catsRes, usersRes] = await Promise.all([
+      const [tableRes, statsRes, catsRes, usersRes, foldersRes] = await Promise.all([
         api.get(`/admin/review/table?${params.toString()}`),
         api.get('/admin/review/stats'),
         api.get('/admin/categories'),
         api.get('/admin/users'),
+        api.get('/admin/folders'),
       ]);
       setTableData(tableRes.data);
       setStats(statsRes.data);
       setCategories(catsRes.data);
       setUsers(usersRes.data.filter((u) => u.role === 'annotator'));
+      setFolders(foldersRes.data);
       setSelectedRows(new Set());
       setHighlightedIdx(-1);
     } catch (err) {
@@ -2152,7 +2157,7 @@ function ReviewTab() {
     } finally {
       setTableLoading(false);
     }
-  }, [filter, annotatorFilter]);
+  }, [filter, annotatorFilter, folderFilter]);
 
   useEffect(() => {
     loadTable();
@@ -2351,7 +2356,19 @@ function ReviewTab() {
     setFilter(f);
     setPage(1);
     setTablePage(1);
+    setSelectedRows(new Set());
   };
+
+  // Compute folder options based on selected annotator
+  const folderOptions = useMemo(() => {
+    if (!folders.length) return [];
+    if (annotatorFilter) {
+      return folders.filter(
+        (f) => String(f.assigned_annotator_id) === String(annotatorFilter)
+      );
+    }
+    return folders;
+  }, [folders, annotatorFilter]);
 
   // ── Keyboard shortcuts ──
   useEffect(() => {
@@ -2480,12 +2497,48 @@ function ReviewTab() {
 
         <select
           value={annotatorFilter}
-          onChange={(e) => { setAnnotatorFilter(e.target.value); setPage(1); setTablePage(1); }}
+          onChange={(e) => { setAnnotatorFilter(e.target.value); setFolderFilter(''); setPage(1); setTablePage(1); setSelectedRows(new Set()); }}
           className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs outline-none"
         >
           <option value="">All Annotators</option>
           {users.map((u) => <option key={u.id} value={u.id}>{u.username}</option>)}
         </select>
+
+        <select
+          value={folderFilter}
+          onChange={(e) => { setFolderFilter(e.target.value); setPage(1); setTablePage(1); setSelectedRows(new Set()); }}
+          className="px-3 py-1.5 border border-gray-300 rounded-lg text-xs outline-none max-w-[200px]"
+        >
+          <option value="">{annotatorFilter ? 'All Assigned Folders' : 'All Folders'}</option>
+          {folderOptions.map((f) => (
+            <option key={f.folder_id} value={f.folder_id}>
+              {f.folder_name || f.folder_id.slice(0, 20)}
+            </option>
+          ))}
+        </select>
+
+        {/* Approve Selected button */}
+        {filter === 'pending' && selectedRows.size > 0 && (
+          <button
+            onClick={handleBulkApprove}
+            disabled={bulkApproving}
+            className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg shadow-sm disabled:opacity-50 transition cursor-pointer flex items-center gap-1.5"
+          >
+            {bulkApproving ? (
+              <>
+                <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                Approving...
+              </>
+            ) : (
+              <>
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                Approve Selected ({selectedRows.size})
+              </>
+            )}
+          </button>
+        )}
 
         {/* Approve All button */}
         {filter === 'pending' && pendingInView > 0 && (
@@ -2528,8 +2581,32 @@ function ReviewTab() {
             <div className="py-12 text-center text-gray-500">No annotations found for this filter.</div>
           ) : (
             <>
+              {/* Select All / Deselect All */}
+              {tableData.images.length > 0 && filter === 'pending' && (
+                <div className="flex items-center gap-3">
+                  <label className="flex items-center gap-2 text-xs text-gray-600 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={selectedRows.size > 0 && selectedRows.size === tableData.images.length}
+                      onChange={toggleSelectAll}
+                      className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                    />
+                    {selectedRows.size > 0 ? `${selectedRows.size} selected` : 'Select all'}
+                  </label>
+                  {selectedRows.size > 0 && (
+                    <button
+                      onClick={() => setSelectedRows(new Set())}
+                      className="text-xs text-gray-400 hover:text-gray-600 cursor-pointer"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+              )}
+
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                 {tableData.images.map((row) => {
+                  const isSelected = selectedRows.has(row.image_id);
                   // Count annotated categories for this image
                   const totalAnnotated = tableData.categories.filter((cat) => row.annotations[String(cat.id)]).length;
                   // Review is image-level, not per-cell
@@ -2541,7 +2618,7 @@ function ReviewTab() {
                     <div
                             key={row.image_id}
                       className={`group relative rounded-xl overflow-hidden shadow-md hover:shadow-xl transition-all duration-300 ${
-                        hasRework ? 'ring-3 ring-orange-400' : allApproved ? 'ring-2 ring-green-400' : 'ring-1 ring-gray-200 hover:ring-indigo-400'
+                        isSelected ? 'ring-3 ring-indigo-500' : hasRework ? 'ring-3 ring-orange-400' : allApproved ? 'ring-2 ring-green-400' : 'ring-1 ring-gray-200 hover:ring-indigo-400'
                       }`}
                           >
                       {/* Image */}
@@ -2556,8 +2633,20 @@ function ReviewTab() {
                         {/* Gradient overlay for text readability */}
                         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
 
-                        {/* Status badge - top left */}
-                        <div className="absolute top-3 left-3 flex gap-1">
+                        {/* Checkbox - top left corner */}
+                        {filter === 'pending' && (
+                          <div className="absolute top-3 left-3 z-20">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={(e) => { e.stopPropagation(); toggleRowSelect(row.image_id); }}
+                              className="w-5 h-5 rounded border-2 border-white/80 text-indigo-600 focus:ring-indigo-500 cursor-pointer shadow-lg bg-white/90"
+                            />
+                          </div>
+                        )}
+
+                        {/* Status badge - top left (offset when checkbox visible) */}
+                        <div className={`absolute top-3 ${filter === 'pending' ? 'left-11' : 'left-3'} flex gap-1`}>
                           {allApproved ? (
                             <span className="px-2.5 py-1 bg-green-500 text-white text-xs font-bold rounded-lg shadow-lg">
                               ✓ Approved

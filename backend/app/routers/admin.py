@@ -1125,6 +1125,7 @@ def get_image_status(
 def review_table(
     annotator_id: Optional[int] = Query(None),
     review_status: Optional[str] = Query(None),  # pending, approved
+    folder_id: Optional[str] = Query(None),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=10000),
     db: Session = Depends(get_db),
@@ -1143,6 +1144,8 @@ def review_table(
     )
     if annotator_id is not None:
         base_q = base_q.filter(Image.annotated_by == annotator_id)
+    if folder_id:
+        base_q = base_q.filter(Image.source_folder_id == folder_id)
     if review_status == "pending":
         base_q = base_q.filter(
             or_(
@@ -1278,6 +1281,7 @@ def review_table(
             deliverable_image_path=img.deliverable_image_path,
             is_manually_modified=img.is_manually_modified,
             gcs_folder=img.gcs_folder or "input",
+            source_folder_id=img.source_folder_id,
         ))
 
     # Category headers

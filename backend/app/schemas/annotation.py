@@ -65,6 +65,8 @@ class ReviewTableRow(BaseModel):
     deliverable_image_path: Optional[str] = None
     is_manually_modified: Optional[bool] = None
     gcs_folder: str = "input"
+    # Folder
+    source_folder_id: Optional[str] = None
 
 
 class ReviewTableCategory(BaseModel):
