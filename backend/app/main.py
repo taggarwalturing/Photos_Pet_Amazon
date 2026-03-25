@@ -494,6 +494,59 @@ def cache_image(image_id: int, content: bytes, mime_type: str) -> bytes:
         print(f"Failed to cache image {image_id}: {e}")
         return content
 
+def _fetch_current_image(img, url: str) -> bytes | None:
+    """
+    Fetch the current version of an image from GCS or local filesystem.
+    Uses gcs_folder to resolve the correct stage (blur/clean/input)
+    so the proxy always serves the processed version, not the original.
+    Falls back to the url field and then tries all stages.
+    """
+    content = None
+
+    if url.startswith('gs://'):
+        from app.utils.gcs import download_to_bytes, parse_gs_uri, gcs_path as build_gcs_path, blob_exists as gcs_blob_exists
+
+        # Primary: use gcs_folder to fetch the correct current version
+        if img.source_folder_id and img.filename:
+            gcs_stage = img.gcs_folder or "input"
+            try:
+                primary_blob = build_gcs_path(img.source_folder_id, img.filename, gcs_stage)
+                content = download_to_bytes(primary_blob)
+            except Exception:
+                pass
+
+        # Fallback: try the raw url field
+        if not content:
+            try:
+                _, blob_path = parse_gs_uri(url)
+                content = download_to_bytes(blob_path)
+            except Exception:
+                pass
+
+        # Last resort: try all stages
+        if not content and img.source_folder_id and img.filename:
+            for stage in ("blur", "clean", "input"):
+                try:
+                    alt_blob = build_gcs_path(img.source_folder_id, img.filename, stage)
+                    if gcs_blob_exists(alt_blob):
+                        content = download_to_bytes(alt_blob)
+                        if content:
+                            break
+                except Exception:
+                    continue
+
+    elif url.startswith('file://'):
+        local_path = url.replace('file://', '')
+        if not os.path.isabs(local_path):
+            backend_dir = os.path.dirname(os.path.dirname(__file__))
+            local_path = os.path.join(backend_dir, local_path)
+        if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
+            with open(local_path, "rb") as f:
+                content = f.read()
+
+    return content
+
+
 @app.get("/api/images/proxy/{image_id}")
 def proxy_image(image_id: int):
     """
@@ -524,66 +577,31 @@ def proxy_image(image_id: int):
         
         # Handle GCS gs:// URLs
         if url.startswith('gs://'):
-            try:
-                from app.utils.gcs import download_to_bytes, parse_gs_uri, gcs_path as build_gcs_path, blob_exists as gcs_blob_exists
-                _, blob_path = parse_gs_uri(url)
-                content = None
+            content = _fetch_current_image(img, url)
+            if not content:
+                raise HTTPException(status_code=502, detail=f"GCS fetch failed for {img.filename}")
 
-                # Try the URL blob first; if it no longer exists (e.g. deleted
-                # after a blur/restore operation), fall back to gcs_folder-based
-                # path so the proxy serves the correct current version.
+            ext = os.path.splitext(img.filename)[1].lower()
+            mime_type = {'.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+                         '.gif': 'image/gif', '.webp': 'image/webp'}.get(ext, 'image/jpeg')
+            # Convert HEIC/HEIF to JPEG for browser compatibility
+            if len(content) >= 12 and content[4:8] == b"ftyp" and content[8:12] in (b"heic", b"heix", b"hevc", b"mif1"):
                 try:
-                    content = download_to_bytes(blob_path)
-                except Exception:
-                    pass
-
-                if not content and img.source_folder_id and img.filename:
-                    stages = [img.gcs_folder or "input"]
-                    for s in ("blur", "clean", "input"):
-                        if s not in stages:
-                            stages.append(s)
-                    for stage in stages:
-                        try:
-                            alt_blob = build_gcs_path(img.source_folder_id, img.filename, stage)
-                            if gcs_blob_exists(alt_blob):
-                                content = download_to_bytes(alt_blob)
-                                if content:
-                                    # Update the stale URL so future requests don't need fallback
-                                    bucket_name = os.getenv("GCS_BUCKET_NAME", "amazon-photo-pets")
-                                    img.url = f"gs://{bucket_name}/{alt_blob}"
-                                    img.gcs_folder = stage
-                                    db.commit()
-                                    break
-                        except Exception:
-                            continue
-
-                if not content:
-                    raise Exception(f"Blob not found at {blob_path} or any fallback stage")
-
-                ext = os.path.splitext(img.filename)[1].lower()
-                mime_type = {'.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
-                             '.gif': 'image/gif', '.webp': 'image/webp'}.get(ext, 'image/jpeg')
-                # Convert HEIC/HEIF to JPEG for browser compatibility
-                if len(content) >= 12 and content[4:8] == b"ftyp" and content[8:12] in (b"heic", b"heix", b"hevc", b"mif1"):
-                    try:
-                        import pillow_heif
-                        pillow_heif.register_heif_opener()
-                        from PIL import Image as PILImg
-                        pil_img = PILImg.open(io.BytesIO(content))
-                        buf = io.BytesIO()
-                        pil_img.save(buf, format="JPEG", quality=90)
-                        content = buf.getvalue()
-                        mime_type = "image/jpeg"
-                    except Exception as heic_err:
-                        print(f"[Proxy] HEIC conversion failed for {img.filename}: {heic_err}")
-                cache_image(image_id, content, mime_type)
-                return Response(
-                    content=content, media_type=mime_type,
-                    headers={"Cache-Control": "public, max-age=604800", "X-Cache": "MISS", "X-Source": "gcs"}
-                )
-            except Exception as e:
-                print(f"[Proxy] GCS fetch failed for {img.filename}: {e}")
-                raise HTTPException(status_code=502, detail=f"GCS fetch failed: {str(e)}")
+                    import pillow_heif
+                    pillow_heif.register_heif_opener()
+                    from PIL import Image as PILImg
+                    pil_img = PILImg.open(io.BytesIO(content))
+                    buf = io.BytesIO()
+                    pil_img.save(buf, format="JPEG", quality=90)
+                    content = buf.getvalue()
+                    mime_type = "image/jpeg"
+                except Exception as heic_err:
+                    print(f"[Proxy] HEIC conversion failed for {img.filename}: {heic_err}")
+            cache_image(image_id, content, mime_type)
+            return Response(
+                content=content, media_type=mime_type,
+                headers={"Cache-Control": "public, max-age=604800", "X-Cache": "MISS", "X-Source": "gcs"}
+            )
         
         # Handle local file:// URLs
         if url.startswith('file://'):
@@ -862,33 +880,7 @@ def proxy_view(image_id: int):
         url = img.url or ""
         content = None
 
-        if url.startswith('gs://'):
-            from app.utils.gcs import download_to_bytes, parse_gs_uri, gcs_path as build_gcs_path, blob_exists as gcs_blob_exists
-            try:
-                _, blob_path = parse_gs_uri(url)
-                content = download_to_bytes(blob_path)
-            except Exception:
-                pass
-            if not content and img.source_folder_id and img.filename:
-                for stage in [img.gcs_folder or "input", "blur", "clean", "input"]:
-                    try:
-                        alt_blob = build_gcs_path(img.source_folder_id, img.filename, stage)
-                        if gcs_blob_exists(alt_blob):
-                            content = download_to_bytes(alt_blob)
-                            if content:
-                                break
-                    except Exception:
-                        continue
-            if not content:
-                raise HTTPException(status_code=502, detail="GCS fetch failed")
-        elif url.startswith('file://'):
-            local_path = url.replace('file://', '')
-            if not os.path.isabs(local_path):
-                backend_dir = os.path.dirname(os.path.dirname(__file__))
-                local_path = os.path.join(backend_dir, local_path)
-            if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
-                with open(local_path, "rb") as f:
-                    content = f.read()
+        content = _fetch_current_image(img, url)
 
         if not content:
             raise HTTPException(status_code=404, detail="Image not accessible")
@@ -962,33 +954,7 @@ def proxy_thumbnail(image_id: int):
         url = img.url or ""
         content = None
 
-        if url.startswith('gs://'):
-            from app.utils.gcs import download_to_bytes, parse_gs_uri, gcs_path as build_gcs_path, blob_exists as gcs_blob_exists
-            try:
-                _, blob_path = parse_gs_uri(url)
-                content = download_to_bytes(blob_path)
-            except Exception:
-                pass
-            if not content and img.source_folder_id and img.filename:
-                for stage in [img.gcs_folder or "input", "blur", "clean", "input"]:
-                    try:
-                        alt_blob = build_gcs_path(img.source_folder_id, img.filename, stage)
-                        if gcs_blob_exists(alt_blob):
-                            content = download_to_bytes(alt_blob)
-                            if content:
-                                break
-                    except Exception:
-                        continue
-            if not content:
-                raise HTTPException(status_code=502, detail="GCS fetch failed")
-        elif url.startswith('file://'):
-            local_path = url.replace('file://', '')
-            if not os.path.isabs(local_path):
-                backend_dir = os.path.dirname(os.path.dirname(__file__))
-                local_path = os.path.join(backend_dir, local_path)
-            if os.path.exists(local_path) and os.path.getsize(local_path) > 0:
-                with open(local_path, "rb") as f:
-                    content = f.read()
+        content = _fetch_current_image(img, url)
 
         if not content:
             raise HTTPException(status_code=404, detail="Image not accessible")
