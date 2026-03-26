@@ -305,6 +305,11 @@ def _find_original_image_bytes(image: Image) -> bytes | None:
                         try:
                             from PIL import Image as PILImage
                             from io import BytesIO
+                            try:
+                                import pillow_heif
+                                pillow_heif.register_heif_opener()
+                            except ImportError:
+                                pass
                             pil_img = PILImage.open(BytesIO(data))
                             if pil_img.mode != "RGB":
                                 pil_img = pil_img.convert("RGB")
