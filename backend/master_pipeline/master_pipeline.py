@@ -1408,7 +1408,23 @@ def run_for_folders(
     
     all_start = datetime.now()
     results = {}
-    
+
+    # Compute batch number once for the entire run
+    _batch_number = 1
+    try:
+        _backend_dir = str(SCRIPT_DIR.parent)
+        if _backend_dir not in sys.path:
+            sys.path.insert(0, _backend_dir)
+        from app.database import SessionLocal as _BatchSL
+        from sqlalchemy import text as _bt
+        _bdb = _BatchSL()
+        _max = _bdb.execute(_bt("SELECT COALESCE(MAX(batch_number), 0) FROM images")).scalar()
+        _batch_number = _max + 1
+        _bdb.close()
+    except Exception as _be:
+        print(f"   ⚠️  Could not determine batch number, defaulting to 1: {_be}")
+    print(f"🔢 Batch number for this pipeline run: {_batch_number}")
+
     for idx, folder_id in enumerate(folder_ids, 1):
         print("\n" + "▓" * 70)
         print(f"▓  FOLDER {idx}/{len(folder_ids)}: {folder_id}")
@@ -1455,6 +1471,7 @@ def run_for_folders(
                 counts = _import_from_workspace(
                     _db, folder_workspace, folder_id=folder_id,
                     existing_filenames=_existing_filenames,
+                    batch_number=_batch_number,
                 )
                 _db.commit()
                 print(f"   📥 DB import: {counts['new']} new, {counts['updated']} updated")
@@ -1542,9 +1559,12 @@ def run_for_folders(
                                 folder_record.error_log = None
 
                         folder_record.last_run_at = datetime.now()
+                        if folder_record.batch_number is None:
+                            folder_record.batch_number = _batch_number
                         _db.commit()
                         print(f"   📊 Stats updated: {img_count} in DB, "
-                              f"{blurred} blurred, {clean} clean")
+                              f"{blurred} blurred, {clean} clean, "
+                              f"batch #{folder_record.batch_number}")
                 except Exception as stats_err:
                     print(f"   ⚠️  Per-folder stats update warning: {stats_err}")
 

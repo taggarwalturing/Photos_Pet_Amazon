@@ -55,6 +55,13 @@ def import_from_gcs():
         print(f"\n📂 Found {len(folders)} folder(s) to import from GCS")
         total_imported = 0
 
+        # Compute next batch number (max existing + 1, or 1 if none)
+        max_batch = db.execute(text(
+            "SELECT COALESCE(MAX(batch_number), 0) FROM images"
+        )).scalar()
+        batch_number = max_batch + 1
+        print(f"🔢 Batch number for this run: {batch_number}")
+
         for folder_id, total_in_drive in folders:
             print(f"\n{'─' * 50}")
             print(f"📂 Folder: {folder_id} ({total_in_drive} images in GCS)")
@@ -109,14 +116,16 @@ def import_from_gcs():
                         human_faces_detected, is_using_processed,
                         source_folder_id, manually_blurred,
                         is_programmatically_blurred, is_manually_modified,
-                        is_duplicate, gcs_folder, gcs_input_path
+                        is_duplicate, gcs_folder, gcs_input_path,
+                        batch_number
                     ) VALUES (
                         :image_id, :filename, :url, 'completed',
                         'clean', :url, FALSE,
                         0, TRUE,
                         :source_folder_id, FALSE,
                         FALSE, FALSE,
-                        FALSE, 'clean', :gcs_input_path
+                        FALSE, 'clean', :gcs_input_path,
+                        :batch_number
                     )
                 '''), {
                     'image_id': image_id_stem,
@@ -124,6 +133,7 @@ def import_from_gcs():
                     'url': url,
                     'source_folder_id': folder_id,
                     'gcs_input_path': gcs_input,
+                    'batch_number': batch_number,
                 })
                 existing_filenames.add(filename)
                 folder_new += 1
@@ -144,14 +154,16 @@ def import_from_gcs():
                         human_faces_detected, is_using_processed,
                         source_folder_id, manually_blurred,
                         is_programmatically_blurred, is_manually_modified,
-                        is_duplicate, gcs_folder, gcs_input_path
+                        is_duplicate, gcs_folder, gcs_input_path,
+                        batch_number
                     ) VALUES (
                         :image_id, :filename, :url, 'completed',
                         'blurred', :url, FALSE,
                         1, TRUE,
                         :source_folder_id, FALSE,
                         TRUE, FALSE,
-                        FALSE, 'blur', :gcs_input_path
+                        FALSE, 'blur', :gcs_input_path,
+                        :batch_number
                     )
                 '''), {
                     'image_id': image_id_stem,
@@ -159,6 +171,7 @@ def import_from_gcs():
                     'url': url,
                     'source_folder_id': folder_id,
                     'gcs_input_path': gcs_input,
+                    'batch_number': batch_number,
                 })
                 existing_filenames.add(filename)
                 folder_new += 1
@@ -177,20 +190,23 @@ def import_from_gcs():
                         human_faces_detected, is_using_processed,
                         source_folder_id, manually_blurred,
                         is_programmatically_blurred, is_manually_modified,
-                        is_duplicate, gcs_folder, gcs_input_path
+                        is_duplicate, gcs_folder, gcs_input_path,
+                        batch_number
                     ) VALUES (
                         :image_id, :filename, :gcs_input, 'pending',
                         'duplicate', NULL, FALSE,
                         0, FALSE,
                         :source_folder_id, FALSE,
                         FALSE, FALSE,
-                        TRUE, 'input', :gcs_input
+                        TRUE, 'input', :gcs_input,
+                        :batch_number
                     )
                 '''), {
                     'image_id': image_id_stem,
                     'filename': filename,
                     'gcs_input': gcs_input,
                     'source_folder_id': folder_id,
+                    'batch_number': batch_number,
                 })
                 existing_filenames.add(filename)
 
@@ -227,7 +243,8 @@ def import_from_gcs():
                     blurred_count = :blurred,
                     clean_count = :clean,
                     error_log = NULL,
-                    status = 'completed'
+                    status = 'completed',
+                    batch_number = COALESCE(batch_number, :batch_number)
                 WHERE folder_id = :fid
             """), {
                 'count': count,
@@ -236,6 +253,7 @@ def import_from_gcs():
                 'blurred': blurred,
                 'clean': clean,
                 'fid': folder_id,
+                'batch_number': batch_number,
             })
 
         db.commit()

@@ -99,6 +99,9 @@ class Image(Base):
     original_filename = Column(String(500))
     image_drive_id = Column(String(200))
 
+    # ── Batch tracking ──
+    batch_number = Column(Integer, nullable=True, index=True)
+
     # ── Timestamps ──
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),

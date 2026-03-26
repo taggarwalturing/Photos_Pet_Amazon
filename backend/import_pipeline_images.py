@@ -189,7 +189,7 @@ def _auto_run_dedup(scan_folder: Path, stats_output_path: Path) -> dict:
         return {}
 
 
-def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_filenames: set = None):
+def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_filenames: set = None, batch_number: int = None):
     """
     Import images from a single workspace (either per-folder or legacy flat).
     
@@ -198,6 +198,7 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
         workspace: Path to the workspace root (e.g. pipeline_workspace/ or pipeline_workspace/folders/{fid}/)
         folder_id: Google Drive folder ID (derived from directory name for per-folder workspaces)
         existing_filenames: Set of filenames already in the database
+        batch_number: Pipeline batch number. Only set on new inserts; re-runs won't overwrite.
     
     Returns:
         dict with counts: new, updated, blurred, clean
@@ -429,7 +430,8 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                     processed_url = :url,
                     is_programmatically_blurred = :is_programmatically_blurred,
                     gcs_folder = :gcs_folder,
-                    gcs_input_path = COALESCE(:gcs_input_path, gcs_input_path)
+                    gcs_input_path = COALESCE(:gcs_input_path, gcs_input_path),
+                    batch_number = COALESCE(batch_number, :batch_number)
                 WHERE filename = :filename
             '''), {
                 'filename': filename,
@@ -442,6 +444,7 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                 'is_programmatically_blurred': is_prog_blurred,
                 'gcs_folder': img_gcs_folder,
                 'gcs_input_path': gcs_input_uri,
+                'batch_number': batch_number,
             })
             counts['updated'] += 1
         else:
@@ -463,7 +466,8 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                     image_drive_id, manually_blurred,
                     is_programmatically_blurred, is_manually_modified,
                     is_duplicate,
-                    gcs_folder, gcs_input_path
+                    gcs_folder, gcs_input_path,
+                    batch_number
                 )
                 VALUES (
                     :image_id,
@@ -475,7 +479,8 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                     :image_drive_id, FALSE,
                     :is_programmatically_blurred, FALSE,
                     FALSE,
-                    :gcs_folder, :gcs_input_path
+                    :gcs_folder, :gcs_input_path,
+                    :batch_number
                 )
             '''), {
                 'image_id': image_id_stem,
@@ -489,6 +494,7 @@ def _import_from_workspace(db, workspace: Path, folder_id: str = None, existing_
                 'is_programmatically_blurred': is_prog_blurred,
                 'gcs_folder': img_gcs_folder,
                 'gcs_input_path': gcs_input_uri,
+                'batch_number': batch_number,
             })
             counts['new'] += 1
             existing_filenames.add(filename)

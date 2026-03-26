@@ -24,6 +24,9 @@ class DriveFolder(Base):
     clean_count = Column(Integer, default=0)
     failed_count = Column(Integer, default=0)
     
+    # Batch tracking
+    batch_number = Column(Integer, nullable=True, index=True)
+
     # Metadata
     notes = Column(Text, nullable=True)
     error_log = Column(Text, nullable=True)

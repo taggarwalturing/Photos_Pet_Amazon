@@ -74,6 +74,7 @@
 | `locked_at` | When the lock was acquired |
 | `deliverable_image_path` | GCS path to final deliverable after approval |
 | `arbiter_labels` | AI classifier suggestions JSON: `{"lighting": {"key": "well_lit", "label": "Well-lit..."}}` |
+| `batch_number` | Pipeline batch number — auto-increments per pipeline run, not overwritten on re-runs |
 | `created_at` | When image record was created |
 | `updated_at` | Last modification time |
 
@@ -96,6 +97,7 @@
 | `blurred_count` | Images with human faces blurred |
 | `clean_count` | Clean images (no blur needed) |
 | `failed_count` | Images that failed processing |
+| `batch_number` | Pipeline batch number — same as images.batch_number for the run that processed this folder |
 | `notes` | General notes |
 | `error_log` | Error messages from pipeline |
 
