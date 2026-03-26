@@ -283,16 +283,39 @@ def _find_original_image_bytes(image: Image) -> bytes | None:
     """
     Find the original (unblurred) image bytes.
     For GCS images, always fetches from the input/ folder.
+    Handles HEIC→JPG conversions by also checking original_filename.
     For local images, searches pipeline workspace.
     """
-    # 1. Try GCS input/ folder (always has the original)
     folder_id = image.source_folder_id
+
+    # 1. Try GCS input/ folder — check converted name first, then original
     if folder_id and image.filename:
-        try:
-            input_gcs_path = build_gcs_path(folder_id, image.filename, "input")
-            return gcs_download(input_gcs_path)
-        except Exception as e:
-            print(f"[Restore] GCS input/ download failed: {e}")
+        candidates = [image.filename]
+        if image.original_filename and image.original_filename != image.filename:
+            candidates.append(image.original_filename)
+
+        for candidate in candidates:
+            try:
+                input_gcs_path = build_gcs_path(folder_id, candidate, "input")
+                data = gcs_download(input_gcs_path)
+                if data:
+                    # HEIC/HEIF — convert to JPEG bytes so callers get a usable image
+                    lower = candidate.lower()
+                    if lower.endswith(('.heic', '.heif')):
+                        try:
+                            from PIL import Image as PILImage
+                            from io import BytesIO
+                            pil_img = PILImage.open(BytesIO(data))
+                            if pil_img.mode != "RGB":
+                                pil_img = pil_img.convert("RGB")
+                            buf = BytesIO()
+                            pil_img.save(buf, format="JPEG", quality=95)
+                            data = buf.getvalue()
+                        except Exception as conv_err:
+                            print(f"[Restore] HEIC→JPEG conversion failed: {conv_err}")
+                    return data
+            except Exception as e:
+                print(f"[Restore] GCS input/ download failed for {candidate}: {e}")
 
     workspace = str(_get_pw())
 
